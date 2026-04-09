@@ -1,0 +1,5 @@
+export { default as DAWStudio } from './App'
+export type { DAWProps, ExportedTrack } from './types'
+export { exportMix } from './lib/exportMix'
+export { audioBufferToMp3 } from './lib/exportMp3'
+export type { LoopPoints } from './lib/audioUtils'

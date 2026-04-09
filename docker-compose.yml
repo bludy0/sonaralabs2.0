@@ -1,0 +1,293 @@
+version: "3.9"
+
+# ─── SHARED NETWORK ──────────────────────────────────────────────────────────
+networks:
+  sonaralabs:
+    driver: bridge
+
+# ─── NAMED VOLUMES ───────────────────────────────────────────────────────────
+volumes:
+  mongo_data:
+  redis_data:
+  minio_data:
+
+services:
+
+  # ── INFRASTRUCTURE ──────────────────────────────────────────────────────────
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    networks: [sonaralabs]
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASS:-rootpass}
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [sonaralabs]
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    networks: [sonaralabs]
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO console
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO bucket bootstrap — çalışıp çıkar
+  minio-init:
+    image: minio/mc:latest
+    networks: [sonaralabs]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
+        mc mb --ignore-existing local/sonaralabs-audio;
+        mc anonymous set download local/sonaralabs-audio;
+        echo 'MinIO bucket ready';
+      "
+
+  # ── SERVICES ────────────────────────────────────────────────────────────────
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      # JWT
+      ACCESS_JWT_SECRET: ${ACCESS_JWT_SECRET:?ACCESS_JWT_SECRET required}
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?INTERNAL_JWT_SECRET required}
+      # Rate limit
+      RATE_LIMIT_GENERAL: ${RATE_LIMIT_GENERAL:-30}
+      RATE_LIMIT_GENERATION: ${RATE_LIMIT_GENERATION:-3}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-10}
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10}
+      # Upstream service URLs
+      AUTH_SERVICE_URL: http://auth:3001
+      GENERATION_SERVICE_URL: http://generation:3002
+      UPLOAD_SERVICE_URL: http://upload:3003
+      LIBRARY_SERVICE_URL: http://library:3004
+      CREDIT_SERVICE_URL: http://credit:3005
+      ADMIN_SERVICE_URL: http://admin:3006
+      NOTIFICATION_SERVICE_URL: http://notification:3007
+      # Redis (rate limit store)
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      ACCESS_JWT_SECRET: ${ACCESS_JWT_SECRET:?required}
+      REFRESH_JWT_SECRET: ${REFRESH_JWT_SECRET:?REFRESH_JWT_SECRET required}
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+      INTERNAL_TOKEN_TTL: ${INTERNAL_TOKEN_TTL:-5m}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  generation:
+    build:
+      context: .
+      dockerfile: services/generation/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      REDIS_URL: redis://redis:6379
+      # AI Providers
+      BEATOVEN_API_KEY: ${BEATOVEN_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      STABILITY_API_KEY: ${STABILITY_API_KEY:-}
+      # Job config
+      JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-300000}
+      # Storage
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: false
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: sonaralabs-audio
+      # Internal service URLs
+      CREDIT_SERVICE_URL: http://credit:3005
+      NOTIFICATION_SERVICE_URL: http://notification:3007
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  upload:
+    build:
+      context: .
+      dockerfile: services/upload/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: false
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: sonaralabs-audio
+      STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-524288000}
+      MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-52428800}
+      # Internal
+      AUTH_SERVICE_URL: http://auth:3001
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  library:
+    build:
+      context: .
+      dockerfile: services/library/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  credit:
+    build:
+      context: .
+      dockerfile: services/credit/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      INITIAL_CREDIT_BALANCE: ${INITIAL_CREDIT_BALANCE:-100}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: .
+      dockerfile: services/admin/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      NODE_ENV: development
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  notification:
+    build:
+      context: .
+      dockerfile: services/notification/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3007:3007"
+    environment:
+      PORT: 3007
+      NODE_ENV: development
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: dev
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "5174:5174"
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - gateway
