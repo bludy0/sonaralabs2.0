@@ -1,5 +1,264 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+
+// ── Publish modal ─────────────────────────────────────────────────────────────
+
+const GENRES     = ["ambient", "action", "puzzle", "horror", "platformer"];
+const MOODS      = ["tense", "calm", "epic", "mysterious", "cheerful"];
+const GAME_TYPES = ["rpg", "fps", "platformer", "strategy", "horror", "indie", "casual"];
+
+interface PublishForm {
+  title: string;
+  genreTags: string[];
+  moodTags: string[];
+  gameTypeTags: string[];
+  isLoop: boolean;
+  bpm: string;
+}
+
+interface PublishModalProps {
+  item: LibraryItem;
+  onClose: () => void;
+  onPublished: () => void;
+}
+
+function PublishModal({ item, onClose, onPublished }: PublishModalProps) {
+  const defaultTitle = item.originalName ?? (item.prompt?.slice(0, 80) ?? "Untitled");
+  const [form, setForm] = useState<PublishForm>({
+    title: defaultTitle,
+    genreTags: [],
+    moodTags: [],
+    gameTypeTags: [],
+    isLoop: false,
+    bpm: "",
+  });
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleTag(key: "genreTags" | "moodTags" | "gameTypeTags", tag: string) {
+    setForm(prev => {
+      const arr = prev[key];
+      return { ...prev, [key]: arr.includes(tag) ? arr.filter(t => t !== tag) : [...arr, tag] };
+    });
+  }
+
+  async function handleSubmit() {
+    if (!form.title.trim()) { setError("Title is required"); return; }
+    if (!item.audioUrl) { setError("No audio URL"); return; }
+    setPublishing(true);
+    setError(null);
+    try {
+      await api.post("/api/social/tracks", {
+        title: form.title.trim(),
+        audioUrl: item.audioUrl,
+        durationSec: item.duration ? Math.round(item.duration) : 0,
+        bpm: form.bpm ? parseInt(form.bpm) : undefined,
+        genreTags: form.genreTags,
+        moodTags: form.moodTags,
+        gameTypeTags: form.gameTypeTags,
+        isLoop: form.isLoop,
+        generationId: item._type === "generation" ? item._id : undefined,
+        uploadId:     item._type === "upload"     ? item._id : undefined,
+      });
+      onPublished();
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? "Publish failed");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.85)" }}
+      onClick={onClose}
+    >
+      <div
+        className="rounded-2xl p-6 w-full max-w-lg space-y-5 shadow-2xl"
+        style={{ background: "#131313" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2
+            className="text-2xl font-bold uppercase"
+            style={{ color: "#ffffff", letterSpacing: "-0.01em" }}
+          >
+            Publish to Community
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-xl transition-colors"
+            style={{ color: "#484848" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#ffffff")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#484848")}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Title */}
+        <div>
+          <label
+            className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+            style={{ color: "#484848" }}
+          >
+            Title
+          </label>
+          <input
+            value={form.title}
+            onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+            maxLength={120}
+            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+            style={{
+              background: "#1f2937",
+              color: "#ffffff",
+              border: "none",
+            }}
+            onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px #ffdd73")}
+            onBlur={e => (e.currentTarget.style.boxShadow = "none")}
+          />
+        </div>
+
+        {/* Genre tags */}
+        <div>
+          <label
+            className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+            style={{ color: "#484848" }}
+          >
+            Genre
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {GENRES.map(g => (
+              <button
+                key={g}
+                onClick={() => toggleTag("genreTags", g)}
+                className="text-xs px-2.5 py-1 rounded-full transition-colors capitalize font-bold"
+                style={
+                  form.genreTags.includes(g)
+                    ? { background: "#ffdd73", color: "#624e00" }
+                    : { background: "#1f2937", color: "#ababab" }
+                }
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Mood tags */}
+        <div>
+          <label
+            className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+            style={{ color: "#484848" }}
+          >
+            Mood
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {MOODS.map(m => (
+              <button
+                key={m}
+                onClick={() => toggleTag("moodTags", m)}
+                className="text-xs px-2.5 py-1 rounded-full transition-colors capitalize font-bold"
+                style={
+                  form.moodTags.includes(m)
+                    ? { background: "#ffdd73", color: "#624e00" }
+                    : { background: "#1f2937", color: "#ababab" }
+                }
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Game type tags */}
+        <div>
+          <label
+            className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+            style={{ color: "#484848" }}
+          >
+            Game Type
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {GAME_TYPES.map(g => (
+              <button
+                key={g}
+                onClick={() => toggleTag("gameTypeTags", g)}
+                className="text-xs px-2.5 py-1 rounded-full transition-colors capitalize font-bold"
+                style={
+                  form.gameTypeTags.includes(g)
+                    ? { background: "#ffdd73", color: "#624e00" }
+                    : { background: "#1f2937", color: "#ababab" }
+                }
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* BPM + Is Loop */}
+        <div className="flex items-center gap-4">
+          <div>
+            <label
+              className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+              style={{ color: "#484848" }}
+            >
+              BPM (optional)
+            </label>
+            <input
+              type="number" min={40} max={300}
+              value={form.bpm}
+              onChange={e => setForm(p => ({ ...p, bpm: e.target.value }))}
+              placeholder="120"
+              className="w-24 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              style={{ background: "#1f2937", color: "#ffffff", border: "none" }}
+              onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px #ffdd73")}
+              onBlur={e => (e.currentTarget.style.boxShadow = "none")}
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer mt-4">
+            <input
+              type="checkbox"
+              checked={form.isLoop}
+              onChange={e => setForm(p => ({ ...p, isLoop: e.target.checked }))}
+              className="w-4 h-4"
+              style={{ accentColor: "#ffdd73" }}
+            />
+            <span className="text-sm" style={{ color: "#ababab" }}>This is a loop</span>
+          </label>
+        </div>
+
+        {error && <p className="text-sm" style={{ color: "#ff7351" }}>{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={handleSubmit}
+            disabled={publishing}
+            className="flex-1 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+            style={{
+              background: "#ffdd73",
+              color: "#624e00",
+              boxShadow: "0px 0px 20px rgba(250,204,21,0.3)",
+            }}
+          >
+            {publishing ? "Publishing…" : "Publish"}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ background: "#1f2937", color: "#ababab" }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface LibraryItem {
   _id: string;
@@ -19,7 +278,9 @@ interface Collection {
   items: { refId: string; refModel: string; addedAt: string }[];
 }
 
-type FilterTab = "all" | "favorites" | "generations" | "uploads";
+type TypeFilter = "all" | "generation" | "upload";
+type SortBy = "newest" | "oldest" | "longest" | "shortest";
+type StatusFilter = "all" | "done" | "failed" | "processing";
 
 function formatDuration(seconds?: number): string {
   if (seconds == null) return "—";
@@ -37,12 +298,20 @@ function formatDate(iso: string): string {
 }
 
 export default function LibraryPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [favOnly, setFavOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQ, setSearchQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publishItem, setPublishItem] = useState<LibraryItem | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [collections, setCollections] = useState<Collection[]>([]);
   const [newColName, setNewColName] = useState("");
@@ -55,14 +324,28 @@ export default function LibraryPage() {
 
   const PAGE_LIMIT = 20;
 
-  async function fetchItems(tab: FilterTab, nextPage: number, append = false) {
+  function handleSearchChange(val: string) {
+    setSearchInput(val);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => setSearchQ(val.trim()), 400);
+  }
+
+  async function fetchItems(
+    type: TypeFilter,
+    fav: boolean,
+    q: string,
+    status: StatusFilter,
+    nextPage: number,
+    append = false
+  ) {
     setLoading(true);
     setError(null);
     try {
       const params: Record<string, string | number> = { page: nextPage, limit: PAGE_LIMIT };
-      if (tab === "favorites") params.favorites = "true";
-      if (tab === "generations") params.type = "generation";
-      if (tab === "uploads") params.type = "upload";
+      if (fav) params.favorites = "true";
+      if (type !== "all") params.type = type;
+      if (q) params.q = q;
+      if (status !== "all") params.status = status;
 
       const { data } = await api.get("/api/library", { params });
       const incoming: LibraryItem[] = data.items ?? data.data?.items ?? [];
@@ -89,8 +372,8 @@ export default function LibraryPage() {
   useEffect(() => {
     setPage(1);
     setItems([]);
-    fetchItems(activeTab, 1, false);
-  }, [activeTab]);
+    fetchItems(typeFilter, favOnly, searchQ, statusFilter, 1, false);
+  }, [typeFilter, favOnly, searchQ, statusFilter]);
 
   useEffect(() => {
     fetchCollections();
@@ -109,6 +392,13 @@ export default function LibraryPage() {
     }
   }
 
+  function handleOpenInStudio(item: LibraryItem) {
+    if (!item.audioUrl) return;
+    const name = item.originalName ?? (item.prompt?.slice(0, 40) ?? "Track");
+    sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
+    navigate("/studio");
+  }
+
   async function handleDelete(item: LibraryItem) {
     if (!confirm("Bu öğeyi silmek istediğinizden emin misiniz?")) return;
     try {
@@ -123,7 +413,7 @@ export default function LibraryPage() {
   async function handleLoadMore() {
     const next = page + 1;
     setPage(next);
-    await fetchItems(activeTab, next, true);
+    await fetchItems(typeFilter, favOnly, searchQ, statusFilter, next, true);
   }
 
   async function handleCreateCollection() {
@@ -159,9 +449,8 @@ export default function LibraryPage() {
       });
       setUploadFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      // Refresh list
       setPage(1);
-      await fetchItems(activeTab, 1, false);
+      await fetchItems(typeFilter, favOnly, searchQ, statusFilter, 1, false);
     } catch (err: any) {
       const msg =
         err?.response?.data?.error ?? "Yükleme başarısız.";
@@ -171,82 +460,249 @@ export default function LibraryPage() {
     }
   }
 
-  const tabs: { key: FilterTab; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "favorites", label: "Favorites" },
-    { key: "generations", label: "Generations" },
-    { key: "uploads", label: "Uploads" },
-  ];
-
   const hasMore = items.length < total;
 
+  const sortedItems = [...items]
+    .filter(item => typeFilter === "all" || item._type === typeFilter)
+    .filter(item => statusFilter === "all" || item.status === statusFilter)
+    .sort((a, b) => {
+    if (sortBy === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    if (sortBy === "longest") return (b.duration ?? 0) - (a.duration ?? 0);
+    if (sortBy === "shortest") return (a.duration ?? 0) - (b.duration ?? 0);
+    return 0;
+  });
+
+
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
-      <h1 className="text-2xl font-bold mb-6">Library</h1>
+    <div className="min-h-screen p-6" style={{ background: "#0e0e0e", color: "#ffffff" }}>
+      {publishItem && (
+        <PublishModal
+          item={publishItem}
+          onClose={() => setPublishItem(null)}
+          onPublished={() => { setPublishItem(null); setPage(1); fetchItems(typeFilter, favOnly, searchQ, statusFilter, 1, false); }}
+        />
+      )}
+
+      {/* Page header */}
+      <div className="mb-8">
+        <p
+          className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+          style={{ color: "#484848" }}
+        >
+          SONARALABS / LIBRARY
+        </p>
+        <h1
+          className="text-2xl font-bold uppercase"
+          style={{ color: "#ffffff", letterSpacing: "-0.01em" }}
+        >
+          Library
+        </h1>
+      </div>
 
       <div className="flex gap-6 flex-col lg:flex-row">
         {/* Main content */}
         <div className="flex-1 min-w-0">
-          {/* Filter tabs */}
-          <div className="flex gap-1 mb-5 border-b border-gray-800 pb-0">
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
-                  activeTab === t.key
-                    ? "bg-indigo-600 text-white"
-                    : "text-gray-400 hover:text-gray-200"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            {/* Search input */}
+            <div
+              className="flex items-center gap-2 rounded-lg px-3 py-2 flex-1 min-w-[180px]"
+              style={{ background: "#131313" }}
+            >
+              <span className="material-symbols-outlined text-base shrink-0" style={{ color: "#484848" }}>
+                search
+              </span>
+              <input
+                type="text"
+                value={searchInput}
+                onChange={e => handleSearchChange(e.target.value)}
+                placeholder="Search by name or prompt…"
+                className="flex-1 text-sm bg-transparent focus:outline-none"
+                style={{ color: "#ffffff" }}
+              />
+              {searchInput && (
+                <button
+                  onClick={() => { setSearchInput(""); setSearchQ(""); }}
+                  className="shrink-0"
+                  style={{ color: "#484848" }}
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              )}
+            </div>
+
+            {/* Type chips */}
+            <div className="flex gap-1.5">
+              {([ ["all", "All"], ["generation", "Generated"], ["upload", "Uploaded"] ] as [TypeFilter, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setTypeFilter(key)}
+                  className="text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+                  style={
+                    typeFilter === key
+                      ? { background: "#ffdd73", color: "#624e00" }
+                      : { background: "#131313", color: "#484848" }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Favorites toggle */}
+            <button
+              onClick={() => setFavOnly(p => !p)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
+              style={
+                favOnly
+                  ? { background: "rgba(255,115,81,0.15)", color: "#ff7351" }
+                  : { background: "#131313", color: "#484848" }
+              }
+            >
+              <span className="material-symbols-outlined text-base">
+                {favOnly ? "favorite" : "favorite"}
+              </span>
+              Favorites
+            </button>
+          </div>
+
+          {/* Second filter row — sort + status */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            {/* Sort chips */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "#484848" }}>
+                Sort
+              </span>
+              {([
+                ["newest", "Newest"],
+                ["oldest", "Oldest"],
+                ["longest", "Longest"],
+                ["shortest", "Shortest"],
+              ] as [SortBy, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setSortBy(key)}
+                  className="text-xs px-2.5 py-1 rounded-full font-bold transition-colors"
+                  style={
+                    sortBy === key
+                      ? { background: "#262626", color: "#ffffff" }
+                      : { background: "#131313", color: "#484848" }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div className="w-px h-4 shrink-0" style={{ background: "#262626" }} />
+
+            {/* Status chips */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "#484848" }}>
+                Status
+              </span>
+              {([
+                ["all", "All"],
+                ["done", "Done"],
+                ["processing", "Processing"],
+                ["failed", "Failed"],
+              ] as [StatusFilter, string][]).map(([key, label]) => {
+                const activeColors: Record<string, { bg: string; text: string }> = {
+                  done: { bg: "rgba(110,201,110,0.15)", text: "#6ec96e" },
+                  processing: { bg: "rgba(255,221,115,0.15)", text: "#ffdd73" },
+                  failed: { bg: "rgba(255,115,81,0.15)", text: "#ff7351" },
+                  all: { bg: "#262626", text: "#ffffff" },
+                };
+                const isActive = statusFilter === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter(key)}
+                    className="text-xs px-2.5 py-1 rounded-full font-bold transition-colors"
+                    style={
+                      isActive
+                        ? { background: activeColors[key].bg, color: activeColors[key].text }
+                        : { background: "#131313", color: "#484848" }
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Upload area */}
-          <div className="mb-5 bg-gray-900 border border-gray-800 rounded-lg p-4 flex flex-wrap items-center gap-3">
-            <label className="text-sm text-gray-400 font-medium">Upload audio:</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".wav,.mp3,.ogg"
-              onChange={handleFileChange}
-              className="text-sm text-gray-300 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600"
-            />
-            {uploadFile && (
-              <span className="text-xs text-gray-400">{uploadFile.name}</span>
-            )}
-            <button
-              onClick={handleUpload}
-              disabled={!uploadFile || uploading}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded text-sm font-medium transition-colors"
+          <div
+            className="mb-6 rounded-lg p-5"
+            style={{ background: "#131313" }}
+          >
+            <p
+              className="text-[10px] font-bold tracking-[0.25em] uppercase mb-3"
+              style={{ color: "#484848" }}
             >
-              {uploading ? "Uploading..." : "Upload"}
-            </button>
-            {uploadError && (
-              <span className="text-xs text-red-400">{uploadError}</span>
-            )}
+              Upload Audio
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <div
+                className="flex items-center gap-2 rounded-lg px-4 py-2.5 cursor-pointer transition-colors"
+                style={{ background: "#1f2937" }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <span className="material-symbols-outlined text-base" style={{ color: "#ababab" }}>
+                  upload_file
+                </span>
+                <span className="text-sm" style={{ color: "#ababab" }}>
+                  {uploadFile ? uploadFile.name : "Choose file…"}
+                </span>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".wav,.mp3,.ogg"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <button
+                onClick={handleUpload}
+                disabled={!uploadFile || uploading}
+                className="px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40"
+                style={{
+                  background: "#ffdd73",
+                  color: "#624e00",
+                  boxShadow: "0px 0px 20px rgba(250,204,21,0.3)",
+                }}
+              >
+                {uploading ? "Uploading..." : "Upload"}
+              </button>
+              {uploadError && (
+                <span className="text-xs" style={{ color: "#ff7351" }}>{uploadError}</span>
+              )}
+            </div>
           </div>
 
           {/* Error */}
           {error && (
-            <p className="text-red-400 text-sm mb-4">{error}</p>
+            <p className="text-sm mb-4" style={{ color: "#ff7351" }}>{error}</p>
           )}
 
           {/* Items list */}
           {loading && items.length === 0 ? (
-            <div className="text-gray-500 py-16 text-center">Loading...</div>
+            <div className="py-16 text-center text-sm" style={{ color: "#484848" }}>Loading...</div>
           ) : items.length === 0 ? (
-            <div className="text-gray-500 py-16 text-center">No items found.</div>
+            <div className="py-16 text-center text-sm" style={{ color: "#484848" }}>No items found.</div>
           ) : (
             <ul className="space-y-2">
-              {items.map(item => (
+              {sortedItems.map(item => (
                 <LibraryItemCard
                   key={item._id}
                   item={item}
                   onFavoriteToggle={handleFavoriteToggle}
                   onDelete={handleDelete}
+                  onOpenInStudio={handleOpenInStudio}
+                  onPublish={item.audioUrl && item.status === "done" ? () => setPublishItem(item) : undefined}
                 />
               ))}
             </ul>
@@ -258,7 +714,8 @@ export default function LibraryPage() {
               <button
                 onClick={handleLoadMore}
                 disabled={loading}
-                className="px-5 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-sm font-medium transition-colors"
+                className="px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
+                style={{ background: "#1f2937", color: "#ababab" }}
               >
                 {loading ? "Loading..." : `Load More (${items.length}/${total})`}
               </button>
@@ -268,8 +725,13 @@ export default function LibraryPage() {
 
         {/* Right panel — Collections */}
         <aside className="w-full lg:w-72 shrink-0">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <h2 className="text-base font-semibold mb-3 text-gray-100">Collections</h2>
+          <div className="rounded-lg p-4" style={{ background: "#131313" }}>
+            <p
+              className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
+              style={{ color: "#484848" }}
+            >
+              Collections
+            </p>
 
             {/* Create collection */}
             <div className="flex gap-2 mb-4">
@@ -279,12 +741,21 @@ export default function LibraryPage() {
                 onChange={e => setNewColName(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleCreateCollection()}
                 placeholder="New collection name..."
-                className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none"
+                style={{
+                  background: "#0e0e0e",
+                  color: "#ffffff",
+                  border: "none",
+                  borderBottom: "1px solid #262626",
+                }}
+                onFocus={e => (e.currentTarget.style.borderBottom = "1px solid #ffdd73")}
+                onBlur={e => (e.currentTarget.style.borderBottom = "1px solid #262626")}
               />
               <button
                 onClick={handleCreateCollection}
                 disabled={!newColName.trim() || colLoading}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded text-sm font-medium transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-40"
+                style={{ background: "#ffdd73", color: "#624e00" }}
               >
                 +
               </button>
@@ -292,17 +763,18 @@ export default function LibraryPage() {
 
             {/* Collection list */}
             {collections.length === 0 ? (
-              <p className="text-gray-500 text-sm">No collections yet.</p>
+              <p className="text-sm" style={{ color: "#484848" }}>No collections yet.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-1.5">
                 {collections.map(col => (
                   <li
                     key={col._id}
-                    className="flex items-center justify-between bg-gray-800 rounded px-3 py-2"
+                    className="flex items-center justify-between rounded px-3 py-2"
+                    style={{ background: "#1f2937" }}
                   >
-                    <span className="text-sm text-gray-200 truncate">{col.name}</span>
-                    <span className="text-xs text-gray-500 ml-2 shrink-0">
-                      {col.items?.length ?? 0} items
+                    <span className="text-sm truncate" style={{ color: "#ffffff" }}>{col.name}</span>
+                    <span className="text-[9px] font-bold tracking-[0.15em] uppercase ml-2 shrink-0" style={{ color: "#484848" }}>
+                      {col.items?.length ?? 0}
                     </span>
                   </li>
                 ))}
@@ -319,75 +791,127 @@ interface LibraryItemCardProps {
   item: LibraryItem;
   onFavoriteToggle: (item: LibraryItem) => void;
   onDelete: (item: LibraryItem) => void;
+  onOpenInStudio: (item: LibraryItem) => void;
+  onPublish?: () => void;
 }
 
-function LibraryItemCard({ item, onFavoriteToggle, onDelete }: LibraryItemCardProps) {
+function LibraryItemCard({ item, onFavoriteToggle, onDelete, onOpenInStudio, onPublish }: LibraryItemCardProps) {
+  const [hovered, setHovered] = useState(false);
+
   const label =
     item.originalName ??
     (item.prompt ? item.prompt.slice(0, 60) + (item.prompt.length > 60 ? "…" : "") : "Untitled");
 
-  const statusColor: Record<string, string> = {
-    done: "bg-green-700 text-green-100",
-    failed: "bg-red-800 text-red-100",
-    processing: "bg-yellow-700 text-yellow-100",
-    pending: "bg-gray-700 text-gray-200",
+  const statusDotColor: Record<string, string> = {
+    done: "#6ec96e",
+    failed: "#ff7351",
+    processing: "#ffdd73",
+    pending: "#484848",
   };
 
   return (
-    <li className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 hover:border-gray-700 transition-colors">
+    <li
+      className="flex items-center gap-3 rounded-lg px-4 py-3 transition-colors cursor-default"
+      style={{ background: hovered ? "#1f2937" : "#131313" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       {/* Type badge */}
       <span
-        className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${
+        className="text-[9px] font-bold tracking-[0.15em] uppercase px-2 py-0.5 rounded shrink-0"
+        style={
           item._type === "generation"
-            ? "bg-indigo-800 text-indigo-200"
-            : "bg-teal-800 text-teal-200"
-        }`}
+            ? { background: "rgba(255,221,115,0.1)", color: "#ffdd73" }
+            : { background: "rgba(100,200,180,0.1)", color: "#64c8b4" }
+        }
       >
         {item._type === "generation" ? "GEN" : "UP"}
       </span>
 
       {/* Name / prompt */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-100 truncate">{label}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{formatDate(item.createdAt)}</p>
+        <p className="text-sm truncate" style={{ color: "#ffffff" }}>{label}</p>
+        <p className="text-xs mt-0.5" style={{ color: "#484848" }}>{formatDate(item.createdAt)}</p>
       </div>
 
       {/* Duration */}
       {item.duration != null && (
-        <span className="text-xs text-gray-400 shrink-0 w-10 text-right">
+        <span className="text-xs shrink-0 w-10 text-right" style={{ color: "#484848" }}>
           {formatDuration(item.duration)}
         </span>
       )}
 
-      {/* Status badge */}
+      {/* Status indicator */}
       {item.status && (
-        <span
-          className={`text-xs px-2 py-0.5 rounded shrink-0 ${
-            statusColor[item.status] ?? "bg-gray-700 text-gray-300"
-          }`}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{
+              background: statusDotColor[item.status] ?? "#484848",
+              ...(item.status === "processing" ? { animation: "pulse 1.5s infinite" } : {}),
+            }}
+          />
+          <span
+            className="text-[9px] font-bold tracking-[0.15em] uppercase"
+            style={{ color: statusDotColor[item.status] ?? "#484848" }}
+          >
+            {item.status}
+          </span>
+        </div>
+      )}
+
+      {/* Publish to community */}
+      {onPublish && (
+        <button
+          onClick={onPublish}
+          className="shrink-0 transition-colors"
+          title="Publish to Community"
+          style={{ color: "#484848" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#6ec96e")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#484848")}
         >
-          {item.status}
-        </span>
+          <span className="material-symbols-outlined text-[18px]">publish</span>
+        </button>
+      )}
+
+      {/* Open in DAW */}
+      {item.audioUrl && (
+        <button
+          onClick={() => onOpenInStudio(item)}
+          className="shrink-0 transition-colors"
+          title="Open in DAW Studio"
+          style={{ color: "#484848" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#ffdd73")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#484848")}
+        >
+          <span className="material-symbols-outlined text-[18px]">piano</span>
+        </button>
       )}
 
       {/* Favorite */}
       <button
         onClick={() => onFavoriteToggle(item)}
-        className={`shrink-0 text-lg leading-none transition-colors ${
-          item.isFavorited ? "text-pink-400" : "text-gray-600 hover:text-pink-400"
-        }`}
+        className="shrink-0 transition-colors"
         title={item.isFavorited ? "Remove from favorites" : "Add to favorites"}
+        style={{ color: item.isFavorited ? "#ff7351" : "#484848" }}
+        onMouseEnter={e => !item.isFavorited && (e.currentTarget.style.color = "#ff7351")}
+        onMouseLeave={e => !item.isFavorited && (e.currentTarget.style.color = "#484848")}
       >
-        {item.isFavorited ? "♥" : "♡"}
+        <span className="material-symbols-outlined text-[18px]">
+          {item.isFavorited ? "favorite" : "favorite"}
+        </span>
       </button>
 
       {/* Delete */}
       <button
         onClick={() => onDelete(item)}
-        className="shrink-0 text-gray-600 hover:text-red-400 transition-colors text-sm"
+        className="shrink-0 transition-colors"
         title="Delete"
+        style={{ color: "#484848" }}
+        onMouseEnter={e => (e.currentTarget.style.color = "#ff7351")}
+        onMouseLeave={e => (e.currentTarget.style.color = "#484848")}
       >
-        ✕
+        <span className="material-symbols-outlined text-[18px]">delete</span>
       </button>
     </li>
   );
