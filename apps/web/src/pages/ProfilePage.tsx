@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { stripTags } from "../lib/sanitize";
 import { useAuthStore } from "../store/useAuthStore";
 import { formatDuration, timeAgo } from "../lib/format";
 
@@ -132,8 +133,8 @@ export default function ProfilePage() {
         await api.post("/api/profile/me/avatar", fd, { headers: { "Content-Type": "multipart/form-data" } });
       }
       const { data } = await api.put("/api/profile/me", {
-        displayName: editForm.displayName || null,
-        bio: editForm.bio || null,
+        displayName: editForm.displayName ? stripTags(editForm.displayName) : null,
+        bio: editForm.bio ? stripTags(editForm.bio) : null,
       });
       setProfile(data.data);
       setEditing(false);

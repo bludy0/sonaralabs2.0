@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../../lib/api";
+import { stripTags } from "../../lib/sanitize";
 import type { LibraryItem } from "./LibraryTypes";
 
 const GENRES     = ["ambient", "action", "puzzle", "horror", "platformer"];
@@ -42,13 +43,14 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
   }
 
   async function handleSubmit() {
-    if (!form.title.trim()) { setError("Title is required"); return; }
+    const cleanTitle = stripTags(form.title.trim())
+    if (!cleanTitle) { setError("Title is required"); return; }
     if (!item.audioUrl) { setError("No audio URL"); return; }
     setPublishing(true);
     setError(null);
     try {
       await api.post("/api/social/tracks", {
-        title: form.title.trim(),
+        title: cleanTitle,
         audioUrl: item.audioUrl,
         durationSec: item.duration ? Math.round(item.duration) : 0,
         bpm: form.bpm ? parseInt(form.bpm) : undefined,

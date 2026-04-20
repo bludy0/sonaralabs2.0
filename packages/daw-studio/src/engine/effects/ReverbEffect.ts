@@ -5,7 +5,7 @@ export class ReverbEffect {
   input: GainNode
   output: GainNode
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     this.input = ctx.createGain()
     this.output = ctx.createGain()
     this.dryGain = ctx.createGain()
@@ -24,7 +24,7 @@ export class ReverbEffect {
     this.setRoom(0.3, ctx)
   }
 
-  setRoom(size: number, ctx: AudioContext) {
+  setRoom(size: number, ctx: BaseAudioContext) {
     const length = ctx.sampleRate * (0.5 + size * 3)
     const ir = ctx.createBuffer(2, length, ctx.sampleRate)
     for (let ch = 0; ch < 2; ch++) {

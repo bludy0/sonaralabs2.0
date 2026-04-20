@@ -6,7 +6,7 @@ export class EQEffect {
   input: BiquadFilterNode
   output: BiquadFilterNode
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     this.low = ctx.createBiquadFilter()
     this.low.type = 'lowshelf'
     this.low.frequency.value = 200

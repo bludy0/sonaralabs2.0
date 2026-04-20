@@ -6,6 +6,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useGenerationSSE } from "../hooks/useGenerationSSE";
 import AudioEditor from "../components/AudioEditor";
 import { api } from "../lib/api";
+import { stripTags } from "../lib/sanitize";
 import type { MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent } from "@sonaralabs/types";
 import { MUSIC_CREDIT_COST as CREDIT_COST } from "@sonaralabs/types";
 import { GenerationCard } from "../components/generation/GenerationCard";
@@ -108,9 +109,10 @@ export default function GeneratePage() {
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    if (!prompt.trim()) { setFormError("Please enter a prompt."); return; }
+    const cleanPrompt = stripTags(prompt.trim())
+    if (!cleanPrompt) { setFormError("Please enter a prompt."); return; }
     try {
-      await generate({ prompt: prompt.trim(), provider, style, mood, duration });
+      await generate({ prompt: cleanPrompt, provider, style, mood, duration });
       updateCredit(-creditCost);
       setPrompt("");
     } catch (err) {
@@ -123,14 +125,15 @@ export default function GeneratePage() {
   async function handleGenerateSFX(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    if (!sfxPrompt.trim()) { setFormError("Please enter a prompt."); return; }
+    const cleanSfxPrompt = stripTags(sfxPrompt.trim())
+    if (!cleanSfxPrompt) { setFormError("Please enter a prompt."); return; }
     const durSec = sfxDuration !== "" ? Number(sfxDuration) : undefined;
     if (durSec !== undefined && (durSec < 0.5 || durSec > 22)) {
       setFormError("Duration must be between 0.5 and 22 seconds.");
       return;
     }
     try {
-      await generateSFX({ prompt: sfxPrompt.trim(), durationSeconds: durSec });
+      await generateSFX({ prompt: cleanSfxPrompt, durationSeconds: durSec });
       updateCredit(-1);
       setSfxPrompt("");
       setSfxDuration("");

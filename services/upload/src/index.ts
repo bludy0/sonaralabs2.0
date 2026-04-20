@@ -6,6 +6,8 @@ import multer from "multer";
 import * as Minio from "minio";
 import path from "path";
 import crypto from "crypto";
+import fs from "fs";
+import os from "os";
 import { InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
@@ -50,11 +52,14 @@ const uploadSchema = new mongoose.Schema({
 
 const Upload = mongoose.model("Upload", uploadSchema);
 
-// ── MULTER (memory storage — MinIO'ya stream edeceğiz) ───────────────────────
+// ── MULTER (disk storage — heap'e yüklemez, MinIO'ya stream edilir) ──────────
 const ALLOWED_MIMES = ["audio/wav", "audio/mpeg", "audio/ogg", "audio/mp3"];
 
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename:    (_req, _file, cb) => cb(null, `upload-${crypto.randomUUID()}`),
+  }),
   limits: { fileSize: MAX_SZ },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIMES.includes(file.mimetype)) cb(null, true);
@@ -97,12 +102,14 @@ app.post("/", upload.single("file"), async (req, res) => {
       });
     }
 
-    // MinIO'ya yükle
+    // MinIO'ya disk'ten stream et — heap'e yükleme
     const ext      = path.extname(req.file.originalname) || ".ogg";
     const key      = `uploads/${userId}/${crypto.randomUUID()}${ext}`;
     const metadata = { "Content-Type": req.file.mimetype };
 
-    await minioClient.putObject(MINIO_BUCKET, key, req.file.buffer, fileSize, metadata);
+    const fileStream = fs.createReadStream(req.file.path);
+    await minioClient.putObject(MINIO_BUCKET, key, fileStream, fileSize, metadata);
+    fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
     const audioUrl = `http://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET}/${key}`;
 
     const doc = await Upload.create({
