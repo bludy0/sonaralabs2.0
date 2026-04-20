@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema({
   email:        { type: String, required: true, unique: true, lowercase: true },
   passwordHash: { type: String, required: true, select: false },
   role:         { type: String, enum: ["user", "admin"], default: "user" },
-  creditBalance:{ type: Number, default: 100 },
+  creditBalance:{ type: Number, default: 0 },
   storageUsed:  { type: Number, default: 0 },
   preferences:  { accentColor: { type: String, default: "#0F3460" } },
 }, { timestamps: true });
@@ -100,8 +100,9 @@ function setAccessCookie(res: express.Response, token: string) {
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password || password.length < 8) {
-      return res.status(400).json({ success: false, error: "Invalid email or password (min 8 chars)" });
+    const strongPassword = /^(?=.*[A-Z])(?=.*[0-9]).{8,}$/;
+    if (!email || !password || !strongPassword.test(password)) {
+      return res.status(400).json({ success: false, error: "Password must be at least 8 characters with an uppercase letter and a number" });
     }
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ success: false, error: "Email already registered" });
@@ -260,6 +261,33 @@ app.get("/me", async (req, res) => {
   }
 });
 
+// PATCH /me/preferences — accent color vb. kullanıcı tercihleri
+app.patch("/me/preferences", async (req, res) => {
+  try {
+    const internalToken = req.headers["x-internal-token"] as string;
+    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
+
+    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+
+    const { accentColor } = req.body;
+    const allowed = /^#[0-9a-fA-F]{6}$/.test(accentColor ?? "");
+    if (!allowed) {
+      return res.status(400).json({ success: false, error: "accentColor must be a valid hex color (e.g. #ff0000)" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      payload.sub,
+      { "preferences.accentColor": accentColor },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+    res.json({ success: true, data: { preferences: user.preferences } } as ApiResponse);
+  } catch {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
 // GET /internal/users/:id — Diğer servislerin kullandığı internal endpoint
 app.get("/internal/users/:id", async (req, res) => {
   try {
@@ -278,8 +306,13 @@ app.get("/internal/users/:id", async (req, res) => {
 // Health check
 app.get("/health", (_, res) => res.json({ status: "ok", service: "auth" }));
 
-// ── BOOTSTRAP ─────────────────────────────────────────────────────────────────
-mongoose.connect(MONGO_URI!).then(() => {
-  console.log("[auth] MongoDB connected");
-  app.listen(PORT, () => console.log(`[auth] Listening on :${PORT}`));
-}).catch(err => { console.error("[auth] MongoDB connection failed", err); process.exit(1); });
+// ── EXPORT (for testing) ──────────────────────────────────────────────────────
+export { app, User, RefreshToken };
+
+// ── BOOTSTRAP (skip when imported by tests) ───────────────────────────────────
+if (require.main === module) {
+  mongoose.connect(MONGO_URI!).then(() => {
+    console.log("[auth] MongoDB connected");
+    app.listen(PORT, () => console.log(`[auth] Listening on :${PORT}`));
+  }).catch(err => { console.error("[auth] MongoDB connection failed", err); process.exit(1); });
+}

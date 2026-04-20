@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { formatBytes, formatDate } from "../lib/format";
 
 interface PlatformStats {
   totalUsers?: number;
@@ -26,18 +27,6 @@ interface AdminUser {
   createdAt: string;
 }
 
-function formatBytes(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(1)} MB`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("tr-TR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 interface StatCardProps {
   label: string;
@@ -46,9 +35,14 @@ interface StatCardProps {
 
 function StatCard({ label, value }: StatCardProps) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-bold text-gray-100">{value}</p>
+    <div className="rounded-lg p-5" style={{ background: "#131313" }}>
+      <p
+        className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+        style={{ color: "#484848" }}
+      >
+        {label}
+      </p>
+      <p className="text-2xl font-bold" style={{ color: "#ffffff" }}>{value}</p>
     </div>
   );
 }
@@ -139,18 +133,35 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
-      <h1 className="text-2xl font-bold mb-6">Admin Panel</h1>
+    <div className="min-h-screen p-6" style={{ background: "#0e0e0e", color: "#ffffff" }}>
+      {/* Page header */}
+      <div className="mb-8">
+        <p
+          className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
+          style={{ color: "#484848" }}
+        >
+          SONARALABS / ADMIN
+        </p>
+        <h1
+          className="text-2xl font-bold uppercase"
+          style={{ color: "#ffffff", letterSpacing: "-0.01em" }}
+        >
+          Admin Panel
+        </h1>
+      </div>
 
       {error && (
-        <div className="mb-5 bg-red-900/40 border border-red-700 rounded px-4 py-3 text-sm text-red-300">
+        <div
+          className="mb-5 rounded px-4 py-3 text-sm"
+          style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}
+        >
           {error}
         </div>
       )}
 
       {/* Stats cards */}
       {statsLoading ? (
-        <div className="text-gray-500 mb-8">Loading stats...</div>
+        <div className="mb-8 text-sm" style={{ color: "#484848" }}>Loading stats...</div>
       ) : stats ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard label="Total Users" value={stats.totalUsers ?? 0} />
@@ -160,121 +171,128 @@ export default function AdminPage() {
         </div>
       ) : null}
 
-      {/* Daily stats table */}
+      {/* Daily stats */}
       <section className="mb-8">
-        <h2 className="text-base font-semibold mb-3 text-gray-300">
+        <p
+          className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
+          style={{ color: "#484848" }}
+        >
           Daily Stats (last 30 days)
-        </h2>
+        </p>
         {daily.length === 0 ? (
-          <p className="text-gray-500 text-sm">No data.</p>
+          <p className="text-sm" style={{ color: "#484848" }}>No data.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400 text-left">
-                  <th className="py-2 pr-8 font-medium">Date</th>
-                  <th className="py-2 pr-8 font-medium text-right">Generations</th>
-                  <th className="py-2 font-medium text-right">Credits Spent</th>
-                </tr>
-              </thead>
-              <tbody>
-                {daily.map(row => (
-                  <tr
-                    key={row._id}
-                    className="border-b border-gray-800/50 hover:bg-gray-900 transition-colors"
-                  >
-                    <td className="py-2 pr-8 text-gray-300">{row._id}</td>
-                    <td className="py-2 pr-8 text-right text-gray-200">{row.count}</td>
-                    <td className="py-2 text-right text-gray-200">{row.credits}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-1.5">
+            {/* Header row */}
+            <div className="flex items-center gap-4 px-4 py-2">
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "#484848" }}>Date</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "#484848" }}>Generations</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "#484848" }}>Credits Spent</span>
+            </div>
+            {daily.map(row => (
+              <div
+                key={row._id}
+                className="flex items-center gap-4 rounded-lg px-4 py-3"
+                style={{ background: "#131313" }}
+              >
+                <span className="flex-1 text-sm" style={{ color: "#ababab" }}>{row._id}</span>
+                <span className="text-sm w-28 text-right shrink-0" style={{ color: "#ffffff" }}>{row.count}</span>
+                <span className="text-sm w-28 text-right shrink-0" style={{ color: "#ffffff" }}>{row.credits}</span>
+              </div>
+            ))}
           </div>
         )}
       </section>
 
       {/* Users table */}
       <section>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
-          <h2 className="text-base font-semibold text-gray-300">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <p
+            className="text-[10px] font-bold tracking-[0.25em] uppercase"
+            style={{ color: "#484848" }}
+          >
             Users{userTotal > 0 ? ` (${userTotal})` : ""}
-          </h2>
+          </p>
           <input
             type="text"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder="Search by email..."
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 w-64"
+            className="rounded-lg px-3 py-2 text-sm focus:outline-none w-64"
+            style={{
+              background: "#1f2937",
+              color: "#ffffff",
+              border: "none",
+            }}
+            onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px #ffdd73")}
+            onBlur={e => (e.currentTarget.style.boxShadow = "none")}
           />
         </div>
 
         {usersLoading ? (
-          <div className="text-gray-500 text-sm py-8 text-center">Loading users...</div>
+          <div className="text-sm py-8 text-center" style={{ color: "#484848" }}>Loading users...</div>
         ) : users.length === 0 ? (
-          <p className="text-gray-500 text-sm">No users found.</p>
+          <p className="text-sm" style={{ color: "#484848" }}>No users found.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400 text-left">
-                  <th className="py-2 pr-4 font-medium">Email</th>
-                  <th className="py-2 pr-4 font-medium">Role</th>
-                  <th className="py-2 pr-4 font-medium text-right">Credits</th>
-                  <th className="py-2 pr-4 font-medium text-right">Storage</th>
-                  <th className="py-2 pr-4 font-medium">Registered</th>
-                  <th className="py-2 font-medium">Change Role</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr
-                    key={u._id}
-                    className="border-b border-gray-800/50 hover:bg-gray-900 transition-colors"
+          <div className="space-y-1.5">
+            {/* Header row */}
+            <div className="flex items-center gap-4 px-4 py-2">
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "#484848" }}>Email</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "#484848" }}>Role</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "#484848" }}>Credits</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "#484848" }}>Storage</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 shrink-0" style={{ color: "#484848" }}>Registered</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 shrink-0" style={{ color: "#484848" }}>Change Role</span>
+            </div>
+            {users.map(u => (
+              <div
+                key={u._id}
+                className="flex items-center gap-4 rounded-lg px-4 py-3"
+                style={{ background: "#131313" }}
+              >
+                <span className="flex-1 text-sm truncate" style={{ color: "#ffffff" }}>
+                  {u.email}
+                </span>
+                <div className="w-16 shrink-0">
+                  <span
+                    className="text-[9px] font-bold tracking-[0.15em] uppercase px-2 py-0.5 rounded"
+                    style={
+                      u.role === "admin"
+                        ? { background: "rgba(255,221,115,0.1)", color: "#ffdd73" }
+                        : { background: "#1f2937", color: "#484848" }
+                    }
                   >
-                    <td className="py-2.5 pr-4 text-gray-200 max-w-[200px] truncate">
-                      {u.email}
-                    </td>
-                    <td className="py-2.5 pr-4">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded font-medium ${
-                          u.role === "admin"
-                            ? "bg-indigo-800 text-indigo-200"
-                            : "bg-gray-700 text-gray-300"
-                        }`}
-                      >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4 text-right text-gray-200">
-                      {u.creditBalance}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right text-gray-400">
-                      {formatBytes(u.storageUsed ?? 0)}
-                    </td>
-                    <td className="py-2.5 pr-4 text-gray-400">
-                      {formatDate(u.createdAt)}
-                    </td>
-                    <td className="py-2.5">
-                      <select
-                        value={u.role}
-                        disabled={roleUpdating === u._id}
-                        onChange={e =>
-                          handleRoleChange(u._id, e.target.value as "user" | "admin")
-                        }
-                        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                      >
-                        <option value="user">user</option>
-                        <option value="admin">admin</option>
-                      </select>
-                      {roleUpdating === u._id && (
-                        <span className="ml-2 text-xs text-gray-500">Saving...</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    {u.role}
+                  </span>
+                </div>
+                <span className="text-sm w-16 text-right shrink-0" style={{ color: "#ffffff" }}>
+                  {u.creditBalance}
+                </span>
+                <span className="text-sm w-20 text-right shrink-0" style={{ color: "#484848" }}>
+                  {formatBytes(u.storageUsed ?? 0)}
+                </span>
+                <span className="text-xs w-24 shrink-0" style={{ color: "#484848" }}>
+                  {formatDate(u.createdAt)}
+                </span>
+                <div className="w-28 shrink-0 flex items-center gap-2">
+                  <select
+                    value={u.role}
+                    disabled={roleUpdating === u._id}
+                    onChange={e =>
+                      handleRoleChange(u._id, e.target.value as "user" | "admin")
+                    }
+                    className="rounded-lg px-2 py-1 text-sm focus:outline-none disabled:opacity-50"
+                    style={{ background: "#1f2937", color: "#ababab", border: "none" }}
+                  >
+                    <option value="user">user</option>
+                    <option value="admin">admin</option>
+                  </select>
+                  {roleUpdating === u._id && (
+                    <span className="text-xs" style={{ color: "#484848" }}>Saving...</span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -284,17 +302,19 @@ export default function AdminPage() {
             <button
               onClick={() => setUserPage(p => Math.max(1, p - 1))}
               disabled={userPage === 1 || usersLoading}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-sm transition-colors"
+              className="px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-40"
+              style={{ background: "#1f2937", color: "#ababab" }}
             >
               Previous
             </button>
-            <span className="text-sm text-gray-400">
+            <span className="text-sm" style={{ color: "#484848" }}>
               Page {userPage} of {userPages}
             </span>
             <button
               onClick={() => setUserPage(p => Math.min(userPages, p + 1))}
               disabled={userPage === userPages || usersLoading}
-              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded text-sm transition-colors"
+              className="px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-40"
+              style={{ background: "#1f2937", color: "#ababab" }}
             >
               Next
             </button>

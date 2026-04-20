@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { DAWStudio } from "@sonaralabs/daw-studio";
+import { DAWStudio, useDAWStore } from "@sonaralabs/daw-studio";
 import type { ExportedTrack } from "@sonaralabs/daw-studio";
+import { formatDuration } from "../lib/format";
 
 interface LibraryItem {
   _id: string;
@@ -16,67 +17,206 @@ interface LibraryItem {
   status?: string;
 }
 
+interface SavedProjectMeta {
+  _id: string;
+  name: string;
+  updatedAt: string;
+  isPublic: boolean;
+  shareToken?: string;
+}
+
 type LibraryFilter = "all" | "generations" | "uploads";
 
-function formatDuration(seconds?: number): string {
-  if (seconds == null) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 export default function StudioPage() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<LibraryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<LibraryFilter>("all");
-  const [search, setSearch] = useState("");
-  const [initialTracks, setInitialTracks] = useState<{ name: string; audioUrl: string }[]>([]);
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const { token: shareToken_ } = useParams<{ token?: string }>();
+  const isReadOnly = Boolean(shareToken_);    // /studio/share/:token → read-only
+
+  // DAW store
+  const getSaveable  = useDAWStore(s => s.getSaveable);
+  const loadProject  = useDAWStore(s => s.loadProject);
+  const loadTracks   = useDAWStore(s => s.loadTracks);
+  const reset        = useDAWStore(s => s.reset);
+
+  // Library sidebar state
+  const [items, setItems]           = useState<LibraryItem[]>([]);
+  const [loadingLib, setLoadingLib] = useState(false);
+  const [filter, setFilter]         = useState<LibraryFilter>("all");
+  const [search, setSearch]         = useState("");
+  const [addedIds, setAddedIds]     = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  useEffect(() => {
-    fetchLibrary();
-  }, []);
+  // Project save/load state
+  const [projectName, setProjectName]   = useState("Untitled Project");
+  const [projectId, setProjectId]       = useState<string | null>(null);
+  const [saving, setSaving]             = useState(false);
+  const [saveLabel, setSaveLabel]       = useState<string | null>(null);
+  const [projects, setProjects]         = useState<SavedProjectMeta[]>([]);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [loadingProjects, setLoadingProjects]     = useState(false);
+  const [shareToken, setShareToken]     = useState<string | null>(null);
+  const [sharing, setSharing]           = useState(false);
+  const [copied, setCopied]             = useState(false);
+  const projectPickerRef = useRef<HTMLDivElement>(null);
 
-  async function fetchLibrary() {
-    setLoading(true);
-    try {
-      const params: Record<string, string | number> = { page: 1, limit: 100 };
-      const { data } = await api.get("/api/library", { params });
-      const all: LibraryItem[] = data.items ?? data.data?.items ?? [];
-      // Only show items that have an audioUrl (ready to use)
-      setItems(all.filter(i => i.audioUrl && (!i.status || i.status === "done")));
-    } catch {
-      // silently ignore — DAW still usable without library items
-    } finally {
-      setLoading(false);
+  // Initial tracks from sessionStorage (cross-page navigation)
+  const [initialTracks, setInitialTracks] = useState<{ name: string; audioUrl: string }[]>([]);
+
+  // ── Mount: sessionStorage preload OR share token load ────────────────────
+  useEffect(() => {
+    reset();
+
+    if (shareToken_) {
+      // Read-only share view — fetch project from public endpoint
+      api.get(`/api/projects/share/${shareToken_}`)
+        .then(({ data }) => {
+          const proj = data.data;
+          if (proj) {
+            loadProject({
+              name:         proj.name,
+              tracks:       proj.tracks ?? [],
+              bpm:          proj.bpm,
+              masterVolume: proj.masterVolume,
+              loopStart:    proj.loopStart,
+              loopEnd:      proj.loopEnd,
+              loopEnabled:  proj.loopEnabled,
+            });
+            setProjectName(proj.name);
+          }
+        })
+        .catch(() => { /* project not found / private */ });
+      return; // read-only: skip library load and sessionStorage
     }
+
+    // Normal mode: sessionStorage preload
+    const raw = sessionStorage.getItem("studio:preload");
+    if (raw) {
+      try {
+        const tracks = JSON.parse(raw) as { name: string; audioUrl: string }[];
+        if (tracks.length) setInitialTracks(tracks);
+      } catch { /* ignore */ }
+      sessionStorage.removeItem("studio:preload");
+    }
+
+    fetchLibrary();
+
+    function handleClickOutside(e: MouseEvent) {
+      if (projectPickerRef.current && !projectPickerRef.current.contains(e.target as Node)) {
+        setShowProjectPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [shareToken_]);
+
+  // ── Library ───────────────────────────────────────────────────────────────
+  async function fetchLibrary() {
+    setLoadingLib(true);
+    try {
+      const { data } = await api.get("/api/library", { params: { page: 1, limit: 100 } });
+      const all: LibraryItem[] = data.items ?? data.data?.items ?? [];
+      setItems(all.filter(i => i.audioUrl && (!i.status || i.status === "done")));
+    } catch { /* silently ignore */ }
+    finally { setLoadingLib(false); }
   }
 
   function addToDAW(item: LibraryItem) {
     if (!item.audioUrl || addedIds.has(item._id)) return;
-    const name =
-      item.originalName ??
-      (item.prompt ? item.prompt.slice(0, 40) : "Track");
-    setInitialTracks(prev => [...prev, { name, audioUrl: item.audioUrl! }]);
+    const name = item.originalName ?? (item.prompt?.slice(0, 40) ?? "Track");
+    loadTracks([{ name, audioUrl: item.audioUrl }]);
     setAddedIds(prev => new Set(prev).add(item._id));
   }
 
-  async function handleSave(tracks: ExportedTrack[]) {
-    if (!tracks.length) return;
-    // Export the first track as an upload back to the library
+  // ── Project save ──────────────────────────────────────────────────────────
+  async function handleSave() {
+    setSaving(true);
+    setSaveLabel(null);
     try {
-      // Navigate to library after save
-      navigate("/library");
+      const snapshot = getSaveable(projectName);
+      let res;
+      if (projectId) {
+        res = await api.put(`/api/projects/${projectId}`, snapshot);
+      } else {
+        res = await api.post("/api/projects", snapshot);
+        setProjectId(res.data.data._id);
+        setShareToken(res.data.data.shareToken ?? null);
+      }
+      setSaveLabel("Saved ✓");
+      setTimeout(() => setSaveLabel(null), 2000);
     } catch {
-      // ignore
+      setSaveLabel("Save failed ✗");
+      setTimeout(() => setSaveLabel(null), 3000);
+    } finally {
+      setSaving(false);
     }
   }
 
+  // ── Project load picker ───────────────────────────────────────────────────
+  async function handleOpenPicker() {
+    setShowProjectPicker(prev => !prev);
+    if (!showProjectPicker) {
+      setLoadingProjects(true);
+      try {
+        const { data } = await api.get("/api/projects");
+        setProjects(data.data ?? []);
+      } catch { /* ignore */ }
+      finally { setLoadingProjects(false); }
+    }
+  }
+
+  async function handleLoadProject(meta: SavedProjectMeta) {
+    try {
+      const { data } = await api.get(`/api/projects/${meta._id}`);
+      const proj = data.data;
+      reset();
+      loadProject({
+        name:         proj.name,
+        tracks:       proj.tracks ?? [],
+        bpm:          proj.bpm,
+        masterVolume: proj.masterVolume,
+        loopStart:    proj.loopStart,
+        loopEnd:      proj.loopEnd,
+        loopEnabled:  proj.loopEnabled,
+      });
+      setProjectName(proj.name);
+      setProjectId(proj._id);
+      setShareToken(proj.shareToken ?? null);
+      setAddedIds(new Set());
+      setInitialTracks([]); // DAW will read from store
+      setShowProjectPicker(false);
+    } catch { /* ignore */ }
+  }
+
+  // ── Share link ────────────────────────────────────────────────────────────
+  async function handleShare() {
+    if (!projectId) return;
+    setSharing(true);
+    try {
+      const { data } = await api.post(`/api/projects/${projectId}/share`);
+      const token = data.data?.shareToken ?? null;
+      setShareToken(token);
+      if (token) {
+        const url = `${window.location.origin}/studio/share/${token}`;
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
+    } catch { /* ignore */ }
+    finally { setSharing(false); }
+  }
+
+  async function handleSaveOnExport(tracks: ExportedTrack[]) {
+    if (!tracks.length) return;
+    navigate("/library");
+  }
+
+  // ── Filtered sidebar items ────────────────────────────────────────────────
   const filteredItems = items.filter(item => {
     if (filter === "generations" && item._type !== "generation") return false;
-    if (filter === "uploads" && item._type !== "upload") return false;
+    if (filter === "uploads"     && item._type !== "upload")     return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       const label = (item.originalName ?? item.prompt ?? "").toLowerCase();
@@ -87,50 +227,137 @@ export default function StudioPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden">
-      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 bg-gray-900 shrink-0">
+
+      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
+      <header className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 bg-gray-900 shrink-0">
         <button
           onClick={() => navigate(-1)}
-          className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
+          className="text-gray-400 hover:text-gray-200 text-sm transition-colors shrink-0"
           title="Back"
         >
-          ← Back
+          ←
         </button>
-        <span className="text-sm font-semibold text-gray-200 flex-1">DAW Studio</span>
-        <button
-          onClick={() => setSidebarOpen(prev => !prev)}
-          className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded border border-gray-700 transition-colors"
-        >
-          {sidebarOpen ? "Hide Library" : "Show Library"}
-        </button>
+
+        {/* Editable project name (read-only in share view) */}
+        {isReadOnly ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-sm font-semibold text-gray-200 truncate max-w-xs">{projectName}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/40 shrink-0">Read-only</span>
+          </div>
+        ) : (
+          <input
+            value={projectName}
+            onChange={e => setProjectName(e.target.value)}
+            onBlur={() => { if (!projectName.trim()) setProjectName("Untitled Project"); }}
+            className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-600 transition-colors max-w-xs"
+            maxLength={120}
+            title="Project name"
+          />
+        )}
+
+        {/* Save label */}
+        {saveLabel && (
+          <span className={`text-xs shrink-0 ${saveLabel.includes("✓") ? "text-green-400" : "text-red-400"}`}>
+            {saveLabel}
+          </span>
+        )}
+
+        {/* Open project picker — hidden in read-only */}
+        {!isReadOnly && <div className="relative" ref={projectPickerRef}>
+          <button
+            onClick={handleOpenPicker}
+            className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded border border-gray-700 transition-colors shrink-0"
+            title="Open project"
+          >
+            Open ▾
+          </button>
+
+          {showProjectPicker && (
+            <div className="absolute top-full left-0 mt-1 w-64 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+              <p className="text-xs text-gray-400 px-3 pt-2.5 pb-1 font-semibold uppercase tracking-wider">Saved Projects</p>
+              {loadingProjects ? (
+                <p className="text-xs text-gray-500 px-3 py-4 text-center">Loading…</p>
+              ) : projects.length === 0 ? (
+                <p className="text-xs text-gray-500 px-3 py-4 text-center">No saved projects</p>
+              ) : (
+                <ul className="max-h-64 overflow-y-auto py-1">
+                  {projects.map(p => (
+                    <li key={p._id}>
+                      <button
+                        onClick={() => handleLoadProject(p)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors flex items-center gap-2"
+                      >
+                        <span className="flex-1 text-sm text-gray-200 truncate">{p.name}</span>
+                        {p.isPublic && <span className="text-xs text-indigo-400 shrink-0">shared</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>}
+
+        {/* Save button — hidden in read-only */}
+        {!isReadOnly && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded text-white font-medium transition-colors shrink-0"
+          >
+            {saving ? "Saving…" : projectId ? "Save" : "Save Project"}
+          </button>
+        )}
+
+        {/* Share button (only after saving, hidden in read-only) */}
+        {!isReadOnly && projectId && (
+          <button
+            onClick={handleShare}
+            disabled={sharing}
+            title={shareToken ? "Copy share link" : "Generate share link"}
+            className={`text-xs px-2.5 py-1 rounded border transition-colors shrink-0 disabled:opacity-50 ${
+              shareToken
+                ? "border-green-600 text-green-400 hover:bg-green-900/30"
+                : "border-gray-700 text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            {copied ? "Copied!" : shareToken ? "🔗 Shared" : "Share"}
+          </button>
+        )}
+
+        {/* Library toggle — hidden in read-only */}
+        {!isReadOnly && (
+          <button
+            onClick={() => setSidebarOpen(prev => !prev)}
+            className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded border border-gray-700 transition-colors shrink-0"
+          >
+            {sidebarOpen ? "Hide Lib" : "Library"}
+          </button>
+        )}
       </header>
 
-      {/* ── Main content ────────────────────────────────────────────────────── */}
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Library sidebar ─────────────────────────────────────────────── */}
+
+        {/* ── Library sidebar ────────────────────────────────────────────────── */}
         {sidebarOpen && (
-          <aside className="w-64 shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-gray-800">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                Library
-              </h2>
+          <aside className="w-60 shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-gray-800 space-y-2">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Library</h2>
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search..."
+                placeholder="Search…"
                 className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500"
               />
-              {/* Filter tabs */}
-              <div className="flex gap-1 mt-2">
+              <div className="flex gap-1">
                 {(["all", "generations", "uploads"] as LibraryFilter[]).map(f => (
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
                     className={`flex-1 text-xs py-1 rounded transition-colors capitalize ${
-                      filter === f
-                        ? "bg-indigo-600 text-white"
-                        : "text-gray-500 hover:text-gray-300"
+                      filter === f ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-300"
                     }`}
                   >
                     {f === "all" ? "All" : f === "generations" ? "Gen" : "Up"}
@@ -140,8 +367,8 @@ export default function StudioPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto py-1">
-              {loading ? (
-                <p className="text-xs text-gray-500 text-center py-8">Loading...</p>
+              {loadingLib ? (
+                <p className="text-xs text-gray-500 text-center py-8">Loading…</p>
               ) : filteredItems.length === 0 ? (
                 <p className="text-xs text-gray-500 text-center py-8">No items</p>
               ) : (
@@ -164,12 +391,12 @@ export default function StudioPage() {
           </aside>
         )}
 
-        {/* ── DAW area ────────────────────────────────────────────────────── */}
+        {/* ── DAW area ───────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-hidden">
           <DAWStudio
             mode="embedded"
             initialTracks={initialTracks}
-            onSave={handleSave}
+            onSave={handleSaveOnExport}
           />
         </div>
       </div>
@@ -177,7 +404,7 @@ export default function StudioPage() {
   );
 }
 
-// ── Sidebar item ─────────────────────────────────────────────────────────────
+// ── Sidebar item ──────────────────────────────────────────────────────────────
 interface LibrarySidebarItemProps {
   item: LibraryItem;
   added: boolean;
@@ -191,22 +418,17 @@ function LibrarySidebarItem({ item, added, onAdd }: LibrarySidebarItemProps) {
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-800 group transition-colors">
-      {/* Type indicator */}
       <span
         className={`w-1.5 h-1.5 rounded-full shrink-0 ${
           item._type === "generation" ? "bg-indigo-500" : "bg-teal-500"
         }`}
       />
-
-      {/* Name + duration */}
       <div className="flex-1 min-w-0">
         <p className="text-xs text-gray-200 truncate leading-tight">{label}</p>
         {item.duration != null && (
           <p className="text-xs text-gray-600">{formatDuration(item.duration)}</p>
         )}
       </div>
-
-      {/* Add button */}
       <button
         onClick={() => onAdd(item)}
         disabled={added}

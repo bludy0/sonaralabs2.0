@@ -1,16 +1,17 @@
 // frontend/src/store/useGenerationStore.ts
 import { create } from "zustand";
 import { api } from "../lib/api";
-import { GenerationStatus, MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent } from "@sonaralabs/types";
+import { GenerationStatus, MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent, GenerationType } from "@sonaralabs/types";
 
 export interface GenerationItem {
   _id: string;
   jobId?: string;
+  type?: GenerationType;
   prompt: string;
-  provider: MusicProvider;
-  style: MusicStyle;
-  mood: MusicMood;
-  duration: GenerationDuration;
+  provider: string;         // MusicProvider | SFXProvider
+  style?: MusicStyle;
+  mood?: MusicMood;
+  duration?: number;
   status: GenerationStatus;
   audioUrl?: string;
   creditCost: number;
@@ -24,13 +25,16 @@ interface GenerationState {
   items: GenerationItem[];
   activeJobId: string | null;
   isGenerating: boolean;
-  // actions
   generate: (params: {
     prompt: string;
     provider: MusicProvider;
     style: MusicStyle;
     mood: MusicMood;
     duration: GenerationDuration;
+  }) => Promise<{ jobId: string; generationId: string }>;
+  generateSFX: (params: {
+    prompt: string;
+    durationSeconds?: number;
   }) => Promise<{ jobId: string; generationId: string }>;
   analyzeImage: (imageBase64: string, mimeType: string) => Promise<string>;
   retry: (generationId: string) => Promise<void>;
@@ -69,6 +73,26 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
     }
   },
 
+  generateSFX: async ({ prompt, durationSeconds }) => {
+    set({ isGenerating: true });
+    try {
+      const { data } = await api.post("/api/generate/sfx", { prompt, durationSeconds, provider: "elevenlabs" });
+      const { jobId, generationId, creditCost } = data.data;
+      const optimistic: GenerationItem = {
+        _id: generationId, jobId, type: "sfx",
+        prompt, provider: "elevenlabs",
+        status: "pending", creditCost,
+        isFavorited: false, isImageGeneration: false,
+        createdAt: new Date().toISOString(),
+      };
+      set(s => ({ items: [optimistic, ...s.items], activeJobId: jobId, isGenerating: false }));
+      return { jobId, generationId };
+    } catch (err) {
+      set({ isGenerating: false });
+      throw err;
+    }
+  },
+
   analyzeImage: async (imageBase64, mimeType) => {
     const { data } = await api.post("/api/generate/analyze-image", { imageBase64, mimeType });
     return data.data.prompt as string;
@@ -86,14 +110,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
   },
 
   handleSSEEvent: (event: SseStatusEvent) => {
-    set(s => ({
-      items: s.items.map(item =>
-        item.jobId === event.jobId
-          ? { ...item, status: event.status, audioUrl: event.audioUrl ?? item.audioUrl, failReason: event.failReason }
-          : item
-      ),
-      activeJobId: event.status === "done" || event.status === "failed" ? null : s.activeJobId,
-    }));
+    set(s => {
+      const idx = s.items.findIndex(i => i.jobId === event.jobId);
+      if (idx === -1) return s;
+      const newItems = [...s.items];
+      newItems[idx] = { ...newItems[idx], status: event.status, audioUrl: event.audioUrl ?? newItems[idx].audioUrl, failReason: event.failReason };
+      return {
+        items: newItems,
+        activeJobId: event.status === "done" || event.status === "failed" ? null : s.activeJobId,
+      };
+    });
   },
 
   fetchHistory: async (status) => {

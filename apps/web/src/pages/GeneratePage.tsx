@@ -1,177 +1,74 @@
-// frontend/src/pages/GeneratePage.tsx
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AxiosError } from "axios";
-import { useGenerationStore, GenerationItem } from "../store/useGenerationStore";
+import { useNavigate } from "react-router-dom";
+import { useGenerationStore } from "../store/useGenerationStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useGenerationSSE } from "../hooks/useGenerationSSE";
 import AudioEditor from "../components/AudioEditor";
+import { api } from "../lib/api";
 import type { MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent } from "@sonaralabs/types";
-
-// ── Credit cost table ─────────────────────────────────────────────────────────
-
-const CREDIT_COST: Record<string, Record<number, number>> = {
-  beatoven:  { 15: 3, 30: 5, 60: 8 },
-  lyria:     { 15: 2, 30: 3, 60: 5 },
-  stability: { 15: 2, 30: 3, 60: 5 },
-};
+import { MUSIC_CREDIT_COST as CREDIT_COST } from "@sonaralabs/types";
+import { GenerationCard } from "../components/generation/GenerationCard";
+import { SelectField } from "../components/SelectField";
+import type { GenerationItem } from "../store/useGenerationStore";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STYLES: MusicStyle[]         = ["ambient", "action", "puzzle", "horror", "platformer"];
-const MOODS:  MusicMood[]          = ["tense", "calm", "epic", "mysterious", "cheerful"];
+const STYLES: MusicStyle[]            = ["ambient", "action", "puzzle", "horror", "platformer"];
+const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
-const PROVIDERS: MusicProvider[]   = ["beatoven", "lyria"];
+const PROVIDERS: { value: MusicProvider; label: string }[] = [
+  { value: "beatoven",  label: "Beatoven" },
+  { value: "stability", label: "StableAudio" },
+  { value: "lyria",     label: "Lyria (soon)" },
+];
 
-const MAX_IMAGE_BYTES  = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGE_BYTES     = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
-type Tab = "prompt" | "image";
+type Mode = "music" | "sfx";
+type Tab  = "prompt" | "image";
 
-// ── Status badge ──────────────────────────────────────────────────────────────
+// ── Waveform bars helper ──────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: GenerationItem["status"] }) {
-  const colorMap: Record<GenerationItem["status"], string> = {
-    pending:    "bg-yellow-500/20 text-yellow-300 border-yellow-500/40",
-    processing: "bg-blue-500/20 text-blue-300 border-blue-500/40",
-    done:       "bg-green-500/20 text-green-300 border-green-500/40",
-    failed:     "bg-red-500/20 text-red-300 border-red-500/40",
-  };
-  return (
-    <span
-      data-testid="generation-status"
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${colorMap[status]}`}
-    >
-      {status === "processing" && (
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
-      )}
-      {status}
-    </span>
-  );
-}
-
-// ── Generation card ───────────────────────────────────────────────────────────
-
-interface GenerationCardProps {
-  item: GenerationItem;
-  onOpenEditor: (url: string) => void;
-  onRetry: (id: string) => void;
-}
-
-function GenerationCard({ item, onOpenEditor, onRetry }: GenerationCardProps) {
-  const [retrying, setRetrying] = useState(false);
-
-  async function handleRetry() {
-    setRetrying(true);
-    try {
-      await onRetry(item._id);
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  return (
-    <article className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3 hover:border-white/20 transition-colors">
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-white/90 line-clamp-2 flex-1 leading-relaxed">
-          {item.prompt}
-        </p>
-        <StatusBadge status={item.status} />
-      </div>
-
-      {/* Meta row */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
-        <span className="capitalize rounded bg-white/5 px-2 py-0.5">{item.provider}</span>
-        <span className="capitalize rounded bg-white/5 px-2 py-0.5">{item.style}</span>
-        <span className="capitalize rounded bg-white/5 px-2 py-0.5">{item.mood}</span>
-        <span className="rounded bg-white/5 px-2 py-0.5">{item.duration}s</span>
-        <span className="rounded bg-white/5 px-2 py-0.5">{item.creditCost} cr</span>
-        {item.isImageGeneration && (
-          <span className="rounded bg-purple-500/20 text-purple-300 px-2 py-0.5">from image</span>
-        )}
-      </div>
-
-      {/* Actions */}
-      {item.status === "done" && item.audioUrl && (
-        <button
-          onClick={() => onOpenEditor(item.audioUrl!)}
-          className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2 transition-colors"
-        >
-          Open in Editor
-        </button>
-      )}
-
-      {item.status === "failed" && (
-        <div className="space-y-2">
-          {item.failReason && (
-            <p className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1.5">
-              {item.failReason}
-            </p>
-          )}
-          <button
-            onClick={handleRetry}
-            disabled={retrying}
-            className="w-full rounded-lg border border-white/20 hover:border-white/40 text-white/70 hover:text-white text-sm font-medium py-2 transition-colors disabled:opacity-50"
-          >
-            {retrying ? "Retrying..." : "Retry"}
-          </button>
-        </div>
-      )}
-    </article>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function GeneratePage() {
-  // Stores
-  const { items, isGenerating, generate, analyzeImage, retry, handleSSEEvent, fetchHistory } =
+  const navigate = useNavigate();
+  const { items, isGenerating, generate, generateSFX, analyzeImage, retry, handleSSEEvent, fetchHistory } =
     useGenerationStore();
   const { user, updateCredit } = useAuthStore();
 
-  // Tab
-  const [tab, setTab] = useState<Tab>("prompt");
+  const [mode, setMode] = useState<Mode>("music");
+  const [tab, setTab]   = useState<Tab>("prompt");
 
-  // Shared form state
   const [prompt, setPrompt]     = useState("");
   const [style, setStyle]       = useState<MusicStyle>("ambient");
   const [mood, setMood]         = useState<MusicMood>("calm");
   const [duration, setDuration] = useState<GenerationDuration>(30);
-  const [provider, setProvider] = useState<MusicProvider>("lyria");
+  const [provider, setProvider] = useState<MusicProvider>("stability");
 
-  // Image tab state
-  const [imageFile, setImageFile]             = useState<File | null>(null);
+  const [sfxPrompt, setSfxPrompt]     = useState("");
+  const [sfxDuration, setSfxDuration] = useState<number | "">("");
+
+  const [imageFile, setImageFile]           = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing]         = useState(false);
-  const [imageError, setImageError]           = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing]       = useState(false);
+  const [imageError, setImageError]         = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Editor modal
   const [editorUrl, setEditorUrl] = useState<string | null>(null);
-
-  // Form error
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Computed credit cost
-  const creditCost = CREDIT_COST[provider][duration];
+  const creditCost = CREDIT_COST[provider]?.[duration] ?? 0;
 
-  // SSE
-  const onSSEStatus = useCallback(
-    (event: SseStatusEvent) => handleSSEEvent(event),
-    [handleSSEEvent]
-  );
+  const onSSEStatus = useCallback((event: SseStatusEvent) => handleSSEEvent(event), [handleSSEEvent]);
   useGenerationSSE({ onStatus: onSSEStatus });
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-  // Fetch history on mount
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  // ── Image handling ──────────────────────────────────────────────────────────
+  // ── Image handling ─────────────────────────────────────────────────────────
 
   function processFile(file: File) {
     setImageError(null);
-
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       setImageError("Only PNG, JPG and WEBP images are allowed.");
       return;
@@ -180,16 +77,11 @@ export default function GeneratePage() {
       setImageError("Image must be smaller than 10 MB.");
       return;
     }
-
     setImageFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setImagePreviewUrl(objectUrl);
-
+    setImagePreviewUrl(URL.createObjectURL(file));
     const reader = new FileReader();
     reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      // dataUrl format: "data:<mime>;base64,<data>"
-      const base64 = dataUrl.split(",")[1];
+      const base64 = (reader.result as string).split(",")[1];
       setIsAnalyzing(true);
       try {
         const generatedPrompt = await analyzeImage(base64, file.type);
@@ -203,21 +95,6 @@ export default function GeneratePage() {
     reader.readAsDataURL(file);
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
-  }
-
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (file) processFile(file);
-  }
-
-  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-  }
-
   function clearImage() {
     setImageFile(null);
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
@@ -226,334 +103,466 @@ export default function GeneratePage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // ── Generate submit ─────────────────────────────────────────────────────────
+  // ── Submit handlers ────────────────────────────────────────────────────────
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-
-    if (!prompt.trim()) {
-      setFormError("Please enter a prompt.");
-      return;
-    }
-
+    if (!prompt.trim()) { setFormError("Please enter a prompt."); return; }
     try {
       await generate({ prompt: prompt.trim(), provider, style, mood, duration });
       updateCredit(-creditCost);
       setPrompt("");
     } catch (err) {
-      const axiosErr = err as AxiosError<{ error?: string }>;
-      const msg =
-        axiosErr.response?.data?.error ??
-        (axiosErr.message || "Generation failed. Please try again.");
+      const msg = (err as AxiosError<{ error?: string }>).response?.data?.error
+        ?? (err as Error).message ?? "Generation failed.";
       setFormError(msg);
     }
   }
 
-  // ── Retry handler ───────────────────────────────────────────────────────────
-
-  async function handleRetry(generationId: string) {
-    const item = items.find((i) => i._id === generationId);
-    if (!item) return;
+  async function handleGenerateSFX(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    if (!sfxPrompt.trim()) { setFormError("Please enter a prompt."); return; }
+    const durSec = sfxDuration !== "" ? Number(sfxDuration) : undefined;
+    if (durSec !== undefined && (durSec < 0.5 || durSec > 22)) {
+      setFormError("Duration must be between 0.5 and 22 seconds.");
+      return;
+    }
     try {
-      await retry(generationId);
-      const retryCost = Math.ceil(CREDIT_COST[item.provider][item.duration] / 2);
-      updateCredit(-retryCost);
-    } catch {
-      // Card stays in failed state — no additional error handling needed
+      await generateSFX({ prompt: sfxPrompt.trim(), durationSeconds: durSec });
+      updateCredit(-1);
+      setSfxPrompt("");
+      setSfxDuration("");
+    } catch (err) {
+      const msg = (err as AxiosError<{ error?: string }>).response?.data?.error
+        ?? (err as Error).message ?? "SFX generation failed.";
+      setFormError(msg);
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  async function handleRetry(generationId: string) {
+    const item = items.find(i => i._id === generationId);
+    if (!item) return;
+    try {
+      await retry(generationId);
+      const retryCost = item.type === "sfx"
+        ? 1
+        : Math.ceil((CREDIT_COST[item.provider as MusicProvider]?.[item.duration ?? 30] ?? 5) / 2);
+      updateCredit(-retryCost);
+    } catch { /* card stays in failed state */ }
+  }
+
+  function handleOpenInStudio(item: GenerationItem) {
+    if (!item.audioUrl) return;
+    const name = item.prompt.slice(0, 40);
+    sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
+    navigate("/studio");
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#0f0f1a] text-white">
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-8">
+    <div className="flex h-full min-h-screen" style={{ background: "#0e0e0e", color: "#ffffff" }}>
 
-        {/* Page header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Generate Music</h1>
-            <p className="text-sm text-white/50 mt-1">
-              Create AI-powered game music loops in seconds.
-            </p>
-          </div>
+      {/* ── LEFT PANEL — Form ──────────────────────────────────────────────── */}
+      <div
+        className="w-[450px] shrink-0 flex flex-col border-r overflow-y-auto"
+        style={{ borderColor: "#1f2937", background: "#0e0e0e" }}
+      >
+        {/* Panel header */}
+        <div className="px-7 pt-8 pb-6">
+          <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "#ababab" }}>
+            SONARALABS / STUDIO
+          </p>
+          <h1
+            className="text-2xl font-bold uppercase leading-none"
+            style={{ letterSpacing: "-0.01em", color: "#ffffff" }}
+          >
+            Initialize<br />Generation_
+          </h1>
           {user && (
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm">
-              <span className="text-white/50">Credits: </span>
-              <span className="font-semibold text-indigo-300">{user.creditBalance}</span>
+            <div className="mt-3 flex items-center gap-2">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: "#ffdd73" }}
+              />
+              <span className="text-[10px] uppercase tracking-widest" style={{ color: "#ababab" }}>
+                {user.creditBalance} credits available
+              </span>
             </div>
           )}
         </div>
 
-        {/* Form card */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 space-y-6">
+        {/* Divider */}
+        <div className="mx-7 h-px mb-6" style={{ background: "#1f2937" }} />
 
-          {/* Tabs */}
-          <div className="flex gap-1 rounded-lg bg-white/5 p-1 w-fit">
-            {(["prompt", "image"] as Tab[]).map((t) => (
+        <div className="px-7 flex-1 space-y-6">
+
+          {/* Mode tabs — Music / SFX */}
+          <div
+            className="flex rounded-lg p-1"
+            style={{ background: "#131313" }}
+          >
+            {(["music", "sfx"] as Mode[]).map(m => (
               <button
-                key={t}
+                key={m}
                 type="button"
-                onClick={() => setTab(t)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                  tab === t
-                    ? "bg-indigo-600 text-white shadow"
-                    : "text-white/50 hover:text-white"
-                }`}
+                onClick={() => { setMode(m); setFormError(null); }}
+                className="flex-1 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all duration-100"
+                style={
+                  mode === m
+                    ? { background: "#ffdd73", color: "#624e00" }
+                    : { background: "transparent", color: "#484848" }
+                }
               >
-                From {t === "prompt" ? "Prompt" : "Image"}
+                {m === "music" ? "Music" : "SFX"}
               </button>
             ))}
           </div>
 
-          <form onSubmit={handleGenerate} className="space-y-5">
-
-            {/* Image upload zone — only visible in image tab */}
-            {tab === "image" && (
-              <div className="space-y-3">
-                {!imageFile ? (
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/5 cursor-pointer transition-colors h-40 text-center px-4"
-                    role="button"
-                    aria-label="Upload game screenshot"
+          {/* ── MUSIC FORM ── */}
+          {mode === "music" && (
+            <>
+              {/* Sub-tabs: prompt / image */}
+              <div className="flex gap-4 border-b" style={{ borderColor: "#1f2937" }}>
+                {(["prompt", "image"] as Tab[]).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                    className="pb-2.5 text-[11px] font-semibold uppercase tracking-wider transition-all duration-100"
+                    style={{
+                      color: tab === t ? "#ffdd73" : "#484848",
+                      borderBottom: tab === t ? "2px solid #ffdd73" : "2px solid transparent",
+                      marginBottom: -1,
+                    }}
                   >
-                    <svg
-                      className="w-8 h-8 text-white/30 mb-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                      />
-                    </svg>
-                    <p className="text-sm text-white/50">
-                      Drag & drop or{" "}
-                      <span className="text-indigo-400 underline">browse</span>
-                    </p>
-                    <p className="text-xs text-white/30 mt-1">PNG, JPG, WEBP — max 10 MB</p>
-                  </div>
-                ) : (
-                  <div className="relative rounded-xl overflow-hidden border border-white/10">
-                    <img
-                      src={imagePreviewUrl!}
-                      alt="Screenshot preview"
-                      className="w-full h-40 object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={clearImage}
-                      className="absolute top-2 right-2 rounded-full bg-black/60 text-white/70 hover:text-white w-7 h-7 flex items-center justify-center text-sm transition-colors"
-                      aria-label="Remove image"
-                    >
-                      &times;
-                    </button>
-                    {isAnalyzing && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="text-sm text-white animate-pulse">
-                          Analyzing image...
+                    From {t === "prompt" ? "Prompt" : "Image"}
+                  </button>
+                ))}
+              </div>
+
+              <form onSubmit={handleGenerate} className="space-y-5">
+
+                {/* Image upload zone */}
+                {tab === "image" && (
+                  <div className="space-y-3">
+                    {!imageFile ? (
+                      <div
+                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) processFile(f); }}
+                        onDragOver={e => e.preventDefault()}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed h-36 cursor-pointer transition-all duration-100 text-center px-4"
+                        style={{ borderColor: "#484848", background: "#131313" }}
+                        role="button"
+                        aria-label="Upload game screenshot"
+                      >
+                        <span className="material-symbols-outlined mb-2" style={{ fontSize: 28, color: "#484848" }}>
+                          image
                         </span>
+                        <p className="text-xs" style={{ color: "#484848" }}>
+                          Drag & drop or <span style={{ color: "#ffdd73" }}>browse</span>
+                        </p>
+                        <p className="text-[10px] mt-1" style={{ color: "#484848" }}>PNG, JPG, WEBP — max 10 MB</p>
                       </div>
+                    ) : (
+                      <div className="relative rounded-lg overflow-hidden border" style={{ borderColor: "#1f2937" }}>
+                        <img src={imagePreviewUrl!} alt="Screenshot preview" className="w-full h-36 object-cover" />
+                        <button
+                          type="button"
+                          onClick={clearImage}
+                          className="absolute top-2 right-2 rounded-full w-7 h-7 flex items-center justify-center text-sm transition-all duration-100"
+                          style={{ background: "rgba(0,0,0,0.7)", color: "#ababab" }}
+                        >
+                          &times;
+                        </button>
+                        {isAnalyzing && (
+                          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+                            <span className="text-xs tracking-widest uppercase animate-pulse" style={{ color: "#ffdd73" }}>
+                              Analyzing…
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); }}
+                      className="hidden"
+                    />
+                    {imageError && (
+                      <p className="text-[11px] rounded px-3 py-2" style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}>
+                        {imageError}
+                      </p>
                     )}
                   </div>
                 )}
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
+                {/* Prompt textarea */}
+                <div className="space-y-1.5">
+                  <label
+                    className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                    style={{ color: "#484848" }}
+                    htmlFor="prompt-input"
+                  >
+                    {tab === "image" ? "Generated Prompt (editable)" : "Prompt"}
+                  </label>
+                  <textarea
+                    id="prompt-input"
+                    data-testid="prompt-input"
+                    value={prompt}
+                    onChange={e => setPrompt(e.target.value)}
+                    placeholder={
+                      tab === "prompt"
+                        ? "e.g. A tense 8-bit dungeon theme with heavy drums…"
+                        : isAnalyzing
+                        ? "Analyzing image…"
+                        : "Upload an image to auto-generate a prompt, or type manually."
+                    }
+                    rows={4}
+                    className="w-full rounded-lg px-4 py-3 text-sm resize-none outline-none transition-all duration-100"
+                    style={{
+                      background: "#131313",
+                      color: "#ffffff",
+                      border: "1px solid #1f2937",
+                    }}
+                    onFocus={e => (e.currentTarget.style.borderColor = "#ffdd73")}
+                    onBlur={e => (e.currentTarget.style.borderColor = "#1f2937")}
+                  />
+                </div>
 
-                {imageError && (
-                  <p className="text-sm text-red-400 bg-red-500/10 rounded px-3 py-2">
-                    {imageError}
+                {/* Parameter selects — 2×2 grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <SelectField
+                    id="style-select"
+                    label="Style"
+                    value={style}
+                    onChange={v => setStyle(v as MusicStyle)}
+                    options={STYLES.map(s => ({ value: s, label: s }))}
+                  />
+                  <SelectField
+                    id="mood-select"
+                    label="Mood"
+                    value={mood}
+                    onChange={v => setMood(v as MusicMood)}
+                    options={MOODS.map(m => ({ value: m, label: m }))}
+                  />
+                  <SelectField
+                    id="duration-select"
+                    label="Duration"
+                    value={String(duration)}
+                    onChange={v => setDuration(Number(v) as GenerationDuration)}
+                    options={DURATIONS.map(d => ({ value: String(d), label: `${d}s` }))}
+                  />
+                  <SelectField
+                    id="provider-select"
+                    label="AI Provider"
+                    value={provider}
+                    onChange={v => setProvider(v as MusicProvider)}
+                    options={PROVIDERS.map(p => ({ value: p.value, label: p.label }))}
+                  />
+                </div>
+
+                {formError && (
+                  <p className="text-[11px] rounded px-3 py-2" style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}>
+                    {formError}
                   </p>
                 )}
-              </div>
-            )}
 
-            {/* Prompt textarea */}
-            <div className="space-y-1.5">
-              <label
-                className="text-sm text-white/60"
-                htmlFor="prompt-input"
-              >
-                {tab === "image" ? "Generated prompt (editable)" : "Prompt"}
-              </label>
-              <textarea
-                id="prompt-input"
-                data-testid="prompt-input"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={
-                  tab === "prompt"
-                    ? "e.g. A tense 8-bit dungeon theme with heavy drums..."
-                    : isAnalyzing
-                    ? "Analyzing image..."
-                    : "Upload an image to auto-generate a prompt, or type one manually."
-                }
-                rows={3}
-                className="w-full rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 px-4 py-3 text-sm text-white placeholder-white/30 resize-none outline-none transition-colors"
-              />
-            </div>
+                {/* Generate button */}
+                <button
+                  type="submit"
+                  data-testid="generate-btn"
+                  disabled={isGenerating || isAnalyzing}
+                  className="w-full rounded-lg py-3.5 text-sm font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  style={{
+                    background: "#ffdd73",
+                    color: "#624e00",
+                    boxShadow: "0px 0px 20px rgba(250,204,21,0.3)",
+                  }}
+                  onMouseEnter={e => !isGenerating && !isAnalyzing && ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 28px rgba(250,204,21,0.5)")}
+                  onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 20px rgba(250,204,21,0.3)")}
+                >
+                  {isGenerating ? (
+                    <>
+                      <span
+                        className="h-4 w-4 rounded-full border-2 animate-spin"
+                        style={{ borderColor: "rgba(98,78,0,0.3)", borderTopColor: "#624e00" }}
+                      />
+                      Generating…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>graphic_eq</span>
+                      Generate Music
+                      <span
+                        className="rounded px-2 py-0.5 text-[10px] font-bold"
+                        style={{ background: "rgba(98,78,0,0.2)" }}
+                      >
+                        {creditCost} cr
+                      </span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </>
+          )}
 
-            {/* Selects row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="space-y-1.5">
-                <label
-                  className="text-xs text-white/50 uppercase tracking-wide"
-                  htmlFor="style-select"
-                >
-                  Style
-                </label>
-                <select
-                  id="style-select"
-                  data-testid="style-select"
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value as MusicStyle)}
-                  className="w-full rounded-lg bg-white/5 border border-white/10 focus:border-indigo-500 px-3 py-2 text-sm text-white outline-none"
-                >
-                  {STYLES.map((s) => (
-                    <option key={s} value={s} className="bg-[#1a1a2e] capitalize">
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  className="text-xs text-white/50 uppercase tracking-wide"
-                  htmlFor="mood-select"
-                >
-                  Mood
-                </label>
-                <select
-                  id="mood-select"
-                  data-testid="mood-select"
-                  value={mood}
-                  onChange={(e) => setMood(e.target.value as MusicMood)}
-                  className="w-full rounded-lg bg-white/5 border border-white/10 focus:border-indigo-500 px-3 py-2 text-sm text-white outline-none"
-                >
-                  {MOODS.map((m) => (
-                    <option key={m} value={m} className="bg-[#1a1a2e] capitalize">
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  className="text-xs text-white/50 uppercase tracking-wide"
-                  htmlFor="duration-select"
-                >
-                  Duration
-                </label>
-                <select
-                  id="duration-select"
-                  data-testid="duration-select"
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value) as GenerationDuration)}
-                  className="w-full rounded-lg bg-white/5 border border-white/10 focus:border-indigo-500 px-3 py-2 text-sm text-white outline-none"
-                >
-                  {DURATIONS.map((d) => (
-                    <option key={d} value={d} className="bg-[#1a1a2e]">
-                      {d}s
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  className="text-xs text-white/50 uppercase tracking-wide"
-                  htmlFor="provider-select"
-                >
-                  Provider
-                </label>
-                <select
-                  id="provider-select"
-                  data-testid="provider-select"
-                  value={provider}
-                  onChange={(e) => setProvider(e.target.value as MusicProvider)}
-                  className="w-full rounded-lg bg-white/5 border border-white/10 focus:border-indigo-500 px-3 py-2 text-sm text-white outline-none"
-                >
-                  {PROVIDERS.map((p) => (
-                    <option key={p} value={p} className="bg-[#1a1a2e] capitalize">
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Form error */}
-            {formError && (
-              <p className="text-sm text-red-400 bg-red-500/10 rounded px-3 py-2">
-                {formError}
+          {/* ── SFX FORM ── */}
+          {mode === "sfx" && (
+            <form onSubmit={handleGenerateSFX} className="space-y-5">
+              <p className="text-[10px] uppercase tracking-widest" style={{ color: "#484848" }}>
+                Powered by ElevenLabs Sound Effects · 1 credit per generation
               </p>
-            )}
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              data-testid="generate-btn"
-              disabled={isGenerating || isAnalyzing}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              {isGenerating ? (
-                <>
-                  <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  Generate
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-normal">
-                    {creditCost} credits
-                  </span>
-                </>
+              <div className="space-y-1.5">
+                <label
+                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                  style={{ color: "#484848" }}
+                  htmlFor="sfx-prompt"
+                >
+                  Describe the sound effect
+                </label>
+                <textarea
+                  id="sfx-prompt"
+                  value={sfxPrompt}
+                  onChange={e => setSfxPrompt(e.target.value)}
+                  placeholder="e.g. A wooden door creaking open, footsteps on gravel, sword clash…"
+                  rows={4}
+                  className="w-full rounded-lg px-4 py-3 text-sm resize-none outline-none transition-all duration-100"
+                  style={{ background: "#131313", color: "#ffffff", border: "1px solid #1f2937" }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "#64c8b4")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "#1f2937")}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                  style={{ color: "#484848" }}
+                  htmlFor="sfx-duration"
+                >
+                  Duration (sec) — optional
+                </label>
+                <input
+                  id="sfx-duration"
+                  type="number"
+                  min="0.5"
+                  max="22"
+                  step="0.5"
+                  value={sfxDuration}
+                  onChange={e => setSfxDuration(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="auto"
+                  className="w-32 rounded-lg px-3 py-2.5 text-sm outline-none"
+                  style={{ background: "#131313", color: "#ffffff", border: "1px solid #1f2937" }}
+                />
+              </div>
+
+              {formError && (
+                <p className="text-[11px] rounded px-3 py-2" style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}>
+                  {formError}
+                </p>
               )}
-            </button>
-          </form>
+
+              <button
+                type="submit"
+                disabled={isGenerating}
+                className="w-full rounded-lg py-3.5 text-sm font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                style={{ background: "#64c8b4", color: "#003d35" }}
+              >
+                {isGenerating ? (
+                  <>
+                    <span
+                      className="h-4 w-4 rounded-full border-2 animate-spin"
+                      style={{ borderColor: "rgba(0,61,53,0.3)", borderTopColor: "#003d35" }}
+                    />
+                    Generating SFX…
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>surround_sound</span>
+                    Generate SFX
+                    <span className="rounded px-2 py-0.5 text-[10px] font-bold" style={{ background: "rgba(0,61,53,0.2)" }}>
+                      1 cr
+                    </span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
         </div>
 
-        {/* Generation history */}
-        {items.length > 0 ? (
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-white/80">History</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((item) => (
+        {/* Padding at the bottom */}
+        <div className="h-8" />
+      </div>
+
+      {/* ── RIGHT PANEL — Queue ─────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* Queue header */}
+        <div className="px-7 pt-8 pb-6 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "#ababab" }}>
+                REALTIME
+              </p>
+              <h2
+                className="text-xl font-bold uppercase"
+                style={{ letterSpacing: "-0.01em", color: "#ffffff" }}
+              >
+                Active Stream_Queue
+              </h2>
+            </div>
+            {/* Queue count indicator */}
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-lg"
+              style={{ background: "#131313" }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: items.some(i => i.status === "processing") ? "#ffdd73" : "#484848" }}
+              />
+              <span className="text-[10px] uppercase tracking-widest" style={{ color: "#ababab" }}>
+                {items.length} jobs
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="mx-7 h-px shrink-0" style={{ background: "#1f2937" }} />
+
+        {/* Generation cards list */}
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          {items.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center gap-3">
+              <span className="material-symbols-outlined" style={{ fontSize: 40, color: "#262626" }}>
+                graphic_eq
+              </span>
+              <p className="text-[11px] uppercase tracking-widest text-center" style={{ color: "#484848" }}>
+                No generations yet.<br />Create your first music loop or SFX.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {items.map(item => (
                 <GenerationCard
                   key={item._id}
                   item={item}
                   onOpenEditor={setEditorUrl}
                   onRetry={handleRetry}
+                  onOpenInStudio={handleOpenInStudio}
                 />
               ))}
             </div>
-          </section>
-        ) : (
-          <div className="text-center py-16 text-white/30 text-sm">
-            No generations yet. Create your first music loop above.
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Audio editor modal */}
-      {editorUrl && (
-        <AudioEditor audioUrl={editorUrl} onClose={() => setEditorUrl(null)} />
-      )}
+      {editorUrl && <AudioEditor audioUrl={editorUrl} onClose={() => setEditorUrl(null)} />}
     </div>
   );
 }

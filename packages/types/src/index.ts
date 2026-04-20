@@ -109,6 +109,7 @@ export interface UserProfile {
 export interface PublicTrack {
   id: string;
   userId: string;
+  username: string;        // display username (@handle)
   generationId: string;
   title: string;
   audioUrl: string;
@@ -127,9 +128,11 @@ export interface PublicTrack {
 export interface FeedEvent {
   id: string;
   actorId: string;
+  actorUsername: string;
   verb: "published" | "liked" | "followed";
   objectType: "track" | "user";
   objectId: string;
+  objectTitle?: string;
   createdAt: string;
 }
 
@@ -145,3 +148,26 @@ export interface SocialSseEvent {
 // ── GENERATION V2 TYPES ───────────────────────────────────────────────────────
 
 export type GenerationType = "music" | "sfx";
+
+// ── CREDIT COST TABLES ────────────────────────────────────────────────────────
+
+export const MUSIC_CREDIT_COST: Record<MusicProvider, Record<number, number>> = {
+  beatoven:  { 15: 3, 30: 5, 60: 8 },
+  lyria:     { 15: 2, 30: 3, 60: 5 },
+  stability: { 15: 2, 30: 3, 60: 5 },
+} as const;
+
+export const SFX_CREDIT_COST: Record<SFXProvider, number> = {
+  elevenlabs: 1,
+} as const;
+
+export const IMAGE_ANALYSIS_CREDIT_COST = 1 as const;
+
+export function getMusicCreditCost(provider: MusicProvider, duration: number, isRetry = false): number {
+  const base = MUSIC_CREDIT_COST[provider]?.[duration] ?? 5;
+  return isRetry ? Math.ceil(base / 2) : base;
+}
+
+export function getSFXCreditCost(provider: SFXProvider): number {
+  return SFX_CREDIT_COST[provider] ?? 1;
+}
