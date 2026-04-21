@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      zundo:
-        specifier: ^2.3.0
-        version: 2.3.0(zustand@5.0.12(@types/react@18.3.28)(react@18.3.1))
     devDependencies:
       '@playwright/test':
         specifier: ^1.49.1
@@ -112,9 +108,6 @@ importers:
       wavesurfer.js:
         specifier: ^7.8.12
         version: 7.12.5
-      zundo:
-        specifier: ^2.3.0
-        version: 2.3.0(zustand@5.0.12(@types/react@18.3.28)(react@18.3.1))
       zustand:
         specifier: ^5.0.3
         version: 5.0.12(@types/react@18.3.28)(react@18.3.1)
@@ -4018,11 +4011,6 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  zundo@2.3.0:
-    resolution: {integrity: sha512-4GXYxXA17SIKYhVbWHdSEU04P697IMyVGXrC2TnzoyohEAWytFNOKqOp5gTGvaW93F/PM5Y0evbGtOPF0PWQwQ==}
-    peerDependencies:
-      zustand: ^4.3.0 || ^5.0.0
-
   zustand@5.0.12:
     resolution: {integrity: sha512-i77ae3aZq4dhMlRhJVCYgMLKuSiZAaUPAct2AksxQ+gOtimhGMdXljRT21P5BNpeT4kXlLIckvkPM029OljD7g==}
     engines: {node: '>=12.20.0'}
@@ -7500,10 +7488,6 @@ snapshots:
       pend: 1.2.0
 
   yocto-queue@0.1.0: {}
-
-  zundo@2.3.0(zustand@5.0.12(@types/react@18.3.28)(react@18.3.1)):
-    dependencies:
-      zustand: 5.0.12(@types/react@18.3.28)(react@18.3.1)
 
   zustand@5.0.12(@types/react@18.3.28)(react@18.3.1):
     optionalDependencies:

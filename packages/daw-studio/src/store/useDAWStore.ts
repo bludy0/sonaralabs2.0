@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { temporal } from 'zundo'
 import { v4 as uuid } from 'uuid'
 import {
   DAWTrack, AudioTrack, MidiTrack,
@@ -9,6 +8,55 @@ import {
   defaultEffectChain, DEFAULT_SYNTH,
 } from '../types'
 import { TRACK_COLORS, DEFAULTS } from '../constants'
+
+// ── Undo / Redo history (outside Zustand — no re-renders) ────────────────────
+
+interface Snapshot {
+  tracks:          DAWTrack[]
+  automationLanes: AutomationLane[]
+  transport:       TransportState
+}
+
+const MAX_HISTORY = 50
+const _past:   Snapshot[] = []
+const _future: Snapshot[] = []
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function snapshot(s: DAWState): Snapshot {
+  return {
+    tracks:          s.tracks,
+    automationLanes: s.automationLanes,
+    transport:       s.transport,
+  }
+}
+
+/** Call before every mutation that should be undoable. */
+function pushHistory(current: Snapshot) {
+  if (_debounceTimer) return   // collapse rapid changes (drag) into one step
+  _debounceTimer = setTimeout(() => { _debounceTimer = null }, 200)
+
+  _past.push(current)
+  if (_past.length > MAX_HISTORY) _past.shift()
+  _future.length = 0   // clear redo stack on new action
+}
+
+export function undo() {
+  const prev = _past.pop()
+  if (!prev) return
+  const current = snapshot(useDAWStore.getState())
+  _future.push(current)
+  useDAWStore.setState({ tracks: prev.tracks, automationLanes: prev.automationLanes, transport: prev.transport })
+}
+
+export function redo() {
+  const next = _future.pop()
+  if (!next) return
+  const current = snapshot(useDAWStore.getState())
+  _past.push(current)
+  useDAWStore.setState({ tracks: next.tracks, automationLanes: next.automationLanes, transport: next.transport })
+}
+
+// ── Store ─────────────────────────────────────────────────────────────────────
 
 interface DAWState {
   tracks:          DAWTrack[]
@@ -26,12 +74,12 @@ interface DAWState {
   selectTrack:   (trackId: string | null) => void
 
   // Audio clip mutations
-  addClip:    (trackId: string, clip: Omit<AudioClip, 'id'>) => string
-  removeClip: (trackId: string, clipId: string) => void
-  updateClip: (trackId: string, clipId: string, patch: Partial<AudioClip>) => void
-  moveClip:   (trackId: string, clipId: string, newStart: number) => void
+  addClip:       (trackId: string, clip: Omit<AudioClip, 'id'>) => string
+  removeClip:    (trackId: string, clipId: string) => void
+  updateClip:    (trackId: string, clipId: string, patch: Partial<AudioClip>) => void
+  moveClip:      (trackId: string, clipId: string, newStart: number) => void
   duplicateClip: (trackId: string, clipId: string) => void
-  selectClip: (clipId: string | null) => void
+  selectClip:    (clipId: string | null) => void
 
   // MIDI clip mutations
   addMidiClip:    (trackId: string, clip: Omit<MidiClip, 'id'>) => string
@@ -42,15 +90,15 @@ interface DAWState {
   removeMidiNote: (trackId: string, clipId: string, noteId: string) => void
 
   // Effects
-  updateEffects:  (trackId: string, patch: Partial<EffectChain>) => void
-  updateSynth:    (trackId: string, patch: Partial<SynthPreset>) => void
+  updateEffects: (trackId: string, patch: Partial<EffectChain>) => void
+  updateSynth:   (trackId: string, patch: Partial<SynthPreset>) => void
 
   // Automation
   addAutomationLane:       (trackId: string, param: AutomationParam) => void
   removeAutomationLane:    (laneId: string) => void
   toggleAutomationEnabled: (laneId: string) => void
   addAutomationPoint:      (laneId: string, point: Omit<AutomationPoint, 'id'>) => void
-  updateAutomationPoint:   (laneId: string, pointId: string, patch: Partial<Omit<AutomationPoint,'id'>>) => void
+  updateAutomationPoint:   (laneId: string, pointId: string, patch: Partial<Omit<AutomationPoint, 'id'>>) => void
   removeAutomationPoint:   (laneId: string, pointId: string) => void
 
   // Transport
@@ -77,32 +125,26 @@ function nextColor(tracks: DAWTrack[]): string {
 
 function makeAudioTrack(tracks: DAWTrack[]): AudioTrack {
   return {
-    id:      uuid(),
-    type:    'audio',
-    name:    `Track ${tracks.length + 1}`,
-    color:   nextColor(tracks),
-    volume:  DEFAULTS.VOLUME,
-    pan:     0,
-    muted:   false,
-    soloed:  false,
+    id: uuid(), type: 'audio',
+    name: `Track ${tracks.length + 1}`,
+    color: nextColor(tracks),
+    volume: DEFAULTS.VOLUME, pan: 0,
+    muted: false, soloed: false,
     effects: defaultEffectChain(),
-    clips:   [],
+    clips: [],
   }
 }
 
 function makeMidiTrack(tracks: DAWTrack[]): MidiTrack {
   return {
-    id:      uuid(),
-    type:    'midi',
-    name:    `MIDI ${tracks.length + 1}`,
-    color:   nextColor(tracks),
-    volume:  DEFAULTS.VOLUME,
-    pan:     0,
-    muted:   false,
-    soloed:  false,
+    id: uuid(), type: 'midi',
+    name: `MIDI ${tracks.length + 1}`,
+    color: nextColor(tracks),
+    volume: DEFAULTS.VOLUME, pan: 0,
+    muted: false, soloed: false,
     effects: defaultEffectChain(),
-    clips:   [],
-    synth:   { ...DEFAULT_SYNTH },
+    clips: [],
+    synth: { ...DEFAULT_SYNTH },
   }
 }
 
@@ -120,312 +162,261 @@ const initialTransport: TransportState = {
   loopEnd:       8,
   timeSignature: [4, 4],
   snapEnabled:   true,
-  snapBeats:     0.5,   // 1/8 note default
+  snapBeats:     0.5,
 }
 
-// ── Store ─────────────────────────────────────────────────────────────────────
+// ── Zustand store ─────────────────────────────────────────────────────────────
 
-export const useDAWStore = create<DAWState>()(
-  temporal(
-    (set, get) => ({
-      tracks:          [],
-      transport:       initialTransport,
-      automationLanes: [],
-      selectedTrackId: null,
-      selectedClipId:  null,
-      zoom:            DEFAULTS.PIXELS_PER_SECOND,
+export const useDAWStore = create<DAWState>((set, get) => {
+  /** Wrap set: push history before applying undoable changes. */
+  function record(fn: (s: DAWState) => Partial<DAWState>) {
+    pushHistory(snapshot(get()))
+    set(fn as Parameters<typeof set>[0])
+  }
 
-      // ── Tracks ──────────────────────────────────────────────────────────────
+  return {
+    tracks:          [],
+    transport:       initialTransport,
+    automationLanes: [],
+    selectedTrackId: null,
+    selectedClipId:  null,
+    zoom:            DEFAULTS.PIXELS_PER_SECOND,
 
-      addAudioTrack: () =>
-        set(s => ({ tracks: [...s.tracks, makeAudioTrack(s.tracks)] })),
+    // ── Tracks ────────────────────────────────────────────────────────────────
 
-      addMidiTrack: () =>
-        set(s => ({ tracks: [...s.tracks, makeMidiTrack(s.tracks)] })),
+    addAudioTrack: () =>
+      record(s => ({ tracks: [...s.tracks, makeAudioTrack(s.tracks)] })),
 
-      removeTrack: (trackId) =>
-        set(s => ({
-          tracks:          s.tracks.filter(t => t.id !== trackId),
-          selectedTrackId: s.selectedTrackId === trackId ? null : s.selectedTrackId,
-          automationLanes: s.automationLanes.filter(l => l.trackId !== trackId),
-        })),
+    addMidiTrack: () =>
+      record(s => ({ tracks: [...s.tracks, makeMidiTrack(s.tracks)] })),
 
-      updateTrack: (trackId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId ? { ...t, ...patch } as DAWTrack : t
-          ),
-        })),
+    removeTrack: (trackId) =>
+      record(s => ({
+        tracks:          s.tracks.filter(t => t.id !== trackId),
+        selectedTrackId: s.selectedTrackId === trackId ? null : s.selectedTrackId,
+        automationLanes: s.automationLanes.filter(l => l.trackId !== trackId),
+      })),
 
-      selectTrack: (trackId) => set({ selectedTrackId: trackId }),
+    updateTrack: (trackId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId ? { ...t, ...patch } as DAWTrack : t
+        ),
+      })),
 
-      // ── Audio clips ─────────────────────────────────────────────────────────
+    selectTrack: (trackId) => set({ selectedTrackId: trackId }),
 
-      addClip: (trackId, clip) => {
-        const id = uuid()
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'audio'
-              ? { ...t, clips: [...t.clips, { ...clip, id }] }
-              : t
-          ),
-        }))
-        return id
-      },
+    // ── Audio clips ───────────────────────────────────────────────────────────
 
-      removeClip: (trackId, clipId) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'audio'
-              ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
-              : t
-          ),
-          selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
-        })),
+    addClip: (trackId, clip) => {
+      const id = uuid()
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'audio'
+            ? { ...t, clips: [...t.clips, { ...clip, id }] }
+            : t
+        ),
+      }))
+      return id
+    },
 
-      updateClip: (trackId, clipId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'audio'
-              ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
-              : t
-          ),
-        })),
+    removeClip: (trackId, clipId) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'audio'
+            ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
+            : t
+        ),
+        selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
+      })),
 
-      moveClip: (trackId, clipId, newStart) => {
-        const { transport } = get()
-        const t = transport.snapEnabled
-          ? snapTime(newStart, transport.bpm, transport.snapBeats)
-          : newStart
-        set(s => ({
-          tracks: s.tracks.map(tr =>
-            tr.id === trackId && tr.type === 'audio'
-              ? { ...tr, clips: tr.clips.map(c => c.id === clipId ? { ...c, startTime: Math.max(0, t) } : c) }
-              : tr
-          ),
-        }))
-      },
+    updateClip: (trackId, clipId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'audio'
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
+            : t
+        ),
+      })),
 
-      duplicateClip: (trackId, clipId) =>
-        set(s => ({
-          tracks: s.tracks.map(t => {
-            if (t.id !== trackId || t.type !== 'audio') return t
-            const src = t.clips.find(c => c.id === clipId)
-            if (!src) return t
-            const effectiveDur = (src.trimEnd || src.duration) - src.trimStart
-            const copy: AudioClip = { ...src, id: uuid(), startTime: src.startTime + effectiveDur }
-            return { ...t, clips: [...t.clips, copy] }
-          }),
-        })),
+    moveClip: (trackId, clipId, newStart) => {
+      const { transport } = get()
+      const t = transport.snapEnabled
+        ? snapTime(newStart, transport.bpm, transport.snapBeats)
+        : newStart
+      record(s => ({
+        tracks: s.tracks.map(tr =>
+          tr.id === trackId && tr.type === 'audio'
+            ? { ...tr, clips: tr.clips.map(c => c.id === clipId ? { ...c, startTime: Math.max(0, t) } : c) }
+            : tr
+        ),
+      }))
+    },
 
-      selectClip: (clipId) => set({ selectedClipId: clipId }),
+    duplicateClip: (trackId, clipId) =>
+      record(s => ({
+        tracks: s.tracks.map(t => {
+          if (t.id !== trackId || t.type !== 'audio') return t
+          const src = t.clips.find(c => c.id === clipId)
+          if (!src) return t
+          const effectiveDur = (src.trimEnd || src.duration) - src.trimStart
+          const copy: AudioClip = { ...src, id: uuid(), startTime: src.startTime + effectiveDur }
+          return { ...t, clips: [...t.clips, copy] }
+        }),
+      })),
 
-      // ── MIDI clips ──────────────────────────────────────────────────────────
+    selectClip: (clipId) => set({ selectedClipId: clipId }),
 
-      addMidiClip: (trackId, clip) => {
-        const id = uuid()
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? { ...t, clips: [...t.clips, { ...clip, id }] }
-              : t
-          ),
-        }))
-        return id
-      },
+    // ── MIDI clips ────────────────────────────────────────────────────────────
 
-      removeMidiClip: (trackId, clipId) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
-              : t
-          ),
-        })),
+    addMidiClip: (trackId, clip) => {
+      const id = uuid()
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: [...t.clips, { ...clip, id }] }
+            : t
+        ),
+      }))
+      return id
+    },
 
-      updateMidiClip: (trackId, clipId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
-              : t
-          ),
-        })),
+    removeMidiClip: (trackId, clipId) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
+            : t
+        ),
+      })),
 
-      addMidiNote: (trackId, clipId, note) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? {
-                  ...t,
-                  clips: t.clips.map(c =>
-                    c.id === clipId
-                      ? { ...c, notes: [...c.notes, { ...note, id: uuid() }] }
-                      : c
-                  ),
-                }
-              : t
-          ),
-        })),
+    updateMidiClip: (trackId, clipId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
+            : t
+        ),
+      })),
 
-      updateMidiNote: (trackId, clipId, noteId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? {
-                  ...t,
-                  clips: t.clips.map(c =>
-                    c.id === clipId
-                      ? { ...c, notes: c.notes.map(n => n.id === noteId ? { ...n, ...patch } : n) }
-                      : c
-                  ),
-                }
-              : t
-          ),
-        })),
+    addMidiNote: (trackId, clipId, note) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, notes: [...c.notes, { ...note, id: uuid() }] } : c) }
+            : t
+        ),
+      })),
 
-      removeMidiNote: (trackId, clipId, noteId) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? {
-                  ...t,
-                  clips: t.clips.map(c =>
-                    c.id === clipId
-                      ? { ...c, notes: c.notes.filter(n => n.id !== noteId) }
-                      : c
-                  ),
-                }
-              : t
-          ),
-        })),
+    updateMidiNote: (trackId, clipId, noteId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, notes: c.notes.map(n => n.id === noteId ? { ...n, ...patch } : n) } : c) }
+            : t
+        ),
+      })),
 
-      // ── Effects ─────────────────────────────────────────────────────────────
+    removeMidiNote: (trackId, clipId, noteId) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, notes: c.notes.filter(n => n.id !== noteId) } : c) }
+            : t
+        ),
+      })),
 
-      updateEffects: (trackId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId ? { ...t, effects: { ...t.effects, ...patch } } : t
-          ),
-        })),
+    // ── Effects ───────────────────────────────────────────────────────────────
 
-      updateSynth: (trackId, patch) =>
-        set(s => ({
-          tracks: s.tracks.map(t =>
-            t.id === trackId && t.type === 'midi'
-              ? { ...t, synth: { ...t.synth, ...patch } }
-              : t
-          ),
-        })),
+    updateEffects: (trackId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId ? { ...t, effects: { ...t.effects, ...patch } } : t
+        ),
+      })),
 
-      // ── Automation ──────────────────────────────────────────────────────────
+    updateSynth: (trackId, patch) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, synth: { ...t.synth, ...patch } }
+            : t
+        ),
+      })),
 
-      addAutomationLane: (trackId, param) =>
-        set(s => ({
-          automationLanes: [
-            ...s.automationLanes,
-            { id: uuid(), trackId, param, enabled: true, points: [] },
-          ],
-        })),
+    // ── Automation ────────────────────────────────────────────────────────────
 
-      removeAutomationLane: (laneId) =>
-        set(s => ({ automationLanes: s.automationLanes.filter(l => l.id !== laneId) })),
+    addAutomationLane: (trackId, param) =>
+      record(s => ({
+        automationLanes: [...s.automationLanes, { id: uuid(), trackId, param, enabled: true, points: [] }],
+      })),
 
-      toggleAutomationEnabled: (laneId) =>
-        set(s => ({
-          automationLanes: s.automationLanes.map(l =>
-            l.id === laneId ? { ...l, enabled: !l.enabled } : l
-          ),
-        })),
+    removeAutomationLane: (laneId) =>
+      record(s => ({ automationLanes: s.automationLanes.filter(l => l.id !== laneId) })),
 
-      addAutomationPoint: (laneId, point) =>
-        set(s => ({
-          automationLanes: s.automationLanes.map(l =>
-            l.id === laneId
-              ? {
-                  ...l,
-                  points: [...l.points, { ...point, id: uuid() }]
-                    .sort((a, b) => a.time - b.time),
-                }
-              : l
-          ),
-        })),
+    toggleAutomationEnabled: (laneId) =>
+      record(s => ({
+        automationLanes: s.automationLanes.map(l =>
+          l.id === laneId ? { ...l, enabled: !l.enabled } : l
+        ),
+      })),
 
-      updateAutomationPoint: (laneId, pointId, patch) =>
-        set(s => ({
-          automationLanes: s.automationLanes.map(l =>
-            l.id === laneId
-              ? {
-                  ...l,
-                  points: l.points
-                    .map(p => p.id === pointId ? { ...p, ...patch } : p)
-                    .sort((a, b) => a.time - b.time),
-                }
-              : l
-          ),
-        })),
+    addAutomationPoint: (laneId, point) =>
+      record(s => ({
+        automationLanes: s.automationLanes.map(l =>
+          l.id === laneId
+            ? { ...l, points: [...l.points, { ...point, id: uuid() }].sort((a, b) => a.time - b.time) }
+            : l
+        ),
+      })),
 
-      removeAutomationPoint: (laneId, pointId) =>
-        set(s => ({
-          automationLanes: s.automationLanes.map(l =>
-            l.id === laneId
-              ? { ...l, points: l.points.filter(p => p.id !== pointId) }
-              : l
-          ),
-        })),
+    updateAutomationPoint: (laneId, pointId, patch) =>
+      record(s => ({
+        automationLanes: s.automationLanes.map(l =>
+          l.id === laneId
+            ? { ...l, points: l.points.map(p => p.id === pointId ? { ...p, ...patch } : p).sort((a, b) => a.time - b.time) }
+            : l
+        ),
+      })),
 
-      // ── Transport ───────────────────────────────────────────────────────────
+    removeAutomationPoint: (laneId, pointId) =>
+      record(s => ({
+        automationLanes: s.automationLanes.map(l =>
+          l.id === laneId ? { ...l, points: l.points.filter(p => p.id !== pointId) } : l
+        ),
+      })),
 
-      setBPM: (bpm) =>
-        set(s => ({ transport: { ...s.transport, bpm: Math.max(20, Math.min(300, bpm)) } })),
+    // ── Transport ─────────────────────────────────────────────────────────────
 
-      setLoop: (start, end) =>
-        set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),
+    setBPM: (bpm) =>
+      set(s => ({ transport: { ...s.transport, bpm: Math.max(20, Math.min(300, bpm)) } })),
 
-      toggleLoop: () =>
-        set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled } })),
+    setLoop: (start, end) =>
+      set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),
 
-      toggleSnap: () =>
-        set(s => ({ transport: { ...s.transport, snapEnabled: !s.transport.snapEnabled } })),
+    toggleLoop: () =>
+      set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled } })),
 
-      setSnapBeats: (beats) =>
-        set(s => ({ transport: { ...s.transport, snapBeats: beats } })),
+    toggleSnap: () =>
+      set(s => ({ transport: { ...s.transport, snapEnabled: !s.transport.snapEnabled } })),
 
-      // ── Zoom ────────────────────────────────────────────────────────────────
+    setSnapBeats: (beats) =>
+      set(s => ({ transport: { ...s.transport, snapBeats: beats } })),
 
-      setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
+    // ── Zoom ──────────────────────────────────────────────────────────────────
 
-      // ── Project ─────────────────────────────────────────────────────────────
+    setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
 
-      reset: () => set({
-        tracks: [], automationLanes: [], transport: initialTransport,
-        selectedTrackId: null, selectedClipId: null,
-      }),
+    // ── Project ───────────────────────────────────────────────────────────────
 
-      loadTracks: (tracks) => set({ tracks }),
+    reset: () => {
+      _past.length = 0
+      _future.length = 0
+      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null })
+    },
 
-      getSaveable: () => get().tracks,
-    }),
-    {
-      // Only track state that matters for undo — exclude UI selections & zoom
-      partialize: (s) => ({
-        tracks:          s.tracks,
-        automationLanes: s.automationLanes,
-        transport:       s.transport,
-      }),
-      // Collapse rapid continuous changes (e.g. dragging a clip) into one step
-      handleSet: (handleSet) => {
-        let timer: ReturnType<typeof setTimeout> | null = null
-        return (state) => {
-          if (timer) clearTimeout(timer)
-          timer = setTimeout(() => handleSet(state), 200)
-        }
-      },
-      limit: 50,
-    }
-  )
-)
+    loadTracks: (tracks) => set({ tracks }),
 
-// Expose undo/redo helpers on the store object for convenience
-export const undo = () => useDAWStore.temporal.getState().undo()
-export const redo = () => useDAWStore.temporal.getState().redo()
+    getSaveable: () => get().tracks,
+  }
+})
