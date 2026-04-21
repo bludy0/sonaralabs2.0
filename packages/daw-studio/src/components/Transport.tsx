@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { useDAWStore }    from '../store/useDAWStore'
+import { useDAWStore, undo, redo } from '../store/useDAWStore'
 import { useAudioEngine } from '../store/useAudioEngine'
 import { exportMix, exportMixMp3 } from '../lib/exportMix'
 import { C } from '../constants'
@@ -12,12 +12,14 @@ function fmt(s: number): string {
 }
 
 export function Transport() {
-  const tracks    = useDAWStore(s => s.tracks)
-  const transport = useDAWStore(s => s.transport)
-  const setBPM    = useDAWStore(s => s.setBPM)
-  const toggleLoop= useDAWStore(s => s.toggleLoop)
-  const addAudio  = useDAWStore(s => s.addAudioTrack)
-  const addMidi   = useDAWStore(s => s.addMidiTrack)
+  const tracks       = useDAWStore(s => s.tracks)
+  const transport    = useDAWStore(s => s.transport)
+  const setBPM       = useDAWStore(s => s.setBPM)
+  const toggleLoop   = useDAWStore(s => s.toggleLoop)
+  const toggleSnap   = useDAWStore(s => s.toggleSnap)
+  const setSnapBeats = useDAWStore(s => s.setSnapBeats)
+  const addAudio     = useDAWStore(s => s.addAudioTrack)
+  const addMidi      = useDAWStore(s => s.addMidiTrack)
 
   const { isPlaying, currentTime, masterVolume, play, pause, stop, setMasterVol } = useAudioEngine()
 
@@ -115,16 +117,54 @@ export function Transport() {
       <Divider />
 
       {/* Loop */}
-      <Btn
-        title="Loop (L)"
-        onClick={toggleLoop}
-        active={transport.loopEnabled}
-      >
+      <Btn title="Loop (L)" onClick={toggleLoop} active={transport.loopEnabled}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M2 4h8a2 2 0 010 4H2" strokeLinecap="round"/>
           <path d="M4 2L2 4l2 2" strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M12 10H4a2 2 0 010-4h8" strokeLinecap="round"/>
           <path d="M10 12l2-2-2-2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </Btn>
+
+      <Divider />
+
+      {/* Snap */}
+      <Btn title="Snap to grid (S)" onClick={toggleSnap} active={transport.snapEnabled}>
+        <span style={{ fontSize: 11, fontWeight: 700 }}>⊞</span>
+      </Btn>
+      {transport.snapEnabled && (
+        <div style={{ display: 'flex', gap: 2 }}>
+          {([0.25, 0.5, 1] as const).map(b => (
+            <button
+              key={b}
+              onClick={() => setSnapBeats(b)}
+              style={{
+                padding: '3px 6px', fontSize: 9, borderRadius: 3,
+                background: transport.snapBeats === b ? C.accentDim : C.bgSubtle,
+                color: transport.snapBeats === b ? C.accent : C.text3,
+                border: `1px solid ${transport.snapBeats === b ? C.accentDim : C.border}`,
+                cursor: 'pointer',
+              }}
+            >
+              {b === 0.25 ? '1/16' : b === 0.5 ? '1/8' : '1/4'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Divider />
+
+      {/* Undo / Redo */}
+      <Btn title="Undo (Ctrl+Z)" onClick={undo} active={false}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M2 6.5A4.5 4.5 0 1 1 6.5 11H4"/>
+          <path d="M2 4v2.5h2.5"/>
+        </svg>
+      </Btn>
+      <Btn title="Redo (Ctrl+Shift+Z)" onClick={redo} active={false}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ transform: 'scaleX(-1)' }}>
+          <path d="M2 6.5A4.5 4.5 0 1 1 6.5 11H4"/>
+          <path d="M2 4v2.5h2.5"/>
         </svg>
       </Btn>
 

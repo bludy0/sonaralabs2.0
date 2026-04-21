@@ -68,11 +68,32 @@ export class TrackNode {
     startAt: number,   // AudioContext time to begin playback
     offset: number,    // seconds into clip to start reading
     duration: number,  // seconds of audio to play
+    fadeIn  = 0,       // seconds of linear fade-in
+    fadeOut = 0,       // seconds of linear fade-out
   ) {
     this.stopClip(clipId)
+
+    // Per-clip gain for fades (sits before track gain)
+    const clipGain = this.ctx.createGain()
+    clipGain.connect(this.gain)
+
     const src = this.ctx.createBufferSource()
     src.buffer = buffer
-    src.connect(this.gain)
+    src.connect(clipGain)
+
+    // Fade-in ramp
+    if (fadeIn > 0) {
+      clipGain.gain.setValueAtTime(0, startAt)
+      clipGain.gain.linearRampToValueAtTime(1, startAt + Math.min(fadeIn, duration * 0.5))
+    }
+
+    // Fade-out ramp
+    if (fadeOut > 0) {
+      const fadeStart = startAt + duration - Math.min(fadeOut, duration * 0.5)
+      clipGain.gain.setValueAtTime(1, fadeStart)
+      clipGain.gain.linearRampToValueAtTime(0, startAt + duration)
+    }
+
     src.start(startAt, offset, duration)
     src.onended = () => this.activeSources.delete(clipId)
     this.activeSources.set(clipId, src)

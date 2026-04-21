@@ -143,6 +143,8 @@ export default function StudioPage() {
           duration:  buf.duration,
           trimStart: 0,
           trimEnd:   0,
+          fadeIn:    0,
+          fadeOut:   0,
           buffer:    buf,
           url:       item.audioUrl,
         });

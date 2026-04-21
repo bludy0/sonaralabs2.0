@@ -34,6 +34,7 @@ export function TrackRow({ track, zoom }: Props) {
       name: file.name.replace(/\.[^.]+$/, ''),
       startTime, duration: buf.duration,
       trimStart: 0, trimEnd: 0,
+      fadeIn: 0, fadeOut: 0,
       buffer: buf, url: '',
     })
   }
@@ -60,6 +61,8 @@ export function TrackRow({ track, zoom }: Props) {
           onMove={(newStart) => moveClip(track.id, clip.id, newStart)}
           onTrimStart={(t) => updateClip(track.id, clip.id, { trimStart: t })}
           onTrimEnd={(t)   => updateClip(track.id, clip.id, { trimEnd:   t })}
+          onFadeIn={(t)    => updateClip(track.id, clip.id, { fadeIn:    t })}
+          onFadeOut={(t)   => updateClip(track.id, clip.id, { fadeOut:   t })}
           onRemove={() => { removeClip(track.id, clip.id); selectClip(null) }}
         />
       ))}
@@ -144,7 +147,7 @@ const WaveformCanvas = memo(function WaveformCanvas({
 // ── Audio clip block ──────────────────────────────────────────────────────────
 function AudioClipBlock({
   clip, zoom, color, selected,
-  onSelect, onMove, onTrimStart, onTrimEnd, onRemove,
+  onSelect, onMove, onTrimStart, onTrimEnd, onFadeIn, onFadeOut, onRemove,
 }: {
   clip:        TAudioClip
   zoom:        number
@@ -154,21 +157,25 @@ function AudioClipBlock({
   onMove:      (newStart: number) => void
   onTrimStart: (trimStart: number) => void
   onTrimEnd:   (trimEnd: number) => void
+  onFadeIn:    (fadeIn: number) => void
+  onFadeOut:   (fadeOut: number) => void
   onRemove:    () => void
 }) {
   const effectiveDur = (clip.trimEnd || clip.duration) - clip.trimStart
   const w = Math.max(8, effectiveDur * zoom)
   const x = clip.startTime * zoom
 
-  const dragRef = useRef<{ type: 'move' | 'trimL' | 'trimR'; startX: number; startVal: number } | null>(null)
+  const dragRef = useRef<{ type: 'move' | 'trimL' | 'trimR' | 'fadeIn' | 'fadeOut'; startX: number; startVal: number } | null>(null)
 
-  function startDrag(type: 'move' | 'trimL' | 'trimR', e: React.MouseEvent) {
+  function startDrag(type: 'move' | 'trimL' | 'trimR' | 'fadeIn' | 'fadeOut', e: React.MouseEvent) {
     e.stopPropagation()
     onSelect()
     const startVal =
-      type === 'move'  ? clip.startTime :
-      type === 'trimL' ? clip.trimStart :
-      clip.trimEnd || clip.duration
+      type === 'move'    ? clip.startTime :
+      type === 'trimL'   ? clip.trimStart :
+      type === 'trimR'   ? (clip.trimEnd || clip.duration) :
+      type === 'fadeIn'  ? clip.fadeIn :
+      clip.fadeOut
 
     dragRef.current = { type, startX: e.clientX, startVal }
 
@@ -182,9 +189,13 @@ function AudioClipBlock({
       } else if (type === 'trimL') {
         const clamped = Math.max(0, Math.min(raw, (clip.trimEnd || clip.duration) - 0.05))
         onTrimStart(clamped)
-      } else {
+      } else if (type === 'trimR') {
         const clamped = Math.max(clip.trimStart + 0.05, Math.min(raw, clip.duration))
         onTrimEnd(clamped === clip.duration ? 0 : clamped)
+      } else if (type === 'fadeIn') {
+        onFadeIn(Math.max(0, Math.min(raw, effectiveDur * 0.9)))
+      } else {
+        onFadeOut(Math.max(0, Math.min(raw, effectiveDur * 0.9)))
       }
     }
     const onMouseUp = () => {
@@ -232,6 +243,64 @@ function AudioClipBlock({
       }}>
         {clip.name}
       </div>
+
+      {/* Fade-in overlay (triangle shape via clip-path) */}
+      {clip.fadeIn > 0 && (
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: Math.max(4, clip.fadeIn * zoom),
+          background: `linear-gradient(to right, ${C.bgDeep}cc, transparent)`,
+          pointerEvents: 'none',
+        }}/>
+      )}
+
+      {/* Fade-out overlay */}
+      {clip.fadeOut > 0 && (
+        <div style={{
+          position: 'absolute', right: 0, top: 0, bottom: 0,
+          width: Math.max(4, clip.fadeOut * zoom),
+          background: `linear-gradient(to left, ${C.bgDeep}cc, transparent)`,
+          pointerEvents: 'none',
+        }}/>
+      )}
+
+      {/* Fade-in handle (top-left corner dot) */}
+      {selected && (
+        <div
+          onMouseDown={e => startDrag('fadeIn', e)}
+          title="Drag to set fade-in"
+          style={{
+            position: 'absolute',
+            left: Math.max(HANDLE_W, clip.fadeIn * zoom) - 5,
+            top: 2,
+            width: 10, height: 10,
+            borderRadius: '50%',
+            background: color,
+            border: `1.5px solid ${C.bgDeep}`,
+            cursor: 'ew-resize',
+            zIndex: 3,
+          }}
+        />
+      )}
+
+      {/* Fade-out handle (top-right corner dot) */}
+      {selected && (
+        <div
+          onMouseDown={e => startDrag('fadeOut', e)}
+          title="Drag to set fade-out"
+          style={{
+            position: 'absolute',
+            right: Math.max(HANDLE_W, clip.fadeOut * zoom) - 5,
+            top: 2,
+            width: 10, height: 10,
+            borderRadius: '50%',
+            background: color,
+            border: `1.5px solid ${C.bgDeep}`,
+            cursor: 'ew-resize',
+            zIndex: 3,
+          }}
+        />
+      )}
 
       {/* Left trim handle */}
       <div

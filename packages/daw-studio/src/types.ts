@@ -118,6 +118,8 @@ export interface AudioClip {
   duration:  number        // original clip duration
   trimStart: number        // seconds from clip start
   trimEnd:   number        // seconds from clip start (0 = no trim)
+  fadeIn:    number        // seconds of fade-in  (0 = none)
+  fadeOut:   number        // seconds of fade-out (0 = none)
   buffer:    AudioBuffer | null
   url:       string
 }
@@ -164,6 +166,8 @@ export interface TransportState {
   loopStart:     number   // seconds
   loopEnd:       number   // seconds
   timeSignature: [number, number]
+  snapEnabled:   boolean
+  snapBeats:     number   // e.g. 0.25 = 1/16, 0.5 = 1/8, 1 = quarter
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────

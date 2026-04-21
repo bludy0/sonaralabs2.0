@@ -114,7 +114,7 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
         const playDur      = clipEnd - overlapStart
         const scheduleAt   = _startContextTime + (overlapStart - startSec)
 
-        node.playClip(clip.id, clip.buffer, scheduleAt, trimOffset, playDur)
+        node.playClip(clip.id, clip.buffer, scheduleAt, trimOffset, playDur, clip.fadeIn ?? 0, clip.fadeOut ?? 0)
       }
     }
 
