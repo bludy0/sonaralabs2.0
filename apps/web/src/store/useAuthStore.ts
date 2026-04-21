@@ -16,12 +16,14 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   // actions
-  login:    (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
-  logout:   () => Promise<void>;
-  logoutAll:() => Promise<void>;
-  fetchMe:  () => Promise<void>;
-  updateCredit: (delta: number) => void;
+  login:     (email: string, password: string) => Promise<void>;
+  loginDemo: () => void;
+  register:  (email: string, password: string) => Promise<void>;
+  logout:    () => Promise<void>;
+  logoutAll: () => Promise<void>;
+  fetchMe:   () => Promise<void>;
+  updateCredit:      (delta: number) => void;
+  updatePreferences: (prefs: Partial<User["preferences"]>) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -29,6 +31,19 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       isLoading: false,
+
+      loginDemo: () => {
+        set({
+          user: {
+            userId:        "demo-user",
+            email:         "demo@sonaralabs.io",
+            role:          "user",
+            creditBalance: 999,
+            storageUsed:   0,
+            preferences:   { accentColor: "#7c6dfa" },
+          },
+        });
+      },
 
       login: async (email, password) => {
         set({ isLoading: true });
@@ -73,6 +88,20 @@ export const useAuthStore = create<AuthState>()(
       updateCredit: (delta: number) => {
         const { user } = get();
         if (user) set({ user: { ...user, creditBalance: user.creditBalance + delta } });
+      },
+
+      // Kullanıcı tercihlerini güncelle (accentColor vb.)
+      updatePreferences: async (prefs) => {
+        const { user } = get();
+        if (!user) return;
+        // Optimistic update
+        set({ user: { ...user, preferences: { ...user.preferences, ...prefs } } });
+        try {
+          await api.patch("/api/users/me/preferences", prefs);
+        } catch {
+          // Revert on failure
+          set({ user });
+        }
       },
     }),
     {
