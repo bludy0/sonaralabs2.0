@@ -14,15 +14,15 @@ function serializeTracks(tracks: DAWTrack[]): { workerTracks: WorkerTrack[]; tra
     pan: track.pan,
     muted: track.muted,
     effects: track.effects,
-    clips: track.clips
+    clips: (track.type === 'audio' ? track.clips : [])
       .filter(c => c.buffer != null)
       .map(c => {
         const buf = c.buffer!
         const channels: Float32Array[] = []
         for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-          const data = buf.getChannelData(ch).slice() // copy — will be transferred
+          const data = new Float32Array(buf.getChannelData(ch)) // own copy, transferable
           channels.push(data)
-          transferables.push(data.buffer)
+          transferables.push(data.buffer as ArrayBuffer)
         }
         return {
           startTime: c.startTime,
@@ -56,7 +56,7 @@ export function renderMix(tracks: DAWTrack[], sampleRate = 44100): Promise<Audio
       const ctx = new OfflineAudioContext(msg.channels.length, msg.length, msg.sampleRate)
       const buf = ctx.createBuffer(msg.channels.length, msg.length, msg.sampleRate)
       for (let ch = 0; ch < msg.channels.length; ch++) {
-        buf.copyToChannel(msg.channels[ch], ch)
+        buf.copyToChannel(new Float32Array(msg.channels[ch].buffer as ArrayBuffer), ch)
       }
       resolve(buf)
     }

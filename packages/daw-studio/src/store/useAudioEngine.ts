@@ -1,128 +1,182 @@
 import { create } from 'zustand'
-import AudioEngine from '../engine/AudioEngine'
+import { getAudioContext, getMasterGain, resumeContext } from '../engine/context'
 import { TrackNode } from '../engine/TrackNode'
+import { SynthEngine } from '../engine/SynthEngine'
 import { useDAWStore } from './useDAWStore'
-import { AudioClip } from '../types'
+import type { AudioTrack, MidiTrack } from '../types'
 
-interface AudioEngineState {
-  initialized: boolean
-  trackNodes: Map<string, TrackNode>
-  playStartContextTime: number
-  playStartDawTime: number
-  rafId: number | null
+interface EngineState {
+  isPlaying:   boolean
+  currentTime: number   // seconds, updated at 60fps during playback
+  masterVolume:number
 
-  init: () => void
-  play: () => void
-  pause: () => void
-  stop: () => void
-  syncTrackNode: (trackId: string) => void
+  init:         () => void
+  play:         () => Promise<void>
+  pause:        () => void
+  stop:         () => void
+  seek:         (t: number) => void
+  setMasterVol: (v: number) => void
 }
 
-export const useAudioEngine = create<AudioEngineState>((set, get) => ({
-  initialized: false,
-  trackNodes: new Map(),
-  playStartContextTime: 0,
-  playStartDawTime: 0,
-  rafId: null,
+// Playback state outside Zustand (no re-render on every frame)
+let _startContextTime = 0  // AudioContext.currentTime when play() was called
+let _startOffset      = 0  // timeline seconds we started from
+let _raf: number | null = null
+
+// Per-track nodes and synth engines
+const trackNodes   = new Map<string, TrackNode>()
+const synthEngines = new Map<string, SynthEngine>()
+const midiTimers:  ReturnType<typeof setTimeout>[] = []
+
+function clearMidiTimers() {
+  midiTimers.forEach(clearTimeout)
+  midiTimers.length = 0
+}
+
+function syncTrackNodes() {
+  const ctx    = getAudioContext()
+  const master = getMasterGain()
+  const tracks = useDAWStore.getState().tracks
+
+  // Remove nodes for deleted tracks
+  for (const [id] of trackNodes) {
+    if (!tracks.find(t => t.id === id)) {
+      trackNodes.get(id)!.stopAll()
+      trackNodes.delete(id)
+      synthEngines.delete(id)
+    }
+  }
+
+  // Create nodes for new tracks + sync all
+  for (const track of tracks) {
+    if (!trackNodes.has(track.id)) {
+      trackNodes.set(track.id, new TrackNode(ctx, track.id, master))
+    }
+    if (track.type === 'midi' && !synthEngines.has(track.id)) {
+      synthEngines.set(track.id, new SynthEngine())
+    }
+    trackNodes.get(track.id)!.sync(track)
+  }
+}
+
+export const useAudioEngine = create<EngineState>((set, get) => ({
+  isPlaying:    false,
+  currentTime:  0,
+  masterVolume: 0.85,
 
   init: () => {
-    if (get().initialized) return
-    set({ initialized: true })
-
-    // Subscribe to track changes → keep TrackNodes in sync
-    useDAWStore.subscribe((state, prev) => {
-      const engine = AudioEngine.get()
-      const { trackNodes } = get()
-
-      // New tracks
-      state.tracks.forEach(track => {
-        if (!trackNodes.has(track.id)) {
-          const node = new TrackNode(engine.ctx, engine.masterGain)
-          trackNodes.set(track.id, node)
-        }
-        trackNodes.get(track.id)!.update(track)
-      })
-
-      // Removed tracks
-      prev.tracks.forEach(pt => {
-        if (!state.tracks.find(t => t.id === pt.id)) {
-          trackNodes.get(pt.id)?.stopAll()
-          trackNodes.delete(pt.id)
-        }
-      })
-
-      // Master volume
-      engine.masterGain.gain.value = state.masterVolume
+    syncTrackNodes()
+    useDAWStore.subscribe(() => {
+      syncTrackNodes()
     })
   },
 
   play: async () => {
-    const engine = AudioEngine.get()
-    await engine.resume()
+    if (get().isPlaying) return
+    await resumeContext()
 
-    const dawStore = useDAWStore.getState()
-    const currentTime = dawStore.transport.currentTime
-    const startContextTime = engine.ctx.currentTime
-    const { trackNodes } = get()
+    const ctx       = getAudioContext()
+    const { tracks, transport } = useDAWStore.getState()
+    const startSec  = get().currentTime
+    _startOffset      = startSec
+    _startContextTime = ctx.currentTime
 
-    set({ playStartContextTime: startContextTime, playStartDawTime: currentTime })
+    syncTrackNodes()
 
-    // Start all clips
-    dawStore.tracks.forEach(track => {
-      if (track.muted) return
+    // Schedule all audio clips that overlap playhead
+    for (const track of tracks) {
+      if (track.muted) continue
       const node = trackNodes.get(track.id)
-      if (!node) return
-      track.clips.forEach((clip: AudioClip) => {
-        node.playClip(clip, startContextTime - currentTime, engine.ctx.currentTime)
-      })
-    })
+      if (!node || track.type !== 'audio') continue
 
-    dawStore.setPlaying(true)
+      for (const clip of (track as AudioTrack).clips) {
+        if (!clip.buffer) continue
+        const effectiveDur = (clip.trimEnd || clip.duration) - clip.trimStart
+        const clipEnd = clip.startTime + effectiveDur
+        if (clipEnd <= startSec) continue   // already passed
 
-    // Playhead RAF loop
+        const overlapStart = Math.max(startSec, clip.startTime)
+        const trimOffset   = clip.trimStart + Math.max(0, startSec - clip.startTime)
+        const playDur      = clipEnd - overlapStart
+        const scheduleAt   = _startContextTime + (overlapStart - startSec)
+
+        node.playClip(clip.id, clip.buffer, scheduleAt, trimOffset, playDur)
+      }
+    }
+
+    // Schedule MIDI clips
+    for (const track of tracks) {
+      if (track.muted || track.type !== 'midi') continue
+      const synth = synthEngines.get(track.id)
+      const node  = trackNodes.get(track.id)
+      if (!synth || !node) continue
+
+      for (const clip of (track as MidiTrack).clips) {
+        const secPerBeat = 60 / transport.bpm
+        const clipDur    = clip.durationBeats * secPerBeat
+        if (clip.startTime + clipDur <= startSec) continue
+
+        const clipContextStart = _startContextTime + Math.max(0, clip.startTime - startSec)
+        const timers = synth.scheduleMidiClip(
+          clip.notes,
+          clipContextStart,
+          transport.bpm,
+          (track as MidiTrack).synth,
+          node['gain' as never] as unknown as AudioNode,
+          ctx,
+        )
+        midiTimers.push(...timers)
+      }
+    }
+
+    // RAF loop for playhead
     const tick = () => {
-      const elapsed = AudioEngine.get().ctx.currentTime - get().playStartContextTime
-      const dawTime = get().playStartDawTime + elapsed
-      useDAWStore.getState().setCurrentTime(dawTime)
+      const elapsed = ctx.currentTime - _startContextTime
+      const pos     = _startOffset + elapsed
+      const { transport } = useDAWStore.getState()
 
-      const transport = useDAWStore.getState().transport
-      if (transport.loopEnabled && dawTime >= transport.loopEnd) {
+      // Loop
+      if (transport.loopEnabled && pos >= transport.loopEnd) {
         get().stop()
-        useDAWStore.getState().setCurrentTime(transport.loopStart)
-        setTimeout(() => get().play(), 50)
+        set({ currentTime: transport.loopStart })
+        get().play()
         return
       }
 
-      set({ rafId: requestAnimationFrame(tick) })
+      set({ currentTime: pos })
+      _raf = requestAnimationFrame(tick)
     }
-    set({ rafId: requestAnimationFrame(tick) })
+
+    set({ isPlaying: true })
+    _raf = requestAnimationFrame(tick)
   },
 
   pause: () => {
-    const { rafId, trackNodes } = get()
-    if (rafId) cancelAnimationFrame(rafId)
-    trackNodes.forEach(n => n.stopAll())
-    useDAWStore.getState().setPlaying(false)
-    set({ rafId: null })
+    if (!get().isPlaying) return
+    if (_raf) cancelAnimationFrame(_raf)
+    clearMidiTimers()
+    for (const node of trackNodes.values()) node.stopAll()
+    for (const [, synth] of synthEngines) synth.stopAll(getAudioContext())
+    set({ isPlaying: false })
   },
 
   stop: () => {
-    const { rafId, trackNodes } = get()
-    if (rafId) cancelAnimationFrame(rafId)
-    trackNodes.forEach(n => n.stopAll())
-    useDAWStore.getState().setPlaying(false)
-    useDAWStore.getState().setCurrentTime(0)
-    set({ rafId: null })
+    if (_raf) cancelAnimationFrame(_raf)
+    clearMidiTimers()
+    for (const node of trackNodes.values()) node.stopAll()
+    for (const [, synth] of synthEngines) synth.stopAll(getAudioContext())
+    set({ isPlaying: false, currentTime: 0 })
   },
 
-  syncTrackNode: (trackId) => {
-    const engine = AudioEngine.get()
-    const { trackNodes } = get()
-    if (!trackNodes.has(trackId)) {
-      const node = new TrackNode(engine.ctx, engine.masterGain)
-      trackNodes.set(trackId, node)
-    }
-    const track = useDAWStore.getState().tracks.find(t => t.id === trackId)
-    if (track) trackNodes.get(trackId)!.update(track)
+  seek: (t) => {
+    const wasPlaying = get().isPlaying
+    if (wasPlaying) get().pause()
+    set({ currentTime: Math.max(0, t) })
+    if (wasPlaying) get().play()
+  },
+
+  setMasterVol: (v) => {
+    getMasterGain().gain.value = v
+    set({ masterVolume: v })
   },
 }))

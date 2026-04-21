@@ -1,40 +1,40 @@
-import { EQEffect } from '../engine/effects/EQEffect'
+import { EQEffect }     from '../engine/effects/EQEffect'
 import { ReverbEffect } from '../engine/effects/ReverbEffect'
-import { DelayEffect } from '../engine/effects/DelayEffect'
-import type { TrackEffects } from '../types'
+import { DelayEffect }  from '../engine/effects/DelayEffect'
+import type { EffectChain } from '../types'
 
 export interface WorkerClip {
-  startTime: number
-  trimStart: number
-  trimEnd: number
-  duration: number
+  startTime:  number
+  trimStart:  number
+  trimEnd:    number
+  duration:   number
   sampleRate: number
-  channels: Float32Array[]  // one per channel, transferable
+  channels:   Float32Array[]
 }
 
 export interface WorkerTrack {
-  volume: number
-  pan: number
-  muted: boolean
-  effects: TrackEffects
-  clips: WorkerClip[]
+  volume:  number
+  pan:     number
+  muted:   boolean
+  effects: EffectChain
+  clips:   WorkerClip[]
 }
 
 export interface RenderRequest {
-  type: 'render'
-  tracks: WorkerTrack[]
+  type:       'render'
+  tracks:     WorkerTrack[]
   sampleRate: number
 }
 
 export interface RenderResult {
-  type: 'done'
-  channels: Float32Array[]
+  type:       'done'
+  channels:   Float32Array[]
   sampleRate: number
-  length: number
+  length:     number
 }
 
 export interface RenderError {
-  type: 'error'
+  type:    'error'
   message: string
 }
 
@@ -42,7 +42,6 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
   const { tracks, sampleRate } = e.data
 
   try {
-    // Calculate total duration
     let maxEnd = 0
     for (const track of tracks) {
       for (const clip of track.clips) {
@@ -50,11 +49,9 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
         if (end > maxEnd) maxEnd = end
       }
     }
-
     if (maxEnd <= 0) throw new Error('No audio to export')
 
-    const duration = maxEnd + 0.5
-    const offCtx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate)
+    const offCtx     = new OfflineAudioContext(2, Math.ceil((maxEnd + 0.5) * sampleRate), sampleRate)
     const masterGain = offCtx.createGain()
     masterGain.connect(offCtx.destination)
 
@@ -70,20 +67,9 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
       const reverb = new ReverbEffect(offCtx)
       const delay  = new DelayEffect(offCtx)
 
-      if (track.effects.eq.enabled) {
-        eq.setGains(
-          track.effects.eq.lowGain,
-          track.effects.eq.loMidGain,
-          track.effects.eq.hiMidGain,
-          track.effects.eq.highGain,
-        )
-      }
-      reverb.setWet(track.effects.reverb.enabled ? track.effects.reverb.wet : 0)
-      delay.setWet(track.effects.delay.enabled ? track.effects.delay.wet : 0)
-      if (track.effects.delay.enabled) {
-        delay.setTime(track.effects.delay.time)
-        delay.setFeedback(track.effects.delay.feedback)
-      }
+      eq.apply(track.effects.eq)
+      reverb.apply(track.effects.reverb)
+      delay.apply(track.effects.delay)
 
       trackGain.connect(panner)
       panner.connect(eq.input)
@@ -93,13 +79,10 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
 
       for (const clip of track.clips) {
         if (!clip.channels.length) continue
-
-        // Reconstruct AudioBuffer from transferred Float32Arrays
         const buf = offCtx.createBuffer(clip.channels.length, clip.channels[0].length, clip.sampleRate)
         for (let ch = 0; ch < clip.channels.length; ch++) {
-          buf.copyToChannel(clip.channels[ch], ch)
+          buf.copyToChannel(new Float32Array(clip.channels[ch]), ch)
         }
-
         const src = offCtx.createBufferSource()
         src.buffer = buf
         src.connect(trackGain)
@@ -107,12 +90,10 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
       }
     }
 
-    const rendered = await offCtx.startRendering()
-
-    // Extract channels as transferable Float32Arrays
+    const rendered  = await offCtx.startRendering()
     const channels: Float32Array[] = []
     for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
-      channels.push(rendered.getChannelData(ch).slice()) // slice = own copy, transferable
+      channels.push(new Float32Array(rendered.getChannelData(ch)))
     }
 
     const result: RenderResult = { type: 'done', channels, sampleRate, length: rendered.length }

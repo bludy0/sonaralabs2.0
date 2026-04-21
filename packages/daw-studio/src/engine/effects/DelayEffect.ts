@@ -1,38 +1,41 @@
+import type { DelaySettings } from '../../types'
+
 export class DelayEffect {
-  delay: DelayNode
-  feedback: GainNode
-  dryGain: GainNode
-  wetGain: GainNode
-  input: GainNode
-  output: GainNode
+  readonly input:  GainNode
+  readonly output: GainNode
+  private delayNode: DelayNode
+  private feedback:  GainNode
+  private dry:       GainNode
+  private wet:       GainNode
 
   constructor(ctx: BaseAudioContext) {
-    this.input = ctx.createGain()
-    this.output = ctx.createGain()
-    this.delay = ctx.createDelay(2.0)
-    this.feedback = ctx.createGain()
-    this.dryGain = ctx.createGain()
-    this.wetGain = ctx.createGain()
+    this.input     = ctx.createGain()
+    this.output    = ctx.createGain()
+    this.delayNode = ctx.createDelay(2.0)
+    this.feedback  = ctx.createGain()
+    this.dry       = ctx.createGain()
+    this.wet       = ctx.createGain()
 
-    this.delay.delayTime.value = 0.3
-    this.feedback.gain.value = 0.3
-    this.dryGain.gain.value = 1
-    this.wetGain.gain.value = 0
+    this.delayNode.delayTime.value = 0.3
+    this.feedback.gain.value       = 0.3
+    this.dry.gain.value            = 1
+    this.wet.gain.value            = 0
 
-    this.input.connect(this.dryGain)
-    this.input.connect(this.delay)
-    this.delay.connect(this.feedback)
-    this.feedback.connect(this.delay)
-    this.delay.connect(this.wetGain)
-    this.dryGain.connect(this.output)
-    this.wetGain.connect(this.output)
+    this.input.connect(this.dry)
+    this.input.connect(this.delayNode)
+    this.delayNode.connect(this.feedback)
+    this.feedback.connect(this.delayNode)
+    this.delayNode.connect(this.wet)
+    this.dry.connect(this.output)
+    this.wet.connect(this.output)
   }
 
-  setTime(t: number) { this.delay.delayTime.value = t }
-  setFeedback(f: number) { this.feedback.gain.value = Math.min(0.9, f) }
-  setWet(w: number) {
-    this.wetGain.gain.value = w
-    this.dryGain.gain.value = 1 - w * 0.5
+  apply(s: DelaySettings) {
+    const w = s.enabled ? s.wet : 0
+    this.delayNode.delayTime.value = s.time
+    this.feedback.gain.value       = Math.min(0.9, s.feedback)
+    this.wet.gain.value            = w
+    this.dry.gain.value            = 1 - w * 0.5
   }
 
   connect(dest: AudioNode) { this.output.connect(dest) }

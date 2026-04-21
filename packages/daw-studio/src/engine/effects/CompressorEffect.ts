@@ -1,33 +1,35 @@
+import type { CompressorSettings } from '../../types'
+
 export class CompressorEffect {
-  compressor: DynamicsCompressorNode
-  input: GainNode
-  output: GainNode
+  readonly input:  GainNode
+  readonly output: GainNode
+  private comp: DynamicsCompressorNode
 
-  constructor(ctx: AudioContext) {
-    this.input = ctx.createGain()
+  constructor(ctx: BaseAudioContext) {
+    this.input  = ctx.createGain()
     this.output = ctx.createGain()
-    this.compressor = ctx.createDynamicsCompressor()
-    this.compressor.threshold.value = -24
-    this.compressor.ratio.value = 4
-    this.compressor.attack.value = 0.003
-    this.compressor.release.value = 0.25
-    this.compressor.knee.value = 6
+    this.comp   = ctx.createDynamicsCompressor()
 
-    this.input.connect(this.compressor)
-    this.compressor.connect(this.output)
+    this.comp.threshold.value = -18
+    this.comp.ratio.value     = 4
+    this.comp.attack.value    = 0.003
+    this.comp.release.value   = 0.25
+    this.comp.knee.value      = 6
+
+    this.input.connect(this.comp)
+    this.comp.connect(this.output)
   }
 
-  update(s: { threshold: number; ratio: number; attack: number; release: number; knee: number }) {
-    this.compressor.threshold.value = s.threshold
-    this.compressor.ratio.value = s.ratio
-    this.compressor.attack.value = s.attack
-    this.compressor.release.value = s.release
-    this.compressor.knee.value = s.knee
+  apply(s: CompressorSettings) {
+    if (!s.enabled) return
+    this.comp.threshold.value = s.threshold
+    this.comp.ratio.value     = s.ratio
+    this.comp.attack.value    = s.attack
+    this.comp.release.value   = s.release
+    this.comp.knee.value      = s.knee
   }
 
-  getReduction(): number {
-    return this.compressor.reduction
-  }
+  getReduction(): number { return this.comp.reduction }
 
   connect(dest: AudioNode) { this.output.connect(dest) }
   disconnect() { this.output.disconnect() }

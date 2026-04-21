@@ -1,156 +1,278 @@
 import { create } from 'zustand'
-import { v4 as uuidv4 } from 'uuid'
-import { DAWTrack, AudioClip, TransportState, DEFAULT_EFFECTS, DEFAULT_SYNTH_PRESET } from '../types'
-
-const TRACK_COLORS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#f97316','#06b6d4']
+import { v4 as uuid } from 'uuid'
+import {
+  DAWTrack, AudioTrack, MidiTrack,
+  AudioClip, MidiClip, MidiNote,
+  TransportState, EffectChain, SynthPreset,
+  defaultEffectChain, DEFAULT_SYNTH,
+} from '../types'
+import { TRACK_COLORS, DEFAULTS } from '../constants'
 
 interface DAWState {
-  tracks: DAWTrack[]
-  transport: TransportState
+  tracks:       DAWTrack[]
+  transport:    TransportState
   selectedTrackId: string | null
-  selectedClipId: string | null
-  zoom: number  // pixels per second
-  masterVolume: number
+  selectedClipId:  string | null
+  zoom:         number   // pixels per second
 
-  // Track actions
-  addTrack: (name?: string) => string
-  removeTrack: (id: string) => void
-  updateTrack: (id: string, patch: Partial<DAWTrack>) => void
+  // Track mutations
+  addAudioTrack: () => void
+  addMidiTrack:  () => void
+  removeTrack:   (trackId: string) => void
+  updateTrack:   (trackId: string, patch: Partial<Omit<AudioTrack | MidiTrack, 'id' | 'type'>>) => void
+  selectTrack:   (trackId: string | null) => void
 
-  // Clip actions
-  addClip: (trackId: string, name: string, audioUrl: string, buffer?: AudioBuffer) => string
+  // Audio clip mutations
+  addClip:    (trackId: string, clip: Omit<AudioClip, 'id'>) => string
   removeClip: (trackId: string, clipId: string) => void
   updateClip: (trackId: string, clipId: string, patch: Partial<AudioClip>) => void
-  moveClip: (trackId: string, clipId: string, startTime: number) => void
+  moveClip:   (trackId: string, clipId: string, newStart: number) => void
+  selectClip: (clipId: string | null) => void
+
+  // MIDI clip mutations
+  addMidiClip:    (trackId: string, clip: Omit<MidiClip, 'id'>) => string
+  removeMidiClip: (trackId: string, clipId: string) => void
+  updateMidiClip: (trackId: string, clipId: string, patch: Partial<MidiClip>) => void
+  addMidiNote:    (trackId: string, clipId: string, note: Omit<MidiNote, 'id'>) => void
+  removeMidiNote: (trackId: string, clipId: string, noteId: string) => void
+
+  // Effects
+  updateEffects:  (trackId: string, patch: Partial<EffectChain>) => void
+  updateSynth:    (trackId: string, patch: Partial<SynthPreset>) => void
 
   // Transport
-  setPlaying: (v: boolean) => void
-  setCurrentTime: (t: number) => void
-  setBPM: (bpm: number) => void
-  toggleLoop: () => void
-  setLoopRange: (start: number, end: number) => void
+  setBPM:         (bpm: number) => void
+  setLoop:        (start: number, end: number) => void
+  toggleLoop:     () => void
 
-  // Selection
-  selectTrack: (id: string | null) => void
-  selectClip: (id: string | null) => void
+  // Zoom
+  setZoom:        (z: number) => void
 
-  // Zoom & master
-  setZoom: (z: number) => void
-  setMasterVolume: (v: number) => void
-
-  // Lifecycle
-  reset: () => void
-  loadTracks: (tracks: { name: string; audioUrl: string }[]) => void
+  // Project
+  reset:          () => void
+  loadTracks:     (tracks: DAWTrack[]) => void
+  getSaveable:    () => DAWTrack[]
 }
 
-const INITIAL_TRANSPORT: TransportState = {
-  bpm: 120, isPlaying: false, isRecording: false, currentTime: 0,
-  loopStart: 0, loopEnd: 8, loopEnabled: false, timeSignatureNum: 4, timeSignatureDen: 4,
+function nextColor(tracks: DAWTrack[]): string {
+  return TRACK_COLORS[tracks.length % TRACK_COLORS.length]
+}
+
+function makeAudioTrack(tracks: DAWTrack[]): AudioTrack {
+  return {
+    id:      uuid(),
+    type:    'audio',
+    name:    `Track ${tracks.length + 1}`,
+    color:   nextColor(tracks),
+    volume:  DEFAULTS.VOLUME,
+    pan:     0,
+    muted:   false,
+    soloed:  false,
+    effects: defaultEffectChain(),
+    clips:   [],
+  }
+}
+
+function makeMidiTrack(tracks: DAWTrack[]): MidiTrack {
+  return {
+    id:      uuid(),
+    type:    'midi',
+    name:    `MIDI ${tracks.length + 1}`,
+    color:   nextColor(tracks),
+    volume:  DEFAULTS.VOLUME,
+    pan:     0,
+    muted:   false,
+    soloed:  false,
+    effects: defaultEffectChain(),
+    clips:   [],
+    synth:   { ...DEFAULT_SYNTH },
+  }
+}
+
+const initialTransport: TransportState = {
+  bpm:           DEFAULTS.BPM,
+  loopEnabled:   false,
+  loopStart:     0,
+  loopEnd:       8,
+  timeSignature: [4, 4],
 }
 
 export const useDAWStore = create<DAWState>((set, get) => ({
-  tracks: [],
-  transport: { ...INITIAL_TRANSPORT },
+  tracks:          [],
+  transport:       initialTransport,
   selectedTrackId: null,
-  selectedClipId: null,
-  zoom: 80,
-  masterVolume: 0.8,
+  selectedClipId:  null,
+  zoom:            DEFAULTS.PIXELS_PER_SECOND,
 
-  addTrack: (name) => {
-    const id = uuidv4()
+  // ── Tracks ────────────────────────────────────────────────────────────────
+
+  addAudioTrack: () =>
+    set(s => ({ tracks: [...s.tracks, makeAudioTrack(s.tracks)] })),
+
+  addMidiTrack: () =>
+    set(s => ({ tracks: [...s.tracks, makeMidiTrack(s.tracks)] })),
+
+  removeTrack: (trackId) =>
     set(s => ({
-      tracks: [...s.tracks, {
-        id,
-        name: name ?? `Track ${s.tracks.length + 1}`,
-        color: TRACK_COLORS[s.tracks.length % TRACK_COLORS.length],
-        type: 'audio' as const,
-        clips: [],
-        midiClips: [],
-        synthPreset: { ...DEFAULT_SYNTH_PRESET },
-        volume: 0.8,
-        pan: 0,
-        muted: false,
-        soloed: false,
-        effects: DEFAULT_EFFECTS(),
-      }]
+      tracks:          s.tracks.filter(t => t.id !== trackId),
+      selectedTrackId: s.selectedTrackId === trackId ? null : s.selectedTrackId,
+    })),
+
+  updateTrack: (trackId, patch) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId ? { ...t, ...patch } as DAWTrack : t
+      ),
+    })),
+
+  selectTrack: (trackId) => set({ selectedTrackId: trackId }),
+
+  // ── Audio clips ───────────────────────────────────────────────────────────
+
+  addClip: (trackId, clip) => {
+    const id = uuid()
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'audio'
+          ? { ...t, clips: [...t.clips, { ...clip, id }] }
+          : t
+      ),
     }))
     return id
   },
 
-  removeTrack: (id) => set(s => ({ tracks: s.tracks.filter(t => t.id !== id) })),
-
-  updateTrack: (id, patch) => set(s => ({
-    tracks: s.tracks.map(t => t.id === id ? { ...t, ...patch } : t)
-  })),
-
-  addClip: (trackId, name, audioUrl, buffer) => {
-    const id = uuidv4()
+  removeClip: (trackId, clipId) =>
     set(s => ({
-      tracks: s.tracks.map(t => {
-        if (t.id !== trackId) return t
-        const maxEnd = t.clips.reduce((m, c) => Math.max(m, c.startTime + c.duration), 0)
-        const dur = buffer ? buffer.duration : 0
-        const clip: AudioClip = {
-          id, trackId, name, audioUrl,
-          buffer: buffer ?? null,
-          startTime: maxEnd,
-          duration: dur,
-          trimStart: 0,
-          trimEnd: dur,
-        }
-        return { ...t, clips: [...t.clips, clip] }
-      })
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'audio'
+          ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
+          : t
+      ),
+      selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
+    })),
+
+  updateClip: (trackId, clipId, patch) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'audio'
+          ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
+          : t
+      ),
+    })),
+
+  moveClip: (trackId, clipId, newStart) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'audio'
+          ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, startTime: Math.max(0, newStart) } : c) }
+          : t
+      ),
+    })),
+
+  selectClip: (clipId) => set({ selectedClipId: clipId }),
+
+  // ── MIDI clips ────────────────────────────────────────────────────────────
+
+  addMidiClip: (trackId, clip) => {
+    const id = uuid()
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? { ...t, clips: [...t.clips, { ...clip, id }] }
+          : t
+      ),
     }))
     return id
   },
 
-  removeClip: (trackId, clipId) => set(s => ({
-    tracks: s.tracks.map(t =>
-      t.id === trackId ? { ...t, clips: t.clips.filter(c => c.id !== clipId) } : t
-    )
-  })),
+  removeMidiClip: (trackId, clipId) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
+          : t
+      ),
+    })),
 
-  updateClip: (trackId, clipId, patch) => set(s => ({
-    tracks: s.tracks.map(t =>
-      t.id === trackId
-        ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
-        : t
-    )
-  })),
+  updateMidiClip: (trackId, clipId, patch) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, ...patch } : c) }
+          : t
+      ),
+    })),
 
-  moveClip: (trackId, clipId, startTime) => set(s => ({
-    tracks: s.tracks.map(t =>
-      t.id === trackId
-        ? { ...t, clips: t.clips.map(c => c.id === clipId ? { ...c, startTime: Math.max(0, startTime) } : c) }
-        : t
-    )
-  })),
+  addMidiNote: (trackId, clipId, note) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? {
+              ...t,
+              clips: t.clips.map(c =>
+                c.id === clipId
+                  ? { ...c, notes: [...c.notes, { ...note, id: uuid() }] }
+                  : c
+              ),
+            }
+          : t
+      ),
+    })),
 
-  setPlaying: (v) => set(s => ({ transport: { ...s.transport, isPlaying: v } })),
-  setCurrentTime: (t) => set(s => ({ transport: { ...s.transport, currentTime: t } })),
-  setBPM: (bpm) => set(s => ({ transport: { ...s.transport, bpm } })),
-  toggleLoop: () => set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled } })),
-  setLoopRange: (start, end) => set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),
+  removeMidiNote: (trackId, clipId, noteId) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? {
+              ...t,
+              clips: t.clips.map(c =>
+                c.id === clipId
+                  ? { ...c, notes: c.notes.filter(n => n.id !== noteId) }
+                  : c
+              ),
+            }
+          : t
+      ),
+    })),
 
-  selectTrack: (id) => set({ selectedTrackId: id }),
-  selectClip: (id) => set({ selectedClipId: id }),
-  setZoom: (z) => set({ zoom: z }),
-  setMasterVolume: (v) => set({ masterVolume: v }),
+  // ── Effects ───────────────────────────────────────────────────────────────
 
-  reset: () => set({
-    tracks: [],
-    transport: { ...INITIAL_TRANSPORT },
-    selectedTrackId: null,
-    selectedClipId: null,
-    zoom: 80,
-    masterVolume: 0.8,
-  }),
+  updateEffects: (trackId, patch) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId ? { ...t, effects: { ...t.effects, ...patch } } : t
+      ),
+    })),
 
-  loadTracks: (tracks) => {
-    const { addTrack, addClip } = get()
-    tracks.forEach(t => {
-      const trackId = addTrack(t.name)
-      addClip(trackId, t.name, t.audioUrl)
-    })
-  },
+  updateSynth: (trackId, patch) =>
+    set(s => ({
+      tracks: s.tracks.map(t =>
+        t.id === trackId && t.type === 'midi'
+          ? { ...t, synth: { ...t.synth, ...patch } }
+          : t
+      ),
+    })),
+
+  // ── Transport ─────────────────────────────────────────────────────────────
+
+  setBPM: (bpm) =>
+    set(s => ({ transport: { ...s.transport, bpm: Math.max(20, Math.min(300, bpm)) } })),
+
+  setLoop: (start, end) =>
+    set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),
+
+  toggleLoop: () =>
+    set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled } })),
+
+  // ── Zoom ──────────────────────────────────────────────────────────────────
+
+  setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
+
+  // ── Project ───────────────────────────────────────────────────────────────
+
+  reset: () => set({ tracks: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null }),
+
+  loadTracks: (tracks) => set({ tracks }),
+
+  getSaveable: () => get().tracks,
 }))

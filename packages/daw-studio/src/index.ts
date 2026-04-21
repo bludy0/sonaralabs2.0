@@ -1,5 +1,10 @@
-export { default as DAWStudio } from './App'
-export type { DAWProps, ExportedTrack } from './types'
-export { exportMix } from './lib/exportMix'
-export { audioBufferToMp3 } from './lib/exportMp3'
-export type { LoopPoints } from './lib/audioUtils'
+export { DAWLayout }  from './components/DAWLayout'
+export { useDAWStore }    from './store/useDAWStore'
+export { useAudioEngine } from './store/useAudioEngine'
+export { exportMix, exportMixMp3, exportMixOgg, renderMix } from './lib/exportMix'
+export type {
+  DAWTrack, AudioTrack, MidiTrack,
+  AudioClip, MidiClip, MidiNote,
+  TransportState, EffectChain,
+  SynthPreset, SavedProject,
+} from './types'

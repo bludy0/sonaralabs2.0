@@ -1,30 +1,84 @@
-import Transport from './Transport'
-import { Timeline } from './Timeline/Timeline'
-import { Mixer } from './Mixer/Mixer'
-import { LoopEditor } from './LoopEditor/LoopEditor'
-import { useDAWStore } from '../store/useDAWStore'
+import { useState, useEffect } from 'react'
+import { Transport }   from './Transport'
+import { Timeline }    from './Timeline/Timeline'
+import { Mixer }       from './Mixer/Mixer'
+import { PianoRoll }   from './PianoRoll/PianoRoll'
+import { useDAWStore }    from '../store/useDAWStore'
+import { useAudioEngine } from '../store/useAudioEngine'
+import { C } from '../constants'
 
-export default function DAWLayout() {
-  const selectedClipId = useDAWStore(s => s.selectedClipId)
+type BottomTab = 'Mixer' | 'Piano Roll'
+
+export function DAWLayout() {
+  const [tab, setTab]     = useState<BottomTab>('Mixer')
+  const selectedClipId    = useDAWStore(s => s.selectedClipId)
+  const tracks            = useDAWStore(s => s.tracks)
+  const { init }          = useAudioEngine()
+
+  useEffect(() => { init() }, [])
+
+  // Auto-switch to Piano Roll when a MIDI clip is selected
+  const hasMidiClipSelected = tracks.some(
+    t => t.type === 'midi' && t.clips.some(c => c.id === selectedClipId)
+  )
+  useEffect(() => {
+    if (hasMidiClipSelected) setTab('Piano Roll')
+  }, [hasMidiClipSelected])
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: C.bgBase,
+      color: C.text1,
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflow: 'hidden',
+    }}>
+      {/* Transport bar */}
       <Transport />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Timeline fills top area */}
-        <div className="flex-1 overflow-hidden">
-          <Timeline />
+
+      {/* Timeline — flex-grow takes all available space */}
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <Timeline />
+      </div>
+
+      {/* Bottom panel */}
+      <div style={{
+        height: 220, flexShrink: 0,
+        borderTop: `1px solid ${C.border}`,
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          borderBottom: `1px solid ${C.border}`,
+          background: C.bgRaised,
+        }}>
+          {(['Mixer', 'Piano Roll'] as BottomTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                padding: '6px 16px',
+                background: 'none',
+                color: tab === t ? C.accent : C.text3,
+                border: 'none',
+                borderBottom: tab === t ? `2px solid ${C.accent}` : '2px solid transparent',
+                fontSize: 11, fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'color 0.1s',
+              }}
+            >
+              {t}
+            </button>
+          ))}
         </div>
-        {/* Bottom panels */}
-        <div className="flex border-t border-gray-800 shrink-0" style={{ height: 200 }}>
-          <div className="flex-1 overflow-x-auto overflow-y-hidden border-r border-gray-800">
-            <Mixer />
-          </div>
-          {selectedClipId && (
-            <div className="w-96 overflow-hidden">
-              <LoopEditor />
-            </div>
-          )}
+
+        {/* Panel content */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          {tab === 'Mixer'     && <Mixer />}
+          {tab === 'Piano Roll'&& <PianoRoll />}
         </div>
       </div>
     </div>

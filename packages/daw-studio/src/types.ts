@@ -1,168 +1,158 @@
+// ─── Effects ────────────────────────────────────────────────────────────────
+
 export interface EQSettings {
-  lowGain: number
-  loMidGain: number
-  hiMidGain: number
-  highGain: number
   enabled: boolean
+  lowGain:    number   // dB, ±12
+  loMidGain:  number
+  hiMidGain:  number
+  highGain:   number
 }
 
 export interface ReverbSettings {
-  roomSize: number
-  wet: number
   enabled: boolean
+  roomSize: number   // 0-1
+  wet:      number   // 0-1
 }
 
 export interface DelaySettings {
-  time: number
-  feedback: number
-  wet: number
-  enabled: boolean
+  enabled:  boolean
+  time:     number   // seconds
+  feedback: number   // 0-0.9
+  wet:      number   // 0-1
 }
 
 export interface CompressorSettings {
-  threshold: number   // -60 to 0
-  ratio: number       // 1 to 20
-  attack: number      // 0 to 1
-  release: number     // 0 to 1
-  knee: number        // 0 to 40
-  enabled: boolean
+  enabled:   boolean
+  threshold: number  // dB, -60 to 0
+  ratio:     number  // 1-20
+  attack:    number  // seconds
+  release:   number  // seconds
+  knee:      number  // dB
 }
 
 export interface LimiterSettings {
-  threshold: number   // -20 to 0
-  release: number     // 0 to 1
-  enabled: boolean
+  enabled:   boolean
+  threshold: number  // dB, -12 to 0
+  release:   number  // seconds
 }
 
-export interface ChorusSettings {
-  rate: number        // 0.1 to 10 Hz
-  depth: number       // 0 to 0.02
-  wet: number         // 0 to 1
-  enabled: boolean
-}
-
-export interface TrackEffects {
-  eq: EQSettings
-  reverb: ReverbSettings
-  delay: DelaySettings
+export interface EffectChain {
+  eq:         EQSettings
+  reverb:     ReverbSettings
+  delay:      DelaySettings
   compressor: CompressorSettings
-  limiter: LimiterSettings
-  chorus: ChorusSettings
+  limiter:    LimiterSettings
 }
 
-export interface AudioClip {
-  id: string
-  trackId: string
-  name: string
-  audioUrl: string
-  buffer: AudioBuffer | null
-  startTime: number
-  duration: number
-  trimStart: number
-  trimEnd: number
-}
+// ─── MIDI ────────────────────────────────────────────────────────────────────
 
 export interface MidiNote {
-  id: string
-  pitch: number         // 0–127
-  velocity: number      // 1–127
-  startBeat: number     // beat position
+  id:            string
+  pitch:         number   // 0-127
+  velocity:      number   // 0-127
+  startBeat:     number   // beats from clip start
   durationBeats: number
-}
-
-export interface MidiClip {
-  id: string
-  trackId: string
-  name: string
-  startTime: number     // seconds on timeline
-  durationBeats: number
-  notes: MidiNote[]
 }
 
 export interface SynthPreset {
-  oscillator: 'sine' | 'square' | 'sawtooth' | 'triangle'
-  attack: number
-  decay: number
-  sustain: number
-  release: number
-  filterFreq: number
-  filterQ: number
-  detune: number
+  oscillator: OscillatorType
+  attack:     number
+  decay:      number
+  sustain:    number
+  release:    number
+  filterFreq: number   // Hz
+  filterQ:    number
 }
 
-export interface AutomationPoint {
-  id: string
-  time: number    // seconds
-  value: number   // 0–1 normalized
+// ─── Clips ───────────────────────────────────────────────────────────────────
+
+export interface AudioClip {
+  id:        string
+  name:      string
+  startTime: number        // seconds on timeline
+  duration:  number        // original clip duration
+  trimStart: number        // seconds from clip start
+  trimEnd:   number        // seconds from clip start (0 = no trim)
+  buffer:    AudioBuffer | null
+  url:       string
 }
 
-export type AutomationParameter = 'volume' | 'pan' | 'eq.lowGain' | 'reverb.wet' | 'delay.wet' | 'compressor.threshold'
-
-export interface AutomationLane {
-  id: string
-  trackId: string
-  parameter: AutomationParameter
-  points: AutomationPoint[]
-  enabled: boolean
-  visible: boolean
+export interface MidiClip {
+  id:            string
+  name:          string
+  startTime:     number    // seconds on timeline
+  durationBeats: number
+  notes:         MidiNote[]
 }
 
-export interface DAWTrack {
-  id: string
-  name: string
-  color: string
-  type: 'audio' | 'midi'
+// ─── Tracks ──────────────────────────────────────────────────────────────────
+
+interface TrackBase {
+  id:      string
+  name:    string
+  color:   string
+  volume:  number   // 0-1
+  pan:     number   // -1 to 1
+  muted:   boolean
+  soloed:  boolean
+  effects: EffectChain
+}
+
+export interface AudioTrack extends TrackBase {
+  type:  'audio'
   clips: AudioClip[]
-  midiClips: MidiClip[]
-  synthPreset: SynthPreset
-  volume: number
-  pan: number
-  muted: boolean
-  soloed: boolean
-  effects: TrackEffects
 }
+
+export interface MidiTrack extends TrackBase {
+  type:  'midi'
+  clips: MidiClip[]
+  synth: SynthPreset
+}
+
+export type DAWTrack = AudioTrack | MidiTrack
+
+// ─── Transport ───────────────────────────────────────────────────────────────
 
 export interface TransportState {
-  bpm: number
-  isPlaying: boolean
-  isRecording: boolean
-  currentTime: number
-  loopStart: number
-  loopEnd: number
-  loopEnabled: boolean
-  timeSignatureNum: number
-  timeSignatureDen: number
+  bpm:           number
+  loopEnabled:   boolean
+  loopStart:     number   // seconds
+  loopEnd:       number   // seconds
+  timeSignature: [number, number]
 }
 
-export interface DAWProps {
-  mode?: 'standalone' | 'embedded'
-  initialTracks?: { name: string; audioUrl: string }[]
-  onSave?: (tracks: ExportedTrack[]) => void
-  apiBaseUrl?: string
+// ─── Project ─────────────────────────────────────────────────────────────────
+
+export type SerializedTrack =
+  | (Omit<AudioTrack, 'clips'> & { clips: Array<Omit<AudioClip, 'buffer'>> })
+  | MidiTrack
+
+export interface SavedProject {
+  version:   number
+  name:      string
+  transport: TransportState
+  tracks:    SerializedTrack[]
+  savedAt:   string
 }
 
-export interface ExportedTrack {
-  id: string
-  name: string
-  audioUrl: string
+// ─── Defaults ────────────────────────────────────────────────────────────────
+
+export function defaultEffectChain(): EffectChain {
+  return {
+    eq:         { enabled: false, lowGain: 0, loMidGain: 0, hiMidGain: 0, highGain: 0 },
+    reverb:     { enabled: false, roomSize: 0.3, wet: 0.3 },
+    delay:      { enabled: false, time: 0.3, feedback: 0.3, wet: 0.3 },
+    compressor: { enabled: false, threshold: -18, ratio: 4, attack: 0.003, release: 0.25, knee: 6 },
+    limiter:    { enabled: false, threshold: -1, release: 0.05 },
+  }
 }
 
-export const DEFAULT_SYNTH_PRESET: SynthPreset = {
+export const DEFAULT_SYNTH: SynthPreset = {
   oscillator: 'sine',
-  attack: 0.01,
-  decay: 0.1,
-  sustain: 0.7,
-  release: 0.3,
+  attack:     0.01,
+  decay:      0.1,
+  sustain:    0.7,
+  release:    0.3,
   filterFreq: 8000,
-  filterQ: 1,
-  detune: 0,
+  filterQ:    1,
 }
-
-export const DEFAULT_EFFECTS = (): TrackEffects => ({
-  eq: { lowGain: 0, loMidGain: 0, hiMidGain: 0, highGain: 0, enabled: true },
-  reverb: { roomSize: 0.3, wet: 0.2, enabled: false },
-  delay: { time: 0.3, feedback: 0.3, wet: 0.2, enabled: false },
-  compressor: { threshold: -24, ratio: 4, attack: 0.003, release: 0.25, knee: 6, enabled: false },
-  limiter: { threshold: -3, release: 0.05, enabled: false },
-  chorus: { rate: 1.5, depth: 0.005, wet: 0.3, enabled: false },
-})

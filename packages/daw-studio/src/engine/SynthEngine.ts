@@ -1,81 +1,108 @@
-interface VoiceHandle {
-  oscillator: OscillatorNode
-  gainNode: GainNode
+import type { SynthPreset, MidiNote } from '../types'
+
+interface Voice {
+  osc:    OscillatorNode
+  gain:   GainNode
   filter: BiquadFilterNode
-  noteId: string
 }
 
+const MAX_VOICES = 16
+
 export class SynthEngine {
-  private ctx: AudioContext
-  private activeVoices: Map<string, VoiceHandle> = new Map()
-  private maxVoices = 16
-
-  constructor(ctx: AudioContext) {
-    this.ctx = ctx
-  }
-
-  midiToHz(note: number): number {
-    return 440 * Math.pow(2, (note - 69) / 12)
-  }
+  private voices = new Map<string, Voice>()
 
   noteOn(
     noteId: string,
     pitch: number,
     velocity: number,
-    preset: import('../types').SynthPreset,
-    dest: AudioNode
-  ): void {
-    // Steal oldest voice if at limit
-    if (this.activeVoices.size >= this.maxVoices) {
-      const oldest = this.activeVoices.keys().next().value
-      if (oldest) this.noteOff(oldest)
+    preset: SynthPreset,
+    destination: AudioNode,
+    ctx: AudioContext,
+  ) {
+    if (this.voices.size >= MAX_VOICES) {
+      // steal oldest voice
+      const oldest = this.voices.keys().next().value
+      if (oldest) this.noteOff(oldest, preset, ctx)
     }
 
-    const ctx = this.ctx
-    const now = ctx.currentTime
+    const freq   = 440 * Math.pow(2, (pitch - 69) / 12)
+    const vel    = velocity / 127
+
+    const filter = ctx.createBiquadFilter()
+    filter.type            = 'lowpass'
+    filter.frequency.value = preset.filterFreq
+    filter.Q.value         = preset.filterQ
+
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(vel, ctx.currentTime + preset.attack)
+    gain.gain.linearRampToValueAtTime(
+      vel * preset.sustain,
+      ctx.currentTime + preset.attack + preset.decay,
+    )
 
     const osc = ctx.createOscillator()
-    const gainNode = ctx.createGain()
-    const filter = ctx.createBiquadFilter()
-
-    osc.type = preset.oscillator
-    osc.frequency.value = this.midiToHz(pitch)
-    osc.detune.value = preset.detune
-
-    filter.type = 'lowpass'
-    filter.frequency.value = preset.filterFreq
-    filter.Q.value = preset.filterQ
-
-    const amp = (velocity / 127) * 0.7
-    gainNode.gain.setValueAtTime(0, now)
-    gainNode.gain.linearRampToValueAtTime(amp, now + preset.attack)
-    gainNode.gain.linearRampToValueAtTime(amp * preset.sustain, now + preset.attack + preset.decay)
+    osc.type            = preset.oscillator
+    osc.frequency.value = freq
 
     osc.connect(filter)
-    filter.connect(gainNode)
-    gainNode.connect(dest)
-    osc.start(now)
+    filter.connect(gain)
+    gain.connect(destination)
+    osc.start()
 
-    this.activeVoices.set(noteId, { oscillator: osc, gainNode, filter, noteId })
+    this.voices.set(noteId, { osc, gain, filter })
   }
 
-  noteOff(noteId: string, preset?: import('../types').SynthPreset): void {
-    const voice = this.activeVoices.get(noteId)
-    if (!voice) return
-
-    const ctx = this.ctx
-    const now = ctx.currentTime
-    const release = preset?.release ?? 0.3
-
-    voice.gainNode.gain.cancelScheduledValues(now)
-    voice.gainNode.gain.setValueAtTime(voice.gainNode.gain.value, now)
-    voice.gainNode.gain.linearRampToValueAtTime(0, now + release)
-
-    voice.oscillator.stop(now + release + 0.01)
-    this.activeVoices.delete(noteId)
+  noteOff(noteId: string, preset: SynthPreset, ctx: AudioContext) {
+    const v = this.voices.get(noteId)
+    if (!v) return
+    const t = ctx.currentTime
+    v.gain.gain.cancelScheduledValues(t)
+    v.gain.gain.setValueAtTime(v.gain.gain.value, t)
+    v.gain.gain.linearRampToValueAtTime(0, t + preset.release)
+    v.osc.stop(t + preset.release + 0.01)
+    this.voices.delete(noteId)
   }
 
-  stopAll(): void {
-    this.activeVoices.forEach((_, id) => this.noteOff(id))
+  stopAll(ctx: AudioContext) {
+    for (const [id, v] of this.voices) {
+      try {
+        v.gain.gain.cancelScheduledValues(ctx.currentTime)
+        v.gain.gain.setValueAtTime(0, ctx.currentTime)
+        v.osc.stop(ctx.currentTime + 0.01)
+      } catch { /* ignore */ }
+    }
+    this.voices.clear()
+  }
+
+  scheduleMidiClip(
+    notes: MidiNote[],
+    clipStartTime: number,   // AudioContext absolute time
+    bpm: number,
+    preset: SynthPreset,
+    destination: AudioNode,
+    ctx: AudioContext,
+  ): ReturnType<typeof setTimeout>[] {
+    const secPerBeat = 60 / bpm
+    const timers: ReturnType<typeof setTimeout>[] = []
+
+    for (const note of notes) {
+      const noteStart = clipStartTime + note.startBeat * secPerBeat
+      const noteEnd   = noteStart + note.durationBeats * secPerBeat
+      const now       = ctx.currentTime
+      const onDelay   = Math.max(0, (noteStart - now) * 1000)
+      const offDelay  = Math.max(0, (noteEnd   - now) * 1000)
+
+      timers.push(
+        setTimeout(() => {
+          this.noteOn(`${note.id}-play`, note.pitch, note.velocity, preset, destination, ctx)
+        }, onDelay),
+        setTimeout(() => {
+          this.noteOff(`${note.id}-play`, preset, ctx)
+        }, offDelay),
+      )
+    }
+
+    return timers
   }
 }

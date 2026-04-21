@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { DAWStudio, useDAWStore } from "@sonaralabs/daw-studio";
-import type { ExportedTrack } from "@sonaralabs/daw-studio";
+import { DAWLayout, useDAWStore } from "@sonaralabs/daw-studio";
 import { formatDuration } from "../lib/format";
 
 interface LibraryItem {
@@ -34,10 +33,14 @@ export default function StudioPage() {
   const isReadOnly = Boolean(shareToken_);    // /studio/share/:token → read-only
 
   // DAW store
-  const getSaveable  = useDAWStore(s => s.getSaveable);
-  const loadProject  = useDAWStore(s => s.loadProject);
-  const loadTracks   = useDAWStore(s => s.loadTracks);
-  const reset        = useDAWStore(s => s.reset);
+  const getSaveable    = useDAWStore(s => s.getSaveable);
+  const loadTracks     = useDAWStore(s => s.loadTracks);
+  const addAudioTrack  = useDAWStore(s => s.addAudioTrack);
+  const addClip        = useDAWStore(s => s.addClip);
+  const tracks         = useDAWStore(s => s.tracks);
+  const setBPM         = useDAWStore(s => s.setBPM);
+  const setLoop        = useDAWStore(s => s.setLoop);
+  const reset          = useDAWStore(s => s.reset);
 
   // Library sidebar state
   const [items, setItems]           = useState<LibraryItem[]>([]);
@@ -60,8 +63,7 @@ export default function StudioPage() {
   const [copied, setCopied]             = useState(false);
   const projectPickerRef = useRef<HTMLDivElement>(null);
 
-  // Initial tracks from sessionStorage (cross-page navigation)
-  const [initialTracks, setInitialTracks] = useState<{ name: string; audioUrl: string }[]>([]);
+  const [decodingIds, setDecodingIds] = useState<Set<string>>(new Set());
 
   // ── Mount: sessionStorage preload OR share token load ────────────────────
   useEffect(() => {
@@ -73,15 +75,10 @@ export default function StudioPage() {
         .then(({ data }) => {
           const proj = data.data;
           if (proj) {
-            loadProject({
-              name:         proj.name,
-              tracks:       proj.tracks ?? [],
-              bpm:          proj.bpm,
-              masterVolume: proj.masterVolume,
-              loopStart:    proj.loopStart,
-              loopEnd:      proj.loopEnd,
-              loopEnabled:  proj.loopEnabled,
-            });
+            reset();
+            if (proj.bpm)      setBPM(proj.bpm);
+            if (proj.loopStart != null && proj.loopEnd != null) setLoop(proj.loopStart, proj.loopEnd);
+            if (proj.tracks?.length) loadTracks(proj.tracks);
             setProjectName(proj.name);
           }
         })
@@ -93,8 +90,8 @@ export default function StudioPage() {
     const raw = sessionStorage.getItem("studio:preload");
     if (raw) {
       try {
-        const tracks = JSON.parse(raw) as { name: string; audioUrl: string }[];
-        if (tracks.length) setInitialTracks(tracks);
+        const preload = JSON.parse(raw) as { name: string; audioUrl: string }[];
+        preload.forEach(t => addToDAW({ _id: t.audioUrl, _type: "upload", originalName: t.name, audioUrl: t.audioUrl, isFavorited: false, createdAt: "" }));
       } catch { /* ignore */ }
       sessionStorage.removeItem("studio:preload");
     }
@@ -123,11 +120,39 @@ export default function StudioPage() {
     finally { setLoadingLib(false); }
   }
 
-  function addToDAW(item: LibraryItem) {
-    if (!item.audioUrl || addedIds.has(item._id)) return;
+  async function addToDAW(item: LibraryItem) {
+    if (!item.audioUrl || addedIds.has(item._id) || decodingIds.has(item._id)) return;
     const name = item.originalName ?? (item.prompt?.slice(0, 40) ?? "Track");
-    loadTracks([{ name, audioUrl: item.audioUrl }]);
-    setAddedIds(prev => new Set(prev).add(item._id));
+    setDecodingIds(prev => new Set(prev).add(item._id));
+    try {
+      // Decode audio → add as new track + clip
+      const ctx = new AudioContext();
+      const resp = await fetch(item.audioUrl, { credentials: "include" });
+      const ab   = await resp.arrayBuffer();
+      const buf  = await ctx.decodeAudioData(ab);
+      // New track is added first, then we get its id from store
+      addAudioTrack();
+      const allTracks = useDAWStore.getState().tracks;
+      const trackId   = allTracks[allTracks.length - 1]?.id;
+      if (trackId) {
+        // Rename the track to the item name
+        useDAWStore.getState().updateTrack(trackId, { name });
+        addClip(trackId, {
+          name,
+          startTime: 0,
+          duration:  buf.duration,
+          trimStart: 0,
+          trimEnd:   0,
+          buffer:    buf,
+          url:       item.audioUrl,
+        });
+      }
+      setAddedIds(prev => new Set(prev).add(item._id));
+    } catch {
+      /* silently ignore decode errors */
+    } finally {
+      setDecodingIds(prev => { const s = new Set(prev); s.delete(item._id); return s; });
+    }
   }
 
   // ── Project save ──────────────────────────────────────────────────────────
@@ -135,7 +160,13 @@ export default function StudioPage() {
     setSaving(true);
     setSaveLabel(null);
     try {
-      const snapshot = getSaveable(projectName);
+      // Strip AudioBuffer objects before serializing (not JSON-serializable)
+      const rawTracks = getSaveable();
+      const saveTracks = rawTracks.map(t => t.type === 'audio'
+        ? { ...t, clips: t.clips.map(c => ({ ...c, buffer: null })) }
+        : t
+      );
+      const snapshot = { name: projectName, tracks: saveTracks };
       let res;
       if (projectId) {
         res = await api.put(`/api/projects/${projectId}`, snapshot);
@@ -172,20 +203,13 @@ export default function StudioPage() {
       const { data } = await api.get(`/api/projects/${meta._id}`);
       const proj = data.data;
       reset();
-      loadProject({
-        name:         proj.name,
-        tracks:       proj.tracks ?? [],
-        bpm:          proj.bpm,
-        masterVolume: proj.masterVolume,
-        loopStart:    proj.loopStart,
-        loopEnd:      proj.loopEnd,
-        loopEnabled:  proj.loopEnabled,
-      });
+      if (proj.bpm)      setBPM(proj.bpm);
+      if (proj.loopStart != null && proj.loopEnd != null) setLoop(proj.loopStart, proj.loopEnd);
+      if (proj.tracks?.length) loadTracks(proj.tracks);
       setProjectName(proj.name);
       setProjectId(proj._id);
       setShareToken(proj.shareToken ?? null);
       setAddedIds(new Set());
-      setInitialTracks([]); // DAW will read from store
       setShowProjectPicker(false);
     } catch { /* ignore */ }
   }
@@ -206,11 +230,6 @@ export default function StudioPage() {
       }
     } catch { /* ignore */ }
     finally { setSharing(false); }
-  }
-
-  async function handleSaveOnExport(tracks: ExportedTrack[]) {
-    if (!tracks.length) return;
-    navigate("/library");
   }
 
   // ── Filtered sidebar items ────────────────────────────────────────────────
@@ -377,6 +396,7 @@ export default function StudioPage() {
                     key={item._id}
                     item={item}
                     added={addedIds.has(item._id)}
+                    decoding={decodingIds.has(item._id)}
                     onAdd={addToDAW}
                   />
                 ))
@@ -393,11 +413,7 @@ export default function StudioPage() {
 
         {/* ── DAW area ───────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-hidden">
-          <DAWStudio
-            mode="embedded"
-            initialTracks={initialTracks}
-            onSave={handleSaveOnExport}
-          />
+          <DAWLayout />
         </div>
       </div>
     </div>
@@ -408,10 +424,11 @@ export default function StudioPage() {
 interface LibrarySidebarItemProps {
   item: LibraryItem;
   added: boolean;
+  decoding: boolean;
   onAdd: (item: LibraryItem) => void;
 }
 
-function LibrarySidebarItem({ item, added, onAdd }: LibrarySidebarItemProps) {
+function LibrarySidebarItem({ item, added, decoding, onAdd }: LibrarySidebarItemProps) {
   const label =
     item.originalName ??
     (item.prompt ? item.prompt.slice(0, 36) + (item.prompt.length > 36 ? "…" : "") : "Untitled");
@@ -431,15 +448,17 @@ function LibrarySidebarItem({ item, added, onAdd }: LibrarySidebarItemProps) {
       </div>
       <button
         onClick={() => onAdd(item)}
-        disabled={added}
+        disabled={added || decoding}
         className={`shrink-0 text-xs px-1.5 py-0.5 rounded transition-colors ${
           added
             ? "text-green-500 cursor-default"
+            : decoding
+            ? "text-yellow-500 cursor-wait opacity-100"
             : "text-gray-500 hover:text-indigo-400 hover:bg-gray-700 opacity-0 group-hover:opacity-100"
         }`}
-        title={added ? "Already added" : "Add to DAW"}
+        title={added ? "Already added" : decoding ? "Decoding…" : "Add to DAW"}
       >
-        {added ? "✓" : "+"}
+        {added ? "✓" : decoding ? "…" : "+"}
       </button>
     </div>
   );

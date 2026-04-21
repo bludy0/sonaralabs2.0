@@ -1,10 +1,12 @@
+import type { EQSettings } from '../../types'
+
 export class EQEffect {
-  low: BiquadFilterNode
-  loMid: BiquadFilterNode
-  hiMid: BiquadFilterNode
-  high: BiquadFilterNode
-  input: BiquadFilterNode
-  output: BiquadFilterNode
+  readonly input:  BiquadFilterNode
+  readonly output: BiquadFilterNode
+  private low:   BiquadFilterNode
+  private loMid: BiquadFilterNode
+  private hiMid: BiquadFilterNode
+  private high:  BiquadFilterNode
 
   constructor(ctx: BaseAudioContext) {
     this.low = ctx.createBiquadFilter()
@@ -29,15 +31,15 @@ export class EQEffect {
     this.loMid.connect(this.hiMid)
     this.hiMid.connect(this.high)
 
-    this.input = this.low
+    this.input  = this.low
     this.output = this.high
   }
 
-  setGains(low: number, loMid: number, hiMid: number, high: number) {
-    this.low.gain.value = low
-    this.loMid.gain.value = loMid
-    this.hiMid.gain.value = hiMid
-    this.high.gain.value = high
+  apply(s: EQSettings) {
+    this.low.gain.value   = s.enabled ? s.lowGain   : 0
+    this.loMid.gain.value = s.enabled ? s.loMidGain : 0
+    this.hiMid.gain.value = s.enabled ? s.hiMidGain : 0
+    this.high.gain.value  = s.enabled ? s.highGain  : 0
   }
 
   connect(dest: AudioNode) { this.output.connect(dest) }
