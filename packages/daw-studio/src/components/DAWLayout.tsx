@@ -5,6 +5,7 @@ import { Mixer }       from './Mixer/Mixer'
 import { PianoRoll }   from './PianoRoll/PianoRoll'
 import { useDAWStore }    from '../store/useDAWStore'
 import { useAudioEngine } from '../store/useAudioEngine'
+import { useBufferRehydration } from '../lib/useBufferRehydration'
 import { C } from '../constants'
 
 type BottomTab = 'Mixer' | 'Piano Roll'
@@ -16,6 +17,7 @@ export function DAWLayout() {
   const { init }          = useAudioEngine()
 
   useEffect(() => { init() }, [])
+  useBufferRehydration()
 
   // Auto-switch to Piano Roll when a MIDI clip is selected
   const hasMidiClipSelected = tracks.some(

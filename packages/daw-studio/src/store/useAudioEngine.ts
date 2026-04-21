@@ -3,7 +3,21 @@ import { getAudioContext, getMasterGain, resumeContext } from '../engine/context
 import { TrackNode } from '../engine/TrackNode'
 import { SynthEngine } from '../engine/SynthEngine'
 import { useDAWStore } from './useDAWStore'
-import type { AudioTrack, MidiTrack } from '../types'
+import type { AudioTrack, MidiTrack, AutomationPoint } from '../types'
+
+/** Linear interpolation between automation points at a given time. */
+function lerpAutomation(points: AutomationPoint[], t: number): number {
+  if (t <= points[0].time) return points[0].value
+  for (let i = 1; i < points.length; i++) {
+    if (t <= points[i].time) {
+      const a  = points[i - 1]
+      const b  = points[i]
+      const pct = (t - a.time) / (b.time - a.time)
+      return a.value + (b.value - a.value) * pct
+    }
+  }
+  return points[points.length - 1].value
+}
 
 interface EngineState {
   isPlaying:   boolean
@@ -129,11 +143,11 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
       }
     }
 
-    // RAF loop for playhead
+    // RAF loop for playhead + automation
     const tick = () => {
       const elapsed = ctx.currentTime - _startContextTime
       const pos     = _startOffset + elapsed
-      const { transport } = useDAWStore.getState()
+      const { transport, automationLanes } = useDAWStore.getState()
 
       // Loop
       if (transport.loopEnabled && pos >= transport.loopEnd) {
@@ -141,6 +155,14 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
         set({ currentTime: transport.loopStart })
         get().play()
         return
+      }
+
+      // Apply automation
+      for (const lane of automationLanes) {
+        if (!lane.enabled || lane.points.length === 0) continue
+        const node = trackNodes.get(lane.trackId)
+        if (!node) continue
+        node.setParam(lane.param, lerpAutomation(lane.points, pos))
       }
 
       set({ currentTime: pos })

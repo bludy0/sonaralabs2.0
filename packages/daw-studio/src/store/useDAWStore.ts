@@ -4,16 +4,18 @@ import {
   DAWTrack, AudioTrack, MidiTrack,
   AudioClip, MidiClip, MidiNote,
   TransportState, EffectChain, SynthPreset,
+  AutomationLane, AutomationPoint, AutomationParam,
   defaultEffectChain, DEFAULT_SYNTH,
 } from '../types'
 import { TRACK_COLORS, DEFAULTS } from '../constants'
 
 interface DAWState {
-  tracks:       DAWTrack[]
-  transport:    TransportState
+  tracks:          DAWTrack[]
+  transport:       TransportState
+  automationLanes: AutomationLane[]
   selectedTrackId: string | null
   selectedClipId:  string | null
-  zoom:         number   // pixels per second
+  zoom:            number
 
   // Track mutations
   addAudioTrack: () => void
@@ -40,18 +42,26 @@ interface DAWState {
   updateEffects:  (trackId: string, patch: Partial<EffectChain>) => void
   updateSynth:    (trackId: string, patch: Partial<SynthPreset>) => void
 
+  // Automation
+  addAutomationLane:    (trackId: string, param: AutomationParam) => void
+  removeAutomationLane: (laneId: string) => void
+  toggleAutomationEnabled: (laneId: string) => void
+  addAutomationPoint:   (laneId: string, point: Omit<AutomationPoint, 'id'>) => void
+  updateAutomationPoint:(laneId: string, pointId: string, patch: Partial<Omit<AutomationPoint,'id'>>) => void
+  removeAutomationPoint:(laneId: string, pointId: string) => void
+
   // Transport
-  setBPM:         (bpm: number) => void
-  setLoop:        (start: number, end: number) => void
-  toggleLoop:     () => void
+  setBPM:     (bpm: number) => void
+  setLoop:    (start: number, end: number) => void
+  toggleLoop: () => void
 
   // Zoom
-  setZoom:        (z: number) => void
+  setZoom: (z: number) => void
 
   // Project
-  reset:          () => void
-  loadTracks:     (tracks: DAWTrack[]) => void
-  getSaveable:    () => DAWTrack[]
+  reset:       () => void
+  loadTracks:  (tracks: DAWTrack[]) => void
+  getSaveable: () => DAWTrack[]
 }
 
 function nextColor(tracks: DAWTrack[]): string {
@@ -100,6 +110,7 @@ const initialTransport: TransportState = {
 export const useDAWStore = create<DAWState>((set, get) => ({
   tracks:          [],
   transport:       initialTransport,
+  automationLanes: [],
   selectedTrackId: null,
   selectedClipId:  null,
   zoom:            DEFAULTS.PIXELS_PER_SECOND,
@@ -253,6 +264,62 @@ export const useDAWStore = create<DAWState>((set, get) => ({
       ),
     })),
 
+  // ── Automation ────────────────────────────────────────────────────────────
+
+  addAutomationLane: (trackId, param) =>
+    set(s => ({
+      automationLanes: [
+        ...s.automationLanes,
+        { id: uuid(), trackId, param, enabled: true, points: [] },
+      ],
+    })),
+
+  removeAutomationLane: (laneId) =>
+    set(s => ({ automationLanes: s.automationLanes.filter(l => l.id !== laneId) })),
+
+  toggleAutomationEnabled: (laneId) =>
+    set(s => ({
+      automationLanes: s.automationLanes.map(l =>
+        l.id === laneId ? { ...l, enabled: !l.enabled } : l
+      ),
+    })),
+
+  addAutomationPoint: (laneId, point) =>
+    set(s => ({
+      automationLanes: s.automationLanes.map(l =>
+        l.id === laneId
+          ? {
+              ...l,
+              points: [...l.points, { ...point, id: uuid() }]
+                .sort((a, b) => a.time - b.time),
+            }
+          : l
+      ),
+    })),
+
+  updateAutomationPoint: (laneId, pointId, patch) =>
+    set(s => ({
+      automationLanes: s.automationLanes.map(l =>
+        l.id === laneId
+          ? {
+              ...l,
+              points: l.points
+                .map(p => p.id === pointId ? { ...p, ...patch } : p)
+                .sort((a, b) => a.time - b.time),
+            }
+          : l
+      ),
+    })),
+
+  removeAutomationPoint: (laneId, pointId) =>
+    set(s => ({
+      automationLanes: s.automationLanes.map(l =>
+        l.id === laneId
+          ? { ...l, points: l.points.filter(p => p.id !== pointId) }
+          : l
+      ),
+    })),
+
   // ── Transport ─────────────────────────────────────────────────────────────
 
   setBPM: (bpm) =>
@@ -270,7 +337,7 @@ export const useDAWStore = create<DAWState>((set, get) => ({
 
   // ── Project ───────────────────────────────────────────────────────────────
 
-  reset: () => set({ tracks: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null }),
+  reset: () => set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null }),
 
   loadTracks: (tracks) => set({ tracks }),
 

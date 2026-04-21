@@ -3,7 +3,7 @@ import { ReverbEffect }     from './effects/ReverbEffect'
 import { DelayEffect }      from './effects/DelayEffect'
 import { CompressorEffect } from './effects/CompressorEffect'
 import { LimiterEffect }    from './effects/LimiterEffect'
-import type { AudioTrack, MidiTrack, EffectChain } from '../types'
+import type { AudioTrack, MidiTrack, EffectChain, AutomationParam } from '../types'
 
 export class TrackNode {
   readonly trackId: string
@@ -96,5 +96,39 @@ export class TrackNode {
     let max = 0
     for (const v of data) if (v > max) max = v
     return max / 255
+  }
+
+  /** Apply a single automation param directly to the audio graph (called from RAF loop). */
+  setParam(param: AutomationParam, value: number) {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    switch (param) {
+      case 'volume':
+        this.gain.gain.value = Math.max(0, value)
+        break
+      case 'pan':
+        this.panner.pan.value = Math.max(-1, Math.min(1, value))
+        break
+      case 'eq.lowGain':
+        ;(this.eq as any).low.gain.value = value
+        break
+      case 'eq.loMidGain':
+        ;(this.eq as any).loMid.gain.value = value
+        break
+      case 'eq.hiMidGain':
+        ;(this.eq as any).hiMid.gain.value = value
+        break
+      case 'eq.highGain':
+        ;(this.eq as any).high.gain.value = value
+        break
+      case 'reverb.wet':
+        ;(this.reverb as any).wet.gain.value = Math.max(0, Math.min(1, value))
+        break
+      case 'delay.wet':
+        ;(this.delay as any).wet.gain.value = Math.max(0, Math.min(1, value))
+        break
+      case 'compressor.threshold':
+        ;(this.comp as any).comp.threshold.value = value
+        break
+    }
   }
 }

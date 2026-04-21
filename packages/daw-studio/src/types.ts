@@ -1,3 +1,48 @@
+// ─── Automation ─────────────────────────────────────────────────────────────
+
+export type AutomationParam =
+  | 'volume' | 'pan'
+  | 'eq.lowGain' | 'eq.loMidGain' | 'eq.hiMidGain' | 'eq.highGain'
+  | 'reverb.wet' | 'delay.wet' | 'compressor.threshold'
+
+export const AUTOMATION_PARAM_RANGES: Record<AutomationParam, [number, number]> = {
+  'volume':               [0,   1],
+  'pan':                  [-1,  1],
+  'eq.lowGain':           [-12, 12],
+  'eq.loMidGain':         [-12, 12],
+  'eq.hiMidGain':         [-12, 12],
+  'eq.highGain':          [-12, 12],
+  'reverb.wet':           [0,   1],
+  'delay.wet':            [0,   1],
+  'compressor.threshold': [-60, 0],
+}
+
+export const AUTOMATION_PARAM_LABELS: Record<AutomationParam, string> = {
+  'volume':               'Volume',
+  'pan':                  'Pan',
+  'eq.lowGain':           'EQ Low',
+  'eq.loMidGain':         'EQ Lo-Mid',
+  'eq.hiMidGain':         'EQ Hi-Mid',
+  'eq.highGain':          'EQ High',
+  'reverb.wet':           'Reverb Wet',
+  'delay.wet':            'Delay Wet',
+  'compressor.threshold': 'Comp Threshold',
+}
+
+export interface AutomationPoint {
+  id:    string
+  time:  number   // seconds on timeline
+  value: number   // actual value in param range
+}
+
+export interface AutomationLane {
+  id:      string
+  trackId: string
+  param:   AutomationParam
+  enabled: boolean
+  points:  AutomationPoint[]  // always sorted by time
+}
+
 // ─── Effects ────────────────────────────────────────────────────────────────
 
 export interface EQSettings {

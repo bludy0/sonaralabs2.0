@@ -1,31 +1,25 @@
-import { useRef } from 'react'
-import { useDAWStore }    from '../../store/useDAWStore'
+import { useRef, useEffect, useCallback, memo } from 'react'
+import { useDAWStore }     from '../../store/useDAWStore'
 import { getAudioContext } from '../../engine/context'
 import { C } from '../../constants'
 import type { DAWTrack, AudioClip as TAudioClip, MidiClip as TMidiClip } from '../../types'
 
-const TRACK_H = 72
-const CLIP_INNER_PAD = 3
+const TRACK_H    = 72
+const PAD        = 3
+const HANDLE_W   = 6
 
-interface Props {
-  track: DAWTrack
-  zoom:  number
-}
+interface Props { track: DAWTrack; zoom: number }
 
 export function TrackRow({ track, zoom }: Props) {
   const selectedClipId = useDAWStore(s => s.selectedClipId)
   const addClip        = useDAWStore(s => s.addClip)
   const removeClip     = useDAWStore(s => s.removeClip)
   const moveClip       = useDAWStore(s => s.moveClip)
+  const updateClip     = useDAWStore(s => s.updateClip)
   const selectClip     = useDAWStore(s => s.selectClip)
   const removeMidiClip = useDAWStore(s => s.removeMidiClip)
 
-  const dragRef = useRef<{
-    clipId: string; trackId: string
-    startX: number; startTime: number
-  } | null>(null)
-
-  // Drop audio file onto lane
+  // ── Drop audio file ───────────────────────────────────────────────────────
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
     if (track.type !== 'audio') return
@@ -37,52 +31,24 @@ export function TrackRow({ track, zoom }: Props) {
     const ab  = await file.arrayBuffer()
     const buf = await ctx.decodeAudioData(ab)
     addClip(track.id, {
-      name:      file.name.replace(/\.[^.]+$/, ''),
-      startTime,
-      duration:  buf.duration,
-      trimStart: 0,
-      trimEnd:   0,
-      buffer:    buf,
-      url:       '',
+      name: file.name.replace(/\.[^.]+$/, ''),
+      startTime, duration: buf.duration,
+      trimStart: 0, trimEnd: 0,
+      buffer: buf, url: '',
     })
-  }
-
-  function onClipMouseDown(e: React.MouseEvent, clipId: string, startTime: number) {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    selectClip(clipId)
-    dragRef.current = { clipId, trackId: track.id, startX: e.clientX, startTime }
-
-    const onMove = (mv: MouseEvent) => {
-      if (!dragRef.current) return
-      const dx    = mv.clientX - dragRef.current.startX
-      const newT  = dragRef.current.startTime + dx / zoom
-      moveClip(track.id, clipId, newT)
-    }
-    const onUp = () => {
-      dragRef.current = null
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup',   onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup',   onUp)
   }
 
   return (
     <div
       style={{
-        height: TRACK_H,
-        position: 'relative',
+        height: TRACK_H, position: 'relative',
         borderBottom: `1px solid ${C.borderDim}`,
-        background: 'transparent',
       }}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
       onDrop={onDrop}
     >
-      {/* Grid lines */}
       <GridLines zoom={zoom} />
 
-      {/* Clips */}
       {track.type === 'audio' && track.clips.map(clip => (
         <AudioClipBlock
           key={clip.id}
@@ -90,175 +56,282 @@ export function TrackRow({ track, zoom }: Props) {
           zoom={zoom}
           color={track.color}
           selected={selectedClipId === clip.id}
-          onMouseDown={onClipMouseDown}
+          onSelect={() => selectClip(clip.id)}
+          onMove={(newStart) => moveClip(track.id, clip.id, newStart)}
+          onTrimStart={(t) => updateClip(track.id, clip.id, { trimStart: t })}
+          onTrimEnd={(t)   => updateClip(track.id, clip.id, { trimEnd:   t })}
           onRemove={() => { removeClip(track.id, clip.id); selectClip(null) }}
         />
       ))}
 
-      {track.type === 'midi' && track.clips.map(clip => {
-        const bpm     = useDAWStore.getState().transport.bpm
-        const secPBeat = 60 / bpm
-        const w = clip.durationBeats * secPBeat * zoom
-        return (
-          <MidiClipBlock
-            key={clip.id}
-            clip={clip}
-            zoom={zoom}
-            color={track.color}
-            selected={selectedClipId === clip.id}
-            onMouseDown={e => { e.stopPropagation(); selectClip(clip.id) }}
-            onRemove={() => { removeMidiClip(track.id, clip.id); selectClip(null) }}
-          />
-        )
-      })}
+      {track.type === 'midi' && track.clips.map(clip => (
+        <MidiClipBlock
+          key={clip.id}
+          clip={clip}
+          zoom={zoom}
+          color={track.color}
+          selected={selectedClipId === clip.id}
+          onSelect={() => selectClip(clip.id)}
+          onRemove={() => { removeMidiClip(track.id, clip.id); selectClip(null) }}
+        />
+      ))}
     </div>
   )
 }
 
+// ── Grid lines ────────────────────────────────────────────────────────────────
 function GridLines({ zoom }: { zoom: number }) {
   const step = zoom > 80 ? 1 : zoom > 40 ? 2 : 4
-  const count = Math.ceil(60 / step)
   return (
     <>
-      {Array.from({ length: count }, (_, i) => (
+      {Array.from({ length: Math.ceil(120 / step) }, (_, i) => (
         <div key={i} style={{
-          position: 'absolute',
-          top: 0, bottom: 0,
-          left: i * step * zoom,
-          width: 1,
-          background: C.borderDim,
-          pointerEvents: 'none',
-        }}/>
+          position: 'absolute', top: 0, bottom: 0,
+          left: i * step * zoom, width: 1,
+          background: C.borderDim, pointerEvents: 'none',
+        }} />
       ))}
     </>
   )
 }
 
+// ── Waveform canvas ───────────────────────────────────────────────────────────
+const WaveformCanvas = memo(function WaveformCanvas({
+  buffer, color, width, height,
+}: { buffer: AudioBuffer; color: string; width: number; height: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx2d = canvas.getContext('2d')
+    if (!ctx2d) return
+
+    const data  = buffer.getChannelData(0)
+    const step  = Math.max(1, Math.floor(data.length / width))
+    const mid   = height / 2
+
+    ctx2d.clearRect(0, 0, width, height)
+    ctx2d.fillStyle = color + '55'
+
+    for (let x = 0; x < width; x++) {
+      let min = 0, max = 0
+      for (let j = 0; j < step; j++) {
+        const v = data[x * step + j] ?? 0
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+      const yTop = mid + min * mid
+      const yBot = mid + max * mid
+      ctx2d.fillRect(x, yTop, 1, Math.max(1, yBot - yTop))
+    }
+
+    // Center line
+    ctx2d.fillStyle = color + '30'
+    ctx2d.fillRect(0, mid, width, 1)
+  }, [buffer, color, width, height])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+    />
+  )
+})
+
+// ── Audio clip block ──────────────────────────────────────────────────────────
 function AudioClipBlock({
-  clip, zoom, color, selected, onMouseDown, onRemove,
+  clip, zoom, color, selected,
+  onSelect, onMove, onTrimStart, onTrimEnd, onRemove,
 }: {
-  clip: TAudioClip
-  zoom: number
-  color: string
-  selected: boolean
-  onMouseDown: (e: React.MouseEvent, id: string, start: number) => void
-  onRemove: () => void
+  clip:        TAudioClip
+  zoom:        number
+  color:       string
+  selected:    boolean
+  onSelect:    () => void
+  onMove:      (newStart: number) => void
+  onTrimStart: (trimStart: number) => void
+  onTrimEnd:   (trimEnd: number) => void
+  onRemove:    () => void
 }) {
   const effectiveDur = (clip.trimEnd || clip.duration) - clip.trimStart
-  const w = Math.max(4, effectiveDur * zoom)
+  const w = Math.max(8, effectiveDur * zoom)
   const x = clip.startTime * zoom
+
+  const dragRef = useRef<{ type: 'move' | 'trimL' | 'trimR'; startX: number; startVal: number } | null>(null)
+
+  function startDrag(type: 'move' | 'trimL' | 'trimR', e: React.MouseEvent) {
+    e.stopPropagation()
+    onSelect()
+    const startVal =
+      type === 'move'  ? clip.startTime :
+      type === 'trimL' ? clip.trimStart :
+      clip.trimEnd || clip.duration
+
+    dragRef.current = { type, startX: e.clientX, startVal }
+
+    const onMouseMove = (mv: MouseEvent) => {
+      if (!dragRef.current) return
+      const dx   = (mv.clientX - dragRef.current.startX) / zoom
+      const raw  = dragRef.current.startVal + dx
+
+      if (type === 'move') {
+        onMove(Math.max(0, raw))
+      } else if (type === 'trimL') {
+        const clamped = Math.max(0, Math.min(raw, (clip.trimEnd || clip.duration) - 0.05))
+        onTrimStart(clamped)
+      } else {
+        const clamped = Math.max(clip.trimStart + 0.05, Math.min(raw, clip.duration))
+        onTrimEnd(clamped === clip.duration ? 0 : clamped)
+      }
+    }
+    const onMouseUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup',   onMouseUp)
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup',   onMouseUp)
+  }
 
   return (
     <div
-      onMouseDown={e => onMouseDown(e, clip.id, clip.startTime)}
       onContextMenu={e => { e.preventDefault(); onRemove() }}
       style={{
         position: 'absolute',
-        left: x, top: CLIP_INNER_PAD,
-        width: w, height: TRACK_H - CLIP_INNER_PAD * 2,
-        background: color + '28',
-        border: `1.5px solid ${selected ? color : color + '80'}`,
+        left: x, top: PAD, width: w, height: TRACK_H - PAD * 2,
+        background: color + '1a',
+        border: `1.5px solid ${selected ? color : color + '70'}`,
         borderRadius: 4,
-        cursor: 'grab',
         overflow: 'hidden',
         userSelect: 'none',
-        boxShadow: selected ? `0 0 0 1px ${color}60` : 'none',
+        boxShadow: selected ? `0 0 0 1px ${color}50, inset 0 0 0 1px ${color}20` : 'none',
         transition: 'border-color 0.1s, box-shadow 0.1s',
       }}
     >
-      {/* Waveform placeholder bars */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', alignItems: 'center', paddingInline: 4, gap: 1,
-      }}>
-        <WaveformBars seed={clip.id} color={color} />
-      </div>
+      {/* Waveform */}
+      {clip.buffer && (
+        <WaveformCanvas
+          buffer={clip.buffer}
+          color={color}
+          width={Math.round(w)}
+          height={TRACK_H - PAD * 2}
+        />
+      )}
 
-      {/* Label */}
+      {/* Clip name */}
       <div style={{
-        position: 'absolute', top: 2, left: 5,
-        fontSize: 10, fontWeight: 600,
-        color: color, opacity: 0.9,
-        pointerEvents: 'none',
-        textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap',
-        maxWidth: '90%',
+        position: 'absolute', top: 3, left: HANDLE_W + 2,
+        fontSize: 10, fontWeight: 600, color,
+        pointerEvents: 'none', textOverflow: 'ellipsis',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+        maxWidth: `calc(100% - ${HANDLE_W * 2 + 8}px)`,
+        textShadow: `0 1px 3px ${C.bgDeep}`,
       }}>
         {clip.name}
       </div>
+
+      {/* Left trim handle */}
+      <div
+        onMouseDown={e => startDrag('trimL', e)}
+        style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: HANDLE_W, cursor: 'ew-resize',
+          background: selected ? color + '60' : 'transparent',
+          borderRight: selected ? `1px solid ${color}` : 'none',
+          transition: 'background 0.1s',
+        }}
+      />
+
+      {/* Body — drag to move */}
+      <div
+        onMouseDown={e => startDrag('move', e)}
+        style={{
+          position: 'absolute',
+          left: HANDLE_W, right: HANDLE_W, top: 0, bottom: 0,
+          cursor: 'grab',
+        }}
+      />
+
+      {/* Right trim handle */}
+      <div
+        onMouseDown={e => startDrag('trimR', e)}
+        style={{
+          position: 'absolute', right: 0, top: 0, bottom: 0,
+          width: HANDLE_W, cursor: 'ew-resize',
+          background: selected ? color + '60' : 'transparent',
+          borderLeft: selected ? `1px solid ${color}` : 'none',
+          transition: 'background 0.1s',
+        }}
+      />
+
+      {/* Duration label (only if wide enough) */}
+      {w > 60 && (
+        <div style={{
+          position: 'absolute', bottom: 3, right: HANDLE_W + 3,
+          fontSize: 9, color: color + 'aa',
+          pointerEvents: 'none',
+          textShadow: `0 1px 2px ${C.bgDeep}`,
+        }}>
+          {effectiveDur.toFixed(1)}s
+        </div>
+      )}
     </div>
   )
 }
 
-function WaveformBars({ seed, color }: { seed: string; color: string }) {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  const bars = Array.from({ length: 24 }, () => {
-    h = (h * 1664525 + 1013904223) >>> 0
-    return (h % 55) + 10
-  })
-  return (
-    <>
-      {bars.map((pct, i) => (
-        <div key={i} style={{
-          flex: '0 0 2px',
-          height: `${pct}%`,
-          background: color,
-          opacity: 0.45,
-          borderRadius: 1,
-        }}/>
-      ))}
-    </>
-  )
-}
-
+// ── MIDI clip block ───────────────────────────────────────────────────────────
 function MidiClipBlock({
-  clip, zoom, color, selected, onMouseDown, onRemove,
+  clip, zoom, color, selected, onSelect, onRemove,
 }: {
-  clip: TMidiClip
-  zoom: number
-  color: string
+  clip:     TMidiClip
+  zoom:     number
+  color:    string
   selected: boolean
-  onMouseDown: (e: React.MouseEvent) => void
+  onSelect: () => void
   onRemove: () => void
 }) {
-  const bpm      = useDAWStore(s => s.transport.bpm)
-  const secPBeat = 60 / bpm
-  const w = Math.max(32, clip.durationBeats * secPBeat * zoom)
+  const bpm       = useDAWStore(s => s.transport.bpm)
+  const secPerBeat = 60 / bpm
+  const w = Math.max(32, clip.durationBeats * secPerBeat * zoom)
   const x = clip.startTime * zoom
 
   return (
     <div
-      onMouseDown={onMouseDown}
+      onMouseDown={e => { e.stopPropagation(); onSelect() }}
       onContextMenu={e => { e.preventDefault(); onRemove() }}
       style={{
         position: 'absolute',
-        left: x, top: CLIP_INNER_PAD,
-        width: w, height: TRACK_H - CLIP_INNER_PAD * 2,
-        background: color + '20',
+        left: x, top: PAD, width: w, height: TRACK_H - PAD * 2,
+        background: color + '18',
         border: `1.5px solid ${selected ? color : color + '60'}`,
         borderRadius: 4, cursor: 'pointer',
         overflow: 'hidden', userSelect: 'none',
         boxShadow: selected ? `0 0 0 1px ${color}50` : 'none',
       }}
     >
-      {/* Mini note preview */}
+      {/* Mini piano roll preview */}
       <div style={{
-        position: 'absolute', inset: '4px 4px 2px',
+        position: 'absolute', inset: '16px 4px 3px',
         display: 'flex', alignItems: 'flex-end', gap: 1,
       }}>
-        {clip.notes.slice(0, 16).map(n => (
+        {clip.notes.slice(0, 24).map(n => (
           <div key={n.id} style={{
             flex: '0 0 2px',
-            height: `${30 + (n.pitch % 40)}%`,
+            height: `${25 + (n.pitch % 48)}%`,
             background: color,
-            opacity: 0.6,
+            opacity: 0.5 + (n.velocity / 127) * 0.5,
             borderRadius: 1,
-          }}/>
+          }} />
         ))}
       </div>
+
       <div style={{
-        position: 'absolute', top: 2, left: 5,
+        position: 'absolute', top: 3, left: 5,
         fontSize: 10, fontWeight: 600, color,
+        textShadow: `0 1px 3px ${C.bgDeep}`,
       }}>
         {clip.name}
       </div>

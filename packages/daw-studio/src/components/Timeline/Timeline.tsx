@@ -1,17 +1,21 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect } from 'react'
 import { useDAWStore }    from '../../store/useDAWStore'
 import { useAudioEngine } from '../../store/useAudioEngine'
 import { C } from '../../constants'
+import { AUTOMATION_PARAM_LABELS } from '../../types'
 import { TrackRow } from './TrackRow'
+import { AutomationLaneView } from '../AutomationLane/AutomationLaneView'
+import { AutomationLaneHeader } from '../AutomationLane/AutomationLaneHeader'
 
 const HEADER_W = 172
 const RULER_H  = 28
 
 export function Timeline() {
-  const tracks      = useDAWStore(s => s.tracks)
-  const zoom        = useDAWStore(s => s.zoom)
-  const setZoom     = useDAWStore(s => s.setZoom)
-  const transport   = useDAWStore(s => s.transport)
+  const tracks          = useDAWStore(s => s.tracks)
+  const automationLanes = useDAWStore(s => s.automationLanes)
+  const zoom            = useDAWStore(s => s.zoom)
+  const setZoom         = useDAWStore(s => s.setZoom)
+  const transport       = useDAWStore(s => s.transport)
   const { currentTime, seek } = useAudioEngine()
 
   const rulerRef    = useRef<HTMLCanvasElement>(null)
@@ -109,10 +113,18 @@ export function Timeline() {
           </div>
         </div>
 
-        {/* Track headers */}
-        {tracks.map(t => (
-          <TrackHeader key={t.id} track={t} />
-        ))}
+        {/* Track headers + automation lane headers */}
+        {tracks.map(t => {
+          const lanes = automationLanes.filter(l => l.trackId === t.id)
+          return (
+            <div key={t.id} style={{ flexShrink: 0 }}>
+              <TrackHeader track={t} />
+              {lanes.map(lane => (
+                <AutomationLaneHeader key={lane.id} lane={lane} trackColor={t.color} />
+              ))}
+            </div>
+          )
+        })}
 
         {tracks.length === 0 && (
           <div style={{
@@ -169,10 +181,23 @@ export function Timeline() {
             boxShadow: `0 0 4px ${C.accent}80`,
           }}/>
 
-          {/* Track lanes */}
-          {tracks.map(t => (
-            <TrackRow key={t.id} track={t} zoom={zoom} />
-          ))}
+          {/* Track lanes + automation lane views */}
+          {tracks.map(t => {
+            const lanes = automationLanes.filter(l => l.trackId === t.id)
+            return (
+              <div key={t.id}>
+                <TrackRow track={t} zoom={zoom} />
+                {lanes.map(lane => (
+                  <AutomationLaneView
+                    key={lane.id}
+                    lane={lane}
+                    zoom={zoom}
+                    width={Math.round(timelineW)}
+                  />
+                ))}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -180,11 +205,17 @@ export function Timeline() {
 }
 
 function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
-  const updateTrack  = useDAWStore(s => s.updateTrack)
-  const removeTrack  = useDAWStore(s => s.removeTrack)
-  const selectTrack  = useDAWStore(s => s.selectTrack)
-  const selectedId   = useDAWStore(s => s.selectedTrackId)
-  const isSelected   = selectedId === track.id
+  const updateTrack     = useDAWStore(s => s.updateTrack)
+  const removeTrack     = useDAWStore(s => s.removeTrack)
+  const selectTrack     = useDAWStore(s => s.selectTrack)
+  const selectedId      = useDAWStore(s => s.selectedTrackId)
+  const addLane         = useDAWStore(s => s.addAutomationLane)
+  const automationLanes = useDAWStore(s => s.automationLanes)
+  const isSelected      = selectedId === track.id
+  const existingParams  = automationLanes.filter(l => l.trackId === track.id).map(l => l.param)
+
+  const ALL_PARAMS = Object.keys(AUTOMATION_PARAM_LABELS) as import('../../types').AutomationParam[]
+  const availableParams = ALL_PARAMS.filter(p => !existingParams.includes(p))
 
   return (
     <div
@@ -241,6 +272,37 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
           onChange={e => updateTrack(track.id, { volume: parseFloat(e.target.value) })}
           style={{ flex: 1, accentColor: track.color, height: 3 }}
         />
+
+        {/* Add automation lane */}
+        {availableParams.length > 0 && (
+          <select
+            title="Add automation lane"
+            value=""
+            onClick={e => e.stopPropagation()}
+            onChange={e => {
+              e.stopPropagation()
+              if (e.target.value) {
+                addLane(track.id, e.target.value as import('../../types').AutomationParam)
+              }
+            }}
+            style={{
+              background: C.bgSubtle,
+              color: C.text3,
+              border: `1px solid ${C.borderDim}`,
+              borderRadius: 3,
+              fontSize: 9,
+              cursor: 'pointer',
+              width: 20, height: 20,
+              padding: 0,
+              textAlign: 'center',
+            }}
+          >
+            <option value="">+A</option>
+            {availableParams.map(p => (
+              <option key={p} value={p}>{AUTOMATION_PARAM_LABELS[p]}</option>
+            ))}
+          </select>
+        )}
 
         <button
           onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
