@@ -4,6 +4,22 @@ import { api } from "../lib/api";
 import { DAWLayout, useDAWStore } from "@sonaralabs/daw-studio";
 import { formatDuration } from "../lib/format";
 
+// ── Design tokens — mirror the DAW's Studio Dark theme ───────────────────────
+const C = {
+  bg:       "#111117",
+  bgRaised: "#18181f",
+  bgSubtle: "#1e1e27",
+  border:   "#2a2a38",
+  accent:   "#7c6dfa",
+  accentDim:"#3a3470",
+  text1:    "#eeeef6",
+  text2:    "#a0a0b8",
+  text3:    "#606078",
+  success:  "#4ade80",
+  warning:  "#facc15",
+  danger:   "#f87171",
+} as const;
+
 interface LibraryItem {
   _id: string;
   _type: "generation" | "upload";
@@ -21,92 +37,80 @@ interface SavedProjectMeta {
   name: string;
   updatedAt: string;
   isPublic: boolean;
-  shareToken?: string;
 }
 
 type LibraryFilter = "all" | "generations" | "uploads";
 
-
 export default function StudioPage() {
-  const navigate = useNavigate();
+  const navigate    = useNavigate();
   const { token: shareToken_ } = useParams<{ token?: string }>();
-  const isReadOnly = Boolean(shareToken_);    // /studio/share/:token → read-only
+  const isReadOnly  = Boolean(shareToken_);
 
-  // DAW store
-  const getSaveable    = useDAWStore(s => s.getSaveable);
-  const loadTracks     = useDAWStore(s => s.loadTracks);
-  const addAudioTrack  = useDAWStore(s => s.addAudioTrack);
-  const addClip        = useDAWStore(s => s.addClip);
-  const tracks         = useDAWStore(s => s.tracks);
-  const setBPM         = useDAWStore(s => s.setBPM);
-  const setLoop        = useDAWStore(s => s.setLoop);
-  const reset          = useDAWStore(s => s.reset);
+  const getSaveable   = useDAWStore(s => s.getSaveable);
+  const loadTracks    = useDAWStore(s => s.loadTracks);
+  const addAudioTrack = useDAWStore(s => s.addAudioTrack);
+  const addClip       = useDAWStore(s => s.addClip);
+  const setBPM        = useDAWStore(s => s.setBPM);
+  const setLoop       = useDAWStore(s => s.setLoop);
+  const reset         = useDAWStore(s => s.reset);
 
-  // Library sidebar state
-  const [items, setItems]           = useState<LibraryItem[]>([]);
-  const [loadingLib, setLoadingLib] = useState(false);
-  const [filter, setFilter]         = useState<LibraryFilter>("all");
-  const [search, setSearch]         = useState("");
-  const [addedIds, setAddedIds]     = useState<Set<string>>(new Set());
+  const [items,       setItems]       = useState<LibraryItem[]>([]);
+  const [loadingLib,  setLoadingLib]  = useState(false);
+  const [filter,      setFilter]      = useState<LibraryFilter>("all");
+  const [search,      setSearch]      = useState("");
+  const [addedIds,    setAddedIds]    = useState<Set<string>>(new Set());
+  const [decodingIds, setDecodingIds] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Project save/load state
-  const [projectName, setProjectName]   = useState("Untitled Project");
-  const [projectId, setProjectId]       = useState<string | null>(null);
-  const [saving, setSaving]             = useState(false);
-  const [saveLabel, setSaveLabel]       = useState<string | null>(null);
-  const [projects, setProjects]         = useState<SavedProjectMeta[]>([]);
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
-  const [loadingProjects, setLoadingProjects]     = useState(false);
-  const [shareToken, setShareToken]     = useState<string | null>(null);
-  const [sharing, setSharing]           = useState(false);
-  const [copied, setCopied]             = useState(false);
+  const [projectName,        setProjectName]        = useState("Untitled Project");
+  const [projectId,          setProjectId]          = useState<string | null>(null);
+  const [saving,             setSaving]             = useState(false);
+  const [saveLabel,          setSaveLabel]          = useState<string | null>(null);
+  const [projects,           setProjects]           = useState<SavedProjectMeta[]>([]);
+  const [showProjectPicker,  setShowProjectPicker]  = useState(false);
+  const [loadingProjects,    setLoadingProjects]    = useState(false);
+  const [shareToken,         setShareToken]         = useState<string | null>(null);
+  const [sharing,            setSharing]            = useState(false);
+  const [copied,             setCopied]             = useState(false);
   const projectPickerRef = useRef<HTMLDivElement>(null);
 
-  const [decodingIds, setDecodingIds] = useState<Set<string>>(new Set());
-
-  // ── Mount: sessionStorage preload OR share token load ────────────────────
+  // ── Mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     reset();
-
     if (shareToken_) {
-      // Read-only share view — fetch project from public endpoint
       api.get(`/api/projects/share/${shareToken_}`)
         .then(({ data }) => {
-          const proj = data.data;
-          if (proj) {
-            reset();
-            if (proj.bpm)      setBPM(proj.bpm);
-            if (proj.loopStart != null && proj.loopEnd != null) setLoop(proj.loopStart, proj.loopEnd);
-            if (proj.tracks?.length) loadTracks(proj.tracks);
-            setProjectName(proj.name);
+          const p = data.data;
+          if (p) {
+            if (p.bpm) setBPM(p.bpm);
+            if (p.loopStart != null) setLoop(p.loopStart, p.loopEnd);
+            if (p.tracks?.length)   loadTracks(p.tracks);
+            setProjectName(p.name);
           }
-        })
-        .catch(() => { /* project not found / private */ });
-      return; // read-only: skip library load and sessionStorage
+        }).catch(() => {});
+      return;
     }
 
-    // Normal mode: sessionStorage preload
     const raw = sessionStorage.getItem("studio:preload");
     if (raw) {
       try {
         const preload = JSON.parse(raw) as { name: string; audioUrl: string }[];
-        preload.forEach(t => addToDAW({ _id: t.audioUrl, _type: "upload", originalName: t.name, audioUrl: t.audioUrl, isFavorited: false, createdAt: "" }));
-      } catch { /* ignore */ }
+        preload.forEach(t => addToDAW({
+          _id: t.audioUrl, _type: "upload",
+          originalName: t.name, audioUrl: t.audioUrl,
+          isFavorited: false, createdAt: "",
+        }));
+      } catch {}
       sessionStorage.removeItem("studio:preload");
     }
-
     fetchLibrary();
 
-    function handleClickOutside(e: MouseEvent) {
-      if (projectPickerRef.current && !projectPickerRef.current.contains(e.target as Node)) {
+    const onClickOutside = (e: MouseEvent) => {
+      if (projectPickerRef.current && !projectPickerRef.current.contains(e.target as Node))
         setShowProjectPicker(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
     };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
   }, [shareToken_]);
 
   // ── Library ───────────────────────────────────────────────────────────────
@@ -116,86 +120,71 @@ export default function StudioPage() {
       const { data } = await api.get("/api/library", { params: { page: 1, limit: 100 } });
       const all: LibraryItem[] = data.items ?? data.data?.items ?? [];
       setItems(all.filter(i => i.audioUrl && (!i.status || i.status === "done")));
-    } catch { /* silently ignore */ }
+    } catch {}
     finally { setLoadingLib(false); }
   }
 
   async function addToDAW(item: LibraryItem) {
     if (!item.audioUrl || addedIds.has(item._id) || decodingIds.has(item._id)) return;
-    const name = item.originalName ?? (item.prompt?.slice(0, 40) ?? "Track");
+    const name = item.originalName ?? item.prompt?.slice(0, 40) ?? "Track";
     setDecodingIds(prev => new Set(prev).add(item._id));
     try {
-      // Decode audio → add as new track + clip
-      const ctx = new AudioContext();
+      const ctx  = new AudioContext();
       const resp = await fetch(item.audioUrl, { credentials: "include" });
       const ab   = await resp.arrayBuffer();
       const buf  = await ctx.decodeAudioData(ab);
-      // New track is added first, then we get its id from store
       addAudioTrack();
       const allTracks = useDAWStore.getState().tracks;
       const trackId   = allTracks[allTracks.length - 1]?.id;
       if (trackId) {
-        // Rename the track to the item name
         useDAWStore.getState().updateTrack(trackId, { name });
         addClip(trackId, {
-          name,
-          startTime: 0,
-          duration:  buf.duration,
-          trimStart: 0,
-          trimEnd:   0,
-          fadeIn:    0,
-          fadeOut:   0,
-          buffer:    buf,
-          url:       item.audioUrl,
+          name, startTime: 0, duration: buf.duration,
+          trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0,
+          buffer: buf, url: item.audioUrl,
         });
       }
       setAddedIds(prev => new Set(prev).add(item._id));
-    } catch {
-      /* silently ignore decode errors */
-    } finally {
+    } catch {}
+    finally {
       setDecodingIds(prev => { const s = new Set(prev); s.delete(item._id); return s; });
     }
   }
 
   // ── Project save ──────────────────────────────────────────────────────────
   async function handleSave() {
-    setSaving(true);
-    setSaveLabel(null);
+    setSaving(true); setSaveLabel(null);
     try {
-      // Strip AudioBuffer objects before serializing (not JSON-serializable)
-      const rawTracks = getSaveable();
-      const saveTracks = rawTracks.map(t => t.type === 'audio'
-        ? { ...t, clips: t.clips.map(c => ({ ...c, buffer: null })) }
-        : t
+      const rawTracks  = getSaveable();
+      const saveTracks = rawTracks.map(t =>
+        t.type === "audio" ? { ...t, clips: t.clips.map(c => ({ ...c, buffer: null })) } : t
       );
-      const snapshot = { name: projectName, tracks: saveTracks };
+      const payload = { name: projectName, tracks: saveTracks };
       let res;
       if (projectId) {
-        res = await api.put(`/api/projects/${projectId}`, snapshot);
+        res = await api.put(`/api/projects/${projectId}`, payload);
       } else {
-        res = await api.post("/api/projects", snapshot);
+        res = await api.post("/api/projects", payload);
         setProjectId(res.data.data._id);
         setShareToken(res.data.data.shareToken ?? null);
       }
       setSaveLabel("Saved ✓");
       setTimeout(() => setSaveLabel(null), 2000);
     } catch {
-      setSaveLabel("Save failed ✗");
+      setSaveLabel("Failed ✗");
       setTimeout(() => setSaveLabel(null), 3000);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
-  // ── Project load picker ───────────────────────────────────────────────────
+  // ── Project load ──────────────────────────────────────────────────────────
   async function handleOpenPicker() {
-    setShowProjectPicker(prev => !prev);
+    setShowProjectPicker(v => !v);
     if (!showProjectPicker) {
       setLoadingProjects(true);
       try {
         const { data } = await api.get("/api/projects");
         setProjects(data.data ?? []);
-      } catch { /* ignore */ }
+      } catch {}
       finally { setLoadingProjects(false); }
     }
   }
@@ -203,183 +192,233 @@ export default function StudioPage() {
   async function handleLoadProject(meta: SavedProjectMeta) {
     try {
       const { data } = await api.get(`/api/projects/${meta._id}`);
-      const proj = data.data;
+      const p = data.data;
       reset();
-      if (proj.bpm)      setBPM(proj.bpm);
-      if (proj.loopStart != null && proj.loopEnd != null) setLoop(proj.loopStart, proj.loopEnd);
-      if (proj.tracks?.length) loadTracks(proj.tracks);
-      setProjectName(proj.name);
-      setProjectId(proj._id);
-      setShareToken(proj.shareToken ?? null);
+      if (p.bpm) setBPM(p.bpm);
+      if (p.loopStart != null) setLoop(p.loopStart, p.loopEnd);
+      if (p.tracks?.length)   loadTracks(p.tracks);
+      setProjectName(p.name);
+      setProjectId(p._id);
+      setShareToken(p.shareToken ?? null);
       setAddedIds(new Set());
       setShowProjectPicker(false);
-    } catch { /* ignore */ }
+    } catch {}
   }
 
-  // ── Share link ────────────────────────────────────────────────────────────
+  // ── Share ─────────────────────────────────────────────────────────────────
   async function handleShare() {
     if (!projectId) return;
     setSharing(true);
     try {
       const { data } = await api.post(`/api/projects/${projectId}/share`);
-      const token = data.data?.shareToken ?? null;
-      setShareToken(token);
-      if (token) {
-        const url = `${window.location.origin}/studio/share/${token}`;
-        await navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
+      const tok = data.data?.shareToken ?? null;
+      setShareToken(tok);
+      if (tok) {
+        await navigator.clipboard.writeText(`${location.origin}/studio/share/${tok}`);
+        setCopied(true); setTimeout(() => setCopied(false), 2500);
       }
-    } catch { /* ignore */ }
+    } catch {}
     finally { setSharing(false); }
   }
 
-  // ── Filtered sidebar items ────────────────────────────────────────────────
-  const filteredItems = items.filter(item => {
+  // ── Filtered items ────────────────────────────────────────────────────────
+  const filtered = items.filter(item => {
     if (filter === "generations" && item._type !== "generation") return false;
     if (filter === "uploads"     && item._type !== "upload")     return false;
     if (search.trim()) {
       const q = search.toLowerCase();
-      const label = (item.originalName ?? item.prompt ?? "").toLowerCase();
-      if (!label.includes(q)) return false;
+      if (!(item.originalName ?? item.prompt ?? "").toLowerCase().includes(q)) return false;
     }
     return true;
   });
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden">
-
-      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 bg-gray-900 shrink-0">
-        <button
-          onClick={() => navigate(-1)}
-          className="text-gray-400 hover:text-gray-200 text-sm transition-colors shrink-0"
-          title="Back"
-        >
+    <div style={{
+      height: "100vh", display: "flex", flexDirection: "column",
+      background: C.bg, color: C.text1,
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      overflow: "hidden",
+    }}>
+      {/* ── Top bar ────────────────────────────────────────────────────────── */}
+      <header style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "0 12px", height: 44, flexShrink: 0,
+        background: C.bgRaised,
+        borderBottom: `1px solid ${C.border}`,
+      }}>
+        {/* Back */}
+        <button onClick={() => navigate(-1)} style={iconBtnStyle}>
           ←
         </button>
 
-        {/* Editable project name (read-only in share view) */}
+        <div style={{ width: 1, height: 18, background: C.border }} />
+
+        {/* Project name */}
         {isReadOnly ? (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-sm font-semibold text-gray-200 truncate max-w-xs">{projectName}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/40 shrink-0">Read-only</span>
-          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text1 }}>{projectName}</span>
         ) : (
           <input
             value={projectName}
             onChange={e => setProjectName(e.target.value)}
             onBlur={() => { if (!projectName.trim()) setProjectName("Untitled Project"); }}
-            className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-600 transition-colors max-w-xs"
+            style={{
+              background: "transparent", border: "none",
+              fontSize: 13, fontWeight: 600, color: C.text1,
+              outline: "none", maxWidth: 200,
+            }}
             maxLength={120}
-            title="Project name"
           />
+        )}
+
+        {isReadOnly && (
+          <span style={{
+            fontSize: 10, padding: "2px 8px", borderRadius: 10,
+            background: C.accentDim, color: C.accent,
+            border: `1px solid ${C.accentDim}`,
+          }}>Read-only</span>
         )}
 
         {/* Save label */}
         {saveLabel && (
-          <span className={`text-xs shrink-0 ${saveLabel.includes("✓") ? "text-green-400" : "text-red-400"}`}>
-            {saveLabel}
-          </span>
+          <span style={{
+            fontSize: 11,
+            color: saveLabel.includes("✓") ? C.success : C.danger,
+          }}>{saveLabel}</span>
         )}
 
-        {/* Open project picker — hidden in read-only */}
-        {!isReadOnly && <div className="relative" ref={projectPickerRef}>
-          <button
-            onClick={handleOpenPicker}
-            className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded border border-gray-700 transition-colors shrink-0"
-            title="Open project"
-          >
-            Open ▾
-          </button>
+        <div style={{ flex: 1 }} />
 
-          {showProjectPicker && (
-            <div className="absolute top-full left-0 mt-1 w-64 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-              <p className="text-xs text-gray-400 px-3 pt-2.5 pb-1 font-semibold uppercase tracking-wider">Saved Projects</p>
-              {loadingProjects ? (
-                <p className="text-xs text-gray-500 px-3 py-4 text-center">Loading…</p>
-              ) : projects.length === 0 ? (
-                <p className="text-xs text-gray-500 px-3 py-4 text-center">No saved projects</p>
-              ) : (
-                <ul className="max-h-64 overflow-y-auto py-1">
-                  {projects.map(p => (
-                    <li key={p._id}>
-                      <button
-                        onClick={() => handleLoadProject(p)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors flex items-center gap-2"
-                      >
-                        <span className="flex-1 text-sm text-gray-200 truncate">{p.name}</span>
-                        {p.isPublic && <span className="text-xs text-indigo-400 shrink-0">shared</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>}
+        {/* Open project */}
+        {!isReadOnly && (
+          <div style={{ position: "relative" }} ref={projectPickerRef}>
+            <button onClick={handleOpenPicker} style={smallBtnStyle}>
+              Open ▾
+            </button>
+            {showProjectPicker && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", right: 0,
+                width: 240, background: C.bgRaised,
+                border: `1px solid ${C.border}`,
+                borderRadius: 10, boxShadow: "0 16px 40px #00000088",
+                zIndex: 100, overflow: "hidden",
+              }}>
+                <p style={{ fontSize: 10, color: C.text3, padding: "10px 12px 6px", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
+                  Saved Projects
+                </p>
+                {loadingProjects ? (
+                  <p style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "16px 0" }}>Loading…</p>
+                ) : projects.length === 0 ? (
+                  <p style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "16px 0" }}>No saved projects</p>
+                ) : (
+                  <ul style={{ maxHeight: 240, overflowY: "auto", listStyle: "none", margin: 0, padding: "4px 0" }}>
+                    {projects.map(p => (
+                      <li key={p._id}>
+                        <button
+                          onClick={() => handleLoadProject(p)}
+                          style={{
+                            width: "100%", textAlign: "left",
+                            padding: "8px 12px", background: "none", border: "none",
+                            cursor: "pointer", fontSize: 12, color: C.text1,
+                            display: "flex", alignItems: "center", gap: 6,
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = C.bgSubtle)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                        >
+                          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                          {p.isPublic && <span style={{ fontSize: 10, color: C.accent }}>shared</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Save button — hidden in read-only */}
+        {/* Save */}
         {!isReadOnly && (
           <button
             onClick={handleSave}
             disabled={saving}
-            className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded text-white font-medium transition-colors shrink-0"
+            style={{
+              ...smallBtnStyle,
+              background: C.accent, color: "#fff",
+              border: `1px solid ${C.accent}`,
+              opacity: saving ? 0.5 : 1,
+            }}
           >
             {saving ? "Saving…" : projectId ? "Save" : "Save Project"}
           </button>
         )}
 
-        {/* Share button (only after saving, hidden in read-only) */}
+        {/* Share */}
         {!isReadOnly && projectId && (
           <button
             onClick={handleShare}
             disabled={sharing}
-            title={shareToken ? "Copy share link" : "Generate share link"}
-            className={`text-xs px-2.5 py-1 rounded border transition-colors shrink-0 disabled:opacity-50 ${
-              shareToken
-                ? "border-green-600 text-green-400 hover:bg-green-900/30"
-                : "border-gray-700 text-gray-400 hover:text-gray-200"
-            }`}
+            style={{
+              ...smallBtnStyle,
+              color:   shareToken ? C.success : C.text2,
+              border: `1px solid ${shareToken ? C.success + "60" : C.border}`,
+              opacity: sharing ? 0.5 : 1,
+            }}
           >
             {copied ? "Copied!" : shareToken ? "🔗 Shared" : "Share"}
           </button>
         )}
 
-        {/* Library toggle — hidden in read-only */}
+        <div style={{ width: 1, height: 18, background: C.border }} />
+
+        {/* Library toggle */}
         {!isReadOnly && (
-          <button
-            onClick={() => setSidebarOpen(prev => !prev)}
-            className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded border border-gray-700 transition-colors shrink-0"
-          >
-            {sidebarOpen ? "Hide Lib" : "Library"}
+          <button onClick={() => setSidebarOpen(v => !v)} style={iconBtnStyle} title="Toggle library">
+            {sidebarOpen ? "⇤" : "⇥"}
           </button>
         )}
       </header>
 
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* ── Body ───────────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-        {/* ── Library sidebar ────────────────────────────────────────────────── */}
-        {sidebarOpen && (
-          <aside className="w-60 shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-gray-800 space-y-2">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Library</h2>
+        {/* ── Library sidebar ──────────────────────────────────────────────── */}
+        {sidebarOpen && !isReadOnly && (
+          <aside style={{
+            width: 220, flexShrink: 0,
+            display: "flex", flexDirection: "column",
+            background: C.bgRaised,
+            borderRight: `1px solid ${C.border}`,
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{ padding: "10px 12px 8px", borderBottom: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                Library
+              </p>
               <input
-                type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search…"
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  background: C.bgSubtle, border: `1px solid ${C.border}`,
+                  borderRadius: 6, padding: "5px 8px",
+                  fontSize: 11, color: C.text1,
+                  outline: "none", marginBottom: 8,
+                }}
               />
-              <div className="flex gap-1">
+              <div style={{ display: "flex", gap: 3 }}>
                 {(["all", "generations", "uploads"] as LibraryFilter[]).map(f => (
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className={`flex-1 text-xs py-1 rounded transition-colors capitalize ${
-                      filter === f ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-300"
-                    }`}
+                    style={{
+                      flex: 1, fontSize: 10, padding: "3px 0", borderRadius: 4,
+                      background: filter === f ? C.accentDim : "transparent",
+                      color:      filter === f ? C.accent    : C.text3,
+                      border: `1px solid ${filter === f ? C.accentDim : "transparent"}`,
+                      cursor: "pointer",
+                    }}
                   >
                     {f === "all" ? "All" : f === "generations" ? "Gen" : "Up"}
                   </button>
@@ -387,34 +426,35 @@ export default function StudioPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-1">
+            {/* Items */}
+            <div style={{ flex: 1, overflowY: "auto" }}>
               {loadingLib ? (
-                <p className="text-xs text-gray-500 text-center py-8">Loading…</p>
-              ) : filteredItems.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-8">No items</p>
-              ) : (
-                filteredItems.map(item => (
-                  <LibrarySidebarItem
-                    key={item._id}
-                    item={item}
-                    added={addedIds.has(item._id)}
-                    decoding={decodingIds.has(item._id)}
-                    onAdd={addToDAW}
-                  />
-                ))
-              )}
+                <p style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "24px 0" }}>Loading…</p>
+              ) : filtered.length === 0 ? (
+                <p style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "24px 0" }}>
+                  {items.length === 0 ? "No audio in library" : "No matches"}
+                </p>
+              ) : filtered.map(item => (
+                <SidebarItem
+                  key={item._id}
+                  item={item}
+                  added={addedIds.has(item._id)}
+                  decoding={decodingIds.has(item._id)}
+                  onAdd={addToDAW}
+                />
+              ))}
             </div>
 
-            <div className="p-2 border-t border-gray-800">
-              <p className="text-xs text-gray-600 text-center">
-                {filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}
+            <div style={{ padding: "6px 12px", borderTop: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 10, color: C.text3, textAlign: "center" }}>
+                {filtered.length} item{filtered.length !== 1 ? "s" : ""}
               </p>
             </div>
           </aside>
         )}
 
-        {/* ── DAW area ───────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-hidden">
+        {/* ── DAW ─────────────────────────────────────────────────────────── */}
+        <div style={{ flex: 1, overflow: "hidden" }}>
           <DAWLayout />
         </div>
       </div>
@@ -423,45 +463,66 @@ export default function StudioPage() {
 }
 
 // ── Sidebar item ──────────────────────────────────────────────────────────────
-interface LibrarySidebarItemProps {
-  item: LibraryItem;
-  added: boolean;
-  decoding: boolean;
+function SidebarItem({
+  item, added, decoding, onAdd,
+}: {
+  item: LibraryItem; added: boolean; decoding: boolean;
   onAdd: (item: LibraryItem) => void;
-}
-
-function LibrarySidebarItem({ item, added, decoding, onAdd }: LibrarySidebarItemProps) {
-  const label =
-    item.originalName ??
-    (item.prompt ? item.prompt.slice(0, 36) + (item.prompt.length > 36 ? "…" : "") : "Untitled");
+}) {
+  const [hovered, setHovered] = useState(false);
+  const label = item.originalName ?? (item.prompt ? item.prompt.slice(0, 36) + (item.prompt.length > 36 ? "…" : "") : "Untitled");
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-800 group transition-colors">
-      <span
-        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-          item._type === "generation" ? "bg-indigo-500" : "bg-teal-500"
-        }`}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-gray-200 truncate leading-tight">{label}</p>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "7px 12px",
+        background: hovered ? C.bgSubtle : "transparent",
+        cursor: "default", transition: "background 0.1s",
+      }}
+    >
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+        background: item._type === "generation" ? "#7c6dfa" : "#2dd4bf",
+      }}/>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 11, color: C.text1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}>
+          {label}
+        </p>
         {item.duration != null && (
-          <p className="text-xs text-gray-600">{formatDuration(item.duration)}</p>
+          <p style={{ fontSize: 10, color: C.text3 }}>{formatDuration(item.duration)}</p>
         )}
       </div>
       <button
         onClick={() => onAdd(item)}
         disabled={added || decoding}
-        className={`shrink-0 text-xs px-1.5 py-0.5 rounded transition-colors ${
-          added
-            ? "text-green-500 cursor-default"
-            : decoding
-            ? "text-yellow-500 cursor-wait opacity-100"
-            : "text-gray-500 hover:text-indigo-400 hover:bg-gray-700 opacity-0 group-hover:opacity-100"
-        }`}
-        title={added ? "Already added" : decoding ? "Decoding…" : "Add to DAW"}
+        style={{
+          flexShrink: 0, fontSize: 14, lineHeight: 1,
+          background: "none", border: "none", cursor: added ? "default" : "pointer",
+          color: added ? "#4ade80" : decoding ? "#facc15" : C.accent,
+          opacity: hovered || added || decoding ? 1 : 0,
+          transition: "opacity 0.15s",
+          padding: "2px 4px",
+        }}
+        title={added ? "Added" : decoding ? "Decoding…" : "Add to DAW"}
       >
         {added ? "✓" : decoding ? "…" : "+"}
       </button>
     </div>
   );
+}
+
+// ── Shared button styles ──────────────────────────────────────────────────────
+const iconBtnStyle: React.CSSProperties = {
+  background: "none", border: "none", cursor: "pointer",
+  color: C.text2, fontSize: 14, padding: "4px 6px", borderRadius: 5,
+}
+
+const smallBtnStyle: React.CSSProperties = {
+  fontSize: 11, padding: "4px 10px", borderRadius: 5,
+  background: C.bgSubtle, color: C.text2,
+  border: `1px solid ${C.border}`,
+  cursor: "pointer",
 }
