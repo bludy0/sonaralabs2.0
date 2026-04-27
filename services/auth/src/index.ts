@@ -52,37 +52,135 @@ const transporter = EMAIL_ENABLED
     })
   : null;
 
-async function sendVerificationEmail(email: string, token: string): Promise<void> {
-  const link = `${APP_URL}/verify-email?token=${token}`;
+// ── EMAIL TEMPLATES ───────────────────────────────────────────────────────────
 
+/** Tüm mailler için paylaşılan wrapper */
+function emailWrapper(body: string): string {
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 16px">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#111118;border-radius:12px;border:1px solid #1e1e2e;overflow:hidden">
+        <!-- Header -->
+        <tr>
+          <td style="padding:24px 32px;border-bottom:1px solid #1e1e2e">
+            <span style="font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:#888">AI_CORE_v2.0</span>
+            <span style="display:inline-block;margin-left:12px;font-size:18px;font-weight:800;color:#fff;letter-spacing:-.01em">SONARALABS</span>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr><td style="padding:32px">${body}</td></tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid #1e1e2e">
+            <p style="margin:0;font-size:11px;color:#555">
+              Bu email <a href="https://sonaralabs.io" style="color:#888;text-decoration:none">sonaralabs.io</a> tarafından gönderildi.
+              Hesabınızla ilgili sorunlar için <a href="mailto:support@bludy.com.tr" style="color:#888;text-decoration:none">support@bludy.com.tr</a> adresine yazabilirsiniz.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+const ACCENT = "#ffdc73";
+const ACCENT_ON = "#624e00";
+const BTN = `display:inline-block;padding:12px 28px;background:${ACCENT};color:${ACCENT_ON};font-weight:700;border-radius:8px;text-decoration:none;letter-spacing:.05em;font-size:14px`;
+
+/** Ortak mail gönderici — dev'de console'a yazar */
+async function sendMail(to: string, subject: string, html: string, text: string): Promise<void> {
   if (!transporter) {
-    // Email servisi yokken geliştirme kolaylığı: console'a yazdır
-    console.log(`\n[auth] 📧  Email onay linki (DEV — SMTP yapılandırılmamış):\n  ${link}\n`);
+    console.log(`\n[auth] 📧  ${subject}\n  To: ${to}\n  ${text}\n`);
     return;
   }
+  await transporter.sendMail({ from: EMAIL_FROM, to, subject, html, text });
+}
 
-  await transporter.sendMail({
-    from:    EMAIL_FROM,
-    to:      email,
-    subject: "Sonaralabs — Email adresinizi onaylayın",
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px">
-        <h2 style="margin-bottom:8px">Email adresinizi onaylayın</h2>
-        <p style="color:#888;margin-bottom:24px">
-          Sonaralabs hesabınızı aktif etmek için aşağıdaki butona tıklayın.
-          Link 24 saat geçerlidir.
-        </p>
-        <a href="${link}"
-           style="display:inline-block;padding:12px 28px;background:#ffdc73;color:#624e00;
-                  font-weight:700;border-radius:8px;text-decoration:none;letter-spacing:.05em">
-          Email'i Onayla
-        </a>
-        <p style="color:#aaa;font-size:12px;margin-top:32px">
-          Bu emaili siz istemediyseniz görmezden gelebilirsiniz.
-        </p>
-      </div>`,
-    text: `Email onay linkiniz: ${link}`,
-  });
+// ── EMAIL FONKSİYONLARI ───────────────────────────────────────────────────────
+
+async function sendVerificationEmail(email: string, token: string): Promise<void> {
+  const link = `${APP_URL}/verify-email?token=${token}`;
+  await sendMail(
+    email,
+    "Sonaralabs — Email adresinizi onaylayın",
+    emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#fff;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:-.01em">
+        Email Onayı
+      </h2>
+      <p style="margin:0 0 24px;color:#888;font-size:14px;line-height:1.6">
+        Sonaralabs hesabınızı aktif etmek için aşağıdaki butona tıklayın.<br>
+        Link <strong style="color:#ccc">24 saat</strong> geçerlidir.
+      </p>
+      <a href="${link}" style="${BTN}">Email'i Onayla →</a>
+      <p style="margin:28px 0 0;font-size:12px;color:#555">
+        Bu emaili siz istemediyseniz görmezden gelebilirsiniz — hesabınız oluşturulmayacak.
+      </p>`),
+    `Email onay linkiniz: ${link}`,
+  );
+}
+
+async function sendLoginNotificationEmail(
+  email: string,
+  ip: string,
+  userAgent: string,
+): Promise<void> {
+  const now = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+  const device = userAgent.length > 80 ? userAgent.slice(0, 80) + "…" : userAgent;
+  await sendMail(
+    email,
+    "Sonaralabs — Yeni giriş tespit edildi",
+    emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#fff;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:-.01em">
+        Yeni Giriş
+      </h2>
+      <p style="margin:0 0 20px;color:#888;font-size:14px;line-height:1.6">
+        Hesabınıza yeni bir giriş yapıldı.
+      </p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;background:#0d0d16;border-radius:8px;padding:16px;margin-bottom:24px">
+        <tr><td style="padding:6px 0;color:#555;font-size:12px;width:90px">Zaman</td>
+            <td style="padding:6px 0;color:#ccc;font-size:13px">${now}</td></tr>
+        <tr><td style="padding:6px 0;color:#555;font-size:12px">IP Adresi</td>
+            <td style="padding:6px 0;color:#ccc;font-size:13px;font-family:monospace">${ip || "bilinmiyor"}</td></tr>
+        <tr><td style="padding:6px 0;color:#555;font-size:12px">Tarayıcı</td>
+            <td style="padding:6px 0;color:#ccc;font-size:13px">${device || "bilinmiyor"}</td></tr>
+      </table>
+      <p style="margin:0 0 20px;color:#888;font-size:14px;line-height:1.6">
+        Bu girişi <strong style="color:#fff">siz yaptıysanız</strong> bu emaili görmezden gelebilirsiniz.
+        <strong style="color:#ff6b6b">Siz yapmadıysanız</strong> hemen şifrenizi değiştirin.
+      </p>
+      <a href="${APP_URL}/settings" style="${BTN}">Hesabımı Güvene Al →</a>`),
+    `Sonaralabs hesabınıza ${now} tarihinde ${ip} IP adresinden giriş yapıldı.`,
+  );
+}
+
+async function sendPasswordChangedEmail(email: string, ip: string): Promise<void> {
+  const now = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+  await sendMail(
+    email,
+    "Sonaralabs — Şifreniz değiştirildi",
+    emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#fff;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:-.01em">
+        Şifre Değişikliği
+      </h2>
+      <p style="margin:0 0 20px;color:#888;font-size:14px;line-height:1.6">
+        Hesabınızın şifresi başarıyla değiştirildi. Tüm aktif oturumlarınız sonlandırıldı.
+      </p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;background:#0d0d16;border-radius:8px;padding:16px;margin-bottom:24px">
+        <tr><td style="padding:6px 0;color:#555;font-size:12px;width:90px">Zaman</td>
+            <td style="padding:6px 0;color:#ccc;font-size:13px">${now}</td></tr>
+        <tr><td style="padding:6px 0;color:#555;font-size:12px">IP Adresi</td>
+            <td style="padding:6px 0;color:#ccc;font-size:13px;font-family:monospace">${ip || "bilinmiyor"}</td></tr>
+      </table>
+      <p style="margin:0 0 20px;color:#ff6b6b;font-size:14px;line-height:1.6;font-weight:600">
+        ⚠️  Bu değişikliği siz yapmadıysanız lütfen hemen destek ekibimize bildirin.
+      </p>
+      <a href="mailto:support@bludy.com.tr" style="${BTN}">Destek ile İletişime Geç →</a>`),
+    `Sonaralabs şifreniz ${now} tarihinde ${ip} IP adresinden değiştirildi. Siz yapmadıysanız support@bludy.com.tr adresine yazın.`,
+  );
 }
 
 // ── MONGOOSE MODELS ───────────────────────────────────────────────────────────
@@ -331,6 +429,13 @@ app.post("/login", async (req, res) => {
     setAccessCookie(res, accessToken);
     setRefreshCookie(res, refreshToken);
 
+    // Giriş bildirim maili — non-blocking, hata olursa sessizce devam et
+    sendLoginNotificationEmail(
+      user.email,
+      req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
+      req.headers["user-agent"] ?? "",
+    ).catch(err => console.warn("[auth] Login notification email failed:", err.message));
+
     res.json({
       success: true,
       data: {
@@ -466,6 +571,13 @@ app.patch("/me/password", async (req, res) => {
     user.passwordHash = await bcrypt.hash(newPassword, 12);
     await user.save();
     await RefreshToken.deleteMany({ userId: user._id });
+
+    // Şifre değişikliği bildirim maili — non-blocking
+    sendPasswordChangedEmail(
+      user.email,
+      req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
+    ).catch(err => console.warn("[auth] Password changed email failed:", err.message));
+
     res.json({ success: true, message: "Password updated. Please log in again." } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
