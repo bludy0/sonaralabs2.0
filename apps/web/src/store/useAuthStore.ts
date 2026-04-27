@@ -17,8 +17,8 @@ interface AuthState {
   isLoading: boolean;
   // actions
   login:     (email: string, password: string) => Promise<void>;
-  loginDemo: () => void;
-  register:  (email: string, password: string) => Promise<void>;
+  /** Returns true when email verification is required (no auto-login). */
+  register:  (email: string, password: string) => Promise<boolean>;
   logout:    () => Promise<void>;
   logoutAll: () => Promise<void>;
   fetchMe:   () => Promise<void>;
@@ -31,19 +31,6 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       isLoading: false,
-
-      loginDemo: () => {
-        set({
-          user: {
-            userId:        "demo-user",
-            email:         "demo@sonaralabs.io",
-            role:          "user",
-            creditBalance: 999,
-            storageUsed:   0,
-            preferences:   { accentColor: "#7c6dfa" },
-          },
-        });
-      },
 
       login: async (email, password) => {
         set({ isLoading: true });
@@ -59,7 +46,13 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const { data } = await api.post("/api/auth/register", { email, password });
+          if (data.requiresVerification) {
+            // Email verification required — no cookie set, user stays null
+            return true;
+          }
+          // Immediate login (EMAIL_ENABLED=false, dev mode)
           set({ user: data.data });
+          return false;
         } finally {
           set({ isLoading: false });
         }

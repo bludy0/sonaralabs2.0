@@ -26,6 +26,8 @@ const {
   CREDIT_SERVICE_URL       = "http://credit:3005",
   ADMIN_SERVICE_URL        = "http://admin:3006",
   NOTIFICATION_SERVICE_URL = "http://notification:3007",
+  PROFILE_SERVICE_URL      = "http://profile:3008",
+  SOCIAL_SERVICE_URL       = "http://social:3009",
 } = process.env;
 
 if (!ACCESS_JWT_SECRET || !INTERNAL_JWT_SECRET) {
@@ -34,15 +36,24 @@ if (!ACCESS_JWT_SECRET || !INTERNAL_JWT_SECRET) {
 }
 
 // ── REDIS CLIENT ──────────────────────────────────────────────────────────────
-const redis = createClient({ url: REDIS_URL });
+// disableOfflineQueue: true — Redis kapalıyken komutlar kuyruklanmaz, anında hata döner
+const redis = createClient({ url: REDIS_URL, socket: { reconnectStrategy: false } });
+let redisReady = false;
+redis.on("ready",       () => { redisReady = true;  console.log("[gateway] Redis connected"); });
+redis.on("error",       ()  => { redisReady = false; });
+redis.on("end",         ()  => { redisReady = false; });
 redis.connect().catch(err => console.warn("[gateway] Redis unavailable:", err.message));
 
 // ── RATE LIMITER ──────────────────────────────────────────────────────────────
 async function incrementRateKey(key: string, windowMs: number): Promise<number> {
-  if (!redis.isOpen) return 0; // Redis yoksa sınırsız geçir (dev)
-  const count = await redis.incr(key);
-  if (count === 1) await redis.pExpire(key, windowMs);
-  return count;
+  if (!redisReady) return 0; // Redis yoksa sınırsız geçir (dev)
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.pExpire(key, windowMs);
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 function rateLimiter(
@@ -68,6 +79,8 @@ const generalLimiter    = rateLimiter(parseInt(RATE_LIMIT_GENERAL),    60_000,  
 const generationLimiter = rateLimiter(parseInt(RATE_LIMIT_GENERATION), 60_000,  "rl:generation:", userKey);
 const uploadLimiter     = rateLimiter(parseInt(RATE_LIMIT_UPLOAD),     60_000,  "rl:upload:",     userKey);
 const authLimiter       = rateLimiter(parseInt(RATE_LIMIT_AUTH),       900_000, "rl:auth:");      // IP bazlı, 15dk
+// OGG export is memory-heavy (WAV held in heap); max 3 req/min per user
+const oggExportLimiter  = rateLimiter(3, 60_000, "rl:ogg-export:", userKey);
 
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
 const requireAuth: MiddlewareHandler = async (c, next) => {
@@ -118,15 +131,35 @@ async function proxyTo(c: Context, baseUrl: string, overridePath?: string): Prom
 
   const hasBody = !["GET", "HEAD"].includes(c.req.method);
 
+  // SSE endpoint'leri için streaming proxy (body yok, response stream)
+  const isSSE = c.req.header("accept") === "text/event-stream";
+
+  // Body'yi önce buffer'a al — Node 25'te ReadableStream duplex proxy
+  // fetch() içinde takılabiliyor; arrayBuffer okuyup tekrar iletmek güvenli.
+  let bodyPayload: ArrayBuffer | undefined;
+  if (hasBody) {
+    bodyPayload = await c.req.arrayBuffer();
+  }
+
   try {
-    const res = await fetch(forward, {
+    const upstream = await fetch(forward, {
       method: c.req.method,
       headers,
-      body: hasBody ? c.req.raw.body : undefined,
-      // @ts-ignore — duplex gerekli streaming request body için Node.js 18+
-      ...(hasBody ? { duplex: "half" } : {}),
+      body: bodyPayload,
     });
-    return res;
+
+    // Upstream Response'dan mutable yeni Response oluştur.
+    // fetch()'in döndürdüğü Response immutable headers'a sahip — Hono'nun
+    // CORS middleware'i bu header'lara yazmaya çalışınca "TypeError: immutable"
+    // fırlatır. Headers'ı kopyalayarak mutable Response yaratıyoruz.
+    const responseHeaders = new Headers(upstream.headers);
+
+    // SSE stream'leri için body doğrudan ilet, diğerleri için body'yi tükettir
+    return new Response(upstream.body, {
+      status:     upstream.status,
+      statusText: upstream.statusText,
+      headers:    responseHeaders,
+    });
   } catch (err) {
     console.error("[gateway] Proxy error →", baseUrl, err);
     return new Response(JSON.stringify({ success: false, error: "Service unavailable" }), {
@@ -154,9 +187,11 @@ app.all("/internal/*", (c) => c.json({ success: false, error: "Forbidden" }, 403
 app.get("/health", (c) => c.json({ status: "ok", service: "gateway" }));
 
 // ── AUTH — public, IP rate limit ──────────────────────────────────────────────
-app.post("/api/auth/register", authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/register"));
-app.post("/api/auth/login",    authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/login"));
-app.post("/api/auth/refresh",  authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/refresh"));
+app.post("/api/auth/register",              authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/register"));
+app.post("/api/auth/login",                 authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/login"));
+app.post("/api/auth/refresh",               authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/refresh"));
+app.get ("/api/auth/verify-email",          authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/verify-email"));
+app.post("/api/auth/resend-verification",   authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/resend-verification"));
 
 // ── KORUNAN ROUTE'LAR ─────────────────────────────────────────────────────────
 // requireAuth + generalLimiter her korunan route'a uygulanır
@@ -170,6 +205,9 @@ app.all("/api/auth/*", requireAuth, generalLimiter, (c) =>
 app.post("/api/generate",               requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/"));
 app.post("/api/generate/sfx",           requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/sfx"));
 app.post("/api/generate/analyze-image", requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/analyze-image"));
+app.post("/api/generate/midi",          requireAuth, generalLimiter,    (c) => proxyTo(c, GENERATION_SERVICE_URL, "/midi"));
+// OGG export holds the full WAV in heap — dedicated tight limiter (3/min)
+app.post("/api/generate/export/ogg",    requireAuth, oggExportLimiter,  (c) => proxyTo(c, GENERATION_SERVICE_URL, "/export/ogg"));
 app.all ("/api/generate/*",             requireAuth, generalLimiter,    (c) =>
   proxyTo(c, GENERATION_SERVICE_URL, c.req.path.replace("/api/generate", "") || "/")
 );
@@ -188,8 +226,14 @@ app.all("/api/collections/*", requireAuth, generalLimiter, (c) =>
   proxyTo(c, LIBRARY_SERVICE_URL, "/collections" + c.req.path.replace("/api/collections", ""))
 );
 
-// Credits
-app.all("/api/credits/*", requireAuth, generalLimiter, (c) =>
+// Credits — packages and stripe webhook are public; all other credit routes require auth
+app.get ("/api/credits/packages",        generalLimiter, (c) => proxyTo(c, CREDIT_SERVICE_URL, "/packages"));
+// Webhook: no auth required (Stripe signs the payload) but rate-limited by IP to prevent flood
+app.post("/api/credits/webhook",         generalLimiter, (c) => proxyTo(c, CREDIT_SERVICE_URL, "/webhook"));
+// Block internal-only credit operations — /earn and /spend are server-to-server only, never user-facing
+app.post("/api/credits/earn",  (c) => c.json({ success: false, error: "Forbidden" }, 403));
+app.post("/api/credits/spend", (c) => c.json({ success: false, error: "Forbidden" }, 403));
+app.all ("/api/credits/*", requireAuth, generalLimiter, (c) =>
   proxyTo(c, CREDIT_SERVICE_URL, c.req.path.replace("/api/credits", "") || "/")
 );
 
@@ -203,10 +247,46 @@ app.all("/api/admin/*", requireAuth, requireAdmin, (c) =>
   proxyTo(c, ADMIN_SERVICE_URL, c.req.path.replace("/api/admin", "") || "/")
 );
 
-// Users (profile)
+// Users (auth servisi — /api/users/me → /me, /api/users/me/preferences → /me/preferences)
 app.all("/api/users/*", requireAuth, generalLimiter, (c) =>
-  proxyTo(c, AUTH_SERVICE_URL, "/users" + c.req.path.replace("/api/users", ""))
+  proxyTo(c, AUTH_SERVICE_URL, c.req.path.replace("/api/users", "") || "/")
 );
+
+// Profile
+app.get ("/api/profile/me",          requireAuth, generalLimiter, (c) => proxyTo(c, PROFILE_SERVICE_URL, "/me"));
+app.put ("/api/profile/me",          requireAuth, generalLimiter, (c) => proxyTo(c, PROFILE_SERVICE_URL, "/me"));
+app.post("/api/profile/me/avatar",   requireAuth, generalLimiter, (c) => proxyTo(c, PROFILE_SERVICE_URL, "/me/avatar"));
+app.get ("/api/profile/:username",   generalLimiter,              (c) => proxyTo(c, PROFILE_SERVICE_URL, `/${c.req.param("username")}`));
+
+// DAW Projects (save/load) — share link is public
+app.get("/api/projects/share/:token", generalLimiter, (c) =>
+  proxyTo(c, LIBRARY_SERVICE_URL, `/projects/share/${c.req.param("token")}`)
+);
+// Hono'da /* en az 1 karakter gerektirir — /api/projects (trailing slash'siz liste endpoint'i)
+// ayrıca tanımlanmazsa 404 düşer.
+app.get ("/api/projects",   requireAuth, generalLimiter, (c) => proxyTo(c, LIBRARY_SERVICE_URL, "/projects"));
+app.post("/api/projects",   requireAuth, generalLimiter, (c) => proxyTo(c, LIBRARY_SERVICE_URL, "/projects"));
+app.all ("/api/projects/*", requireAuth, generalLimiter, (c) =>
+  proxyTo(c, LIBRARY_SERVICE_URL, "/projects" + c.req.path.replace("/api/projects", ""))
+);
+
+// Social — tracks
+app.post("/api/social/tracks", requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/tracks"));
+app.get   ("/api/social/tracks",                       generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/tracks"));
+app.get   ("/api/social/tracks/:id",                   generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, `/tracks/${c.req.param("id")}`));
+app.delete("/api/social/tracks/:id",      requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, `/tracks/${c.req.param("id")}`));
+app.post  ("/api/social/tracks/:id/like", requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, `/tracks/${c.req.param("id")}/like`));
+
+// Social — follow
+app.post("/api/social/follow/:userId",         requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, `/follow/${c.req.param("userId")}`));
+app.get ("/api/social/follow/:userId/status",  requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, `/follow/${c.req.param("userId")}/status`));
+app.get ("/api/social/followers",              requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/followers"));
+app.get ("/api/social/following",              requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/following"));
+
+// Social — feed + my tracks + SSE
+app.get("/api/social/feed",      requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/feed"));
+app.get("/api/social/my-tracks", requireAuth, generalLimiter, (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/my-tracks"));
+app.get("/api/social/sse",       requireAuth,                 (c) => proxyTo(c, SOCIAL_SERVICE_URL, "/sse"));
 
 // 404
 app.all("*", (c) => c.json({ success: false, error: "Route not found" }, 404));

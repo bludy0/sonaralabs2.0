@@ -2,24 +2,30 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "./store/useAuthStore";
 import Layout from "./components/Layout";
+import { ThemeProvider } from "./components/ThemeProvider";
 
-// Pages (lazy-loaded)
-import LoginPage    from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
+// Pages
+import LoginPage       from "./pages/LoginPage";
+import RegisterPage    from "./pages/RegisterPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import GeneratePage from "./pages/GeneratePage";
 import LibraryPage  from "./pages/LibraryPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage    from "./pages/AdminPage";
 import StudioPage   from "./pages/StudioPage";
+import ExplorePage  from "./pages/ExplorePage";
+import ProfilePage  from "./pages/ProfilePage";
+import FeedPage     from "./pages/FeedPage";
+import SettingsPage from "./pages/SettingsPage";
 
-// ── PROTECTED ROUTE — auth yoksa /login'e yönlendir ──────────────────────────
+// ── PROTECTED ROUTE ───────────────────────────────────────────────────────────
 function ProtectedRoute() {
   const user = useAuthStore(s => s.user);
   if (!user) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
-// ── ADMIN ROUTE — role !== "admin" ise /dashboard'a yönlendir ────────────────
+// ── ADMIN ROUTE ───────────────────────────────────────────────────────────────
 function AdminRoute() {
   const user = useAuthStore(s => s.user);
   if (!user) return <Navigate to="/login" replace />;
@@ -31,39 +37,50 @@ function AdminRoute() {
 export default function App() {
   const { user, fetchMe } = useAuthStore();
 
-  // Uygulama açılışında oturumu doğrula
   useEffect(() => {
     if (!user) fetchMe();
   }, []);
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Korumasız route'lar */}
-        <Route path="/login"    element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Auth sayfaları */}
+          <Route path="/login"         element={<LoginPage />} />
+          <Route path="/register"      element={<RegisterPage />} />
+          <Route path="/verify-email"  element={<VerifyEmailPage />} />
 
-        {/* Korumalı route'lar — Layout içinde */}
-        <Route element={<ProtectedRoute />}>
+          {/* Public (auth gerekmez, Layout var) */}
           <Route element={<Layout />}>
-            <Route path="/generate"  element={<GeneratePage />} />
-            <Route path="/library"   element={<LibraryPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-
-            {/* Admin route */}
-            <Route element={<AdminRoute />}>
-              <Route path="/admin" element={<AdminPage />} />
-            </Route>
+            <Route path="/explore"           element={<ExplorePage />} />
+            <Route path="/profile/:username" element={<ProfilePage />} />
           </Route>
 
-          {/* Studio — full-page, Layout dışında */}
-          <Route path="/studio" element={<StudioPage />} />
-        </Route>
+          {/* Studio share — tam sayfa, auth yok */}
+          <Route path="/studio/share/:token" element={<StudioPage />} />
 
-        {/* Default yönlendirme */}
-        <Route path="/" element={<Navigate to="/generate" replace />} />
-        <Route path="*" element={<Navigate to="/generate" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Korumalı route'lar */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/generate"  element={<GeneratePage />} />
+              <Route path="/library"   element={<LibraryPage />} />
+              <Route path="/feed"      element={<FeedPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/settings"  element={<SettingsPage />} />
+
+              <Route element={<AdminRoute />}>
+                <Route path="/admin" element={<AdminPage />} />
+              </Route>
+            </Route>
+
+            {/* Studio — tam sayfa, Layout dışında */}
+            <Route path="/studio" element={<StudioPage />} />
+          </Route>
+
+          <Route path="/" element={<Navigate to="/generate" replace />} />
+          <Route path="*" element={<Navigate to="/generate" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

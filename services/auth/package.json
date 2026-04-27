@@ -3,20 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx --env-file=../../.env watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest --passWithNoTests",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sonaralabs/types": "workspace:*",
+    "@types/nodemailer": "^8.0.0",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.10.1",
-    "@sonaralabs/types": "workspace:*"
+    "nodemailer": "^8.0.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

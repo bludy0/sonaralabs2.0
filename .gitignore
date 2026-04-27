@@ -4,3 +4,6 @@ dist/
 .env.local
 *.log
 .turbo/
+
+# Seed credentials — asla commit etme
+scripts/seed-credentials.txt
