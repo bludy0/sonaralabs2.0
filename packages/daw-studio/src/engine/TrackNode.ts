@@ -111,6 +111,9 @@ export class TrackNode {
     for (const [id] of this.activeSources) this.stopClip(id)
   }
 
+  /** Public input for MIDI synth voices — connects before effects chain. */
+  get input(): GainNode { return this.gain }
+
   getPeakLevel(): number {
     const data = new Uint8Array(this.analyser.frequencyBinCount)
     this.analyser.getByteFrequencyData(data)

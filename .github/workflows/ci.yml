@@ -1,0 +1,232 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: "10"
+  NODE_VERSION: "20"
+
+jobs:
+  # ── 1. Typecheck (tüm servisler + frontend + packages) ─────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck — packages/types
+        run: pnpm --filter "@sonaralabs/types" exec tsc --noEmit
+
+      - name: Typecheck — all services
+        run: |
+          for svc in services/*/; do
+            echo "=== $svc ==="
+            pnpm --filter "sonaralabs-$(basename $svc)" exec tsc --noEmit
+          done
+
+      - name: Typecheck — frontend
+        run: pnpm --filter "sonaralabs-frontend" exec tsc --noEmit
+
+  # ── 2. Unit tests (her servis kendi testini çalıştırır) ────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm --filter "!sonaralabs-web" test --if-present
+        env:
+          NODE_ENV: test
+
+  # ── 3. Build (Docker images) ───────────────────────────────────────────────
+  build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway
+          - auth
+          - generation
+          - upload
+          - library
+          - credit
+          - admin
+          - notification
+          - profile
+          - social
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          tags: sonaralabs/${{ matrix.service }}:ci
+
+  # ── 4. E2E smoke tests ─────────────────────────────────────────────────────
+  e2e:
+    name: E2E Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    timeout-minutes: 15
+
+    env:
+      # CI-safe JWT secrets (test-only — değiştirilebilir, production'da farklı olmalı)
+      ACCESS_JWT_SECRET: ci_access_secret_do_not_use_in_prod
+      REFRESH_JWT_SECRET: ci_refresh_secret_do_not_use_in_prod
+      INTERNAL_JWT_SECRET: ci_internal_secret_do_not_use_in_prod
+      MONGO_ROOT_USER: root
+      MONGO_ROOT_PASS: rootpass
+      POSTGRES_USER: sonaralabs
+      POSTGRES_PASS: sonaralabs_dev
+      CLIENT_URL: http://localhost:5173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start infrastructure (Docker Compose)
+        run: |
+          docker compose up -d \
+            mongo redis postgres minio minio-init \
+            auth generation upload library credit admin notification profile social gateway
+        timeout-minutes: 5
+
+      - name: Wait for gateway to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && echo "Gateway ready" && break
+            echo "Attempt $i — waiting..."
+            sleep 3
+          done
+
+      - name: Build frontend
+        run: pnpm --filter "sonaralabs-web" build
+        env:
+          VITE_API_BASE_URL: ""
+
+      - name: Serve frontend
+        run: |
+          pnpm exec serve -s apps/web/dist -l 5173 &
+          sleep 2
+
+      - name: Run Playwright smoke tests
+        run: pnpm exec playwright test
+        env:
+          BASE_URL: http://localhost:5173
+          API_URL: http://localhost:3000
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Docker Compose logs (on failure)
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v
+
+  # ── 5. Deploy to Railway (push to main only, all checks must pass) ───────────
+  deploy:
+    name: Deploy → Railway
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests, build, e2e]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy all services
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          for svc in gateway auth generation upload library credit admin notification profile social; do
+            echo "=== Deploying $svc ==="
+            railway redeploy --service "$svc" --yes || echo "WARN: $svc redeploy failed (check Railway dashboard)"
+          done
+
+      - name: Deploy frontend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway redeploy --service "web" --yes || echo "WARN: web redeploy failed"
+
+  # ── 6. Notify (push to main only) ─────────────────────────────────────────
+  notify:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests, e2e, deploy]
+    if: always() && github.ref == 'refs/heads/main'
+    steps:
+      - name: Print result
+        run: |
+          echo "TypeScript : ${{ needs.typecheck.result }}"
+          echo "Unit tests : ${{ needs.unit-tests.result }}"
+          echo "E2E        : ${{ needs.e2e.result }}"
+          echo "Deploy     : ${{ needs.deploy.result }}"

@@ -128,7 +128,8 @@ export interface MidiClip {
   id:            string
   name:          string
   startTime:     number    // seconds on timeline
-  durationBeats: number
+  durationBeats: number    // core pattern length
+  loopBeats?:    number    // total visible beats (> durationBeats → loops pattern)
   notes:         MidiNote[]
 }
 
@@ -151,9 +152,10 @@ export interface AudioTrack extends TrackBase {
 }
 
 export interface MidiTrack extends TrackBase {
-  type:  'midi'
-  clips: MidiClip[]
-  synth: SynthPreset
+  type:       'midi'
+  clips:      MidiClip[]
+  synth:      SynthPreset
+  instrument: string | null   // gleitz soundfont id, null = use SynthEngine
 }
 
 export type DAWTrack = AudioTrack | MidiTrack

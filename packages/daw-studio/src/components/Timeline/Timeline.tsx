@@ -1,13 +1,14 @@
 import { useRef, useEffect } from 'react'
 import { useDAWStore }    from '../../store/useDAWStore'
 import { useAudioEngine } from '../../store/useAudioEngine'
-import { C } from '../../constants'
+import { C, alpha } from '../../constants'
+import { getCSSVar, useThemeVersion } from '../../lib/cssVars'
 import { AUTOMATION_PARAM_LABELS } from '../../types'
 import { TrackRow } from './TrackRow'
 import { AutomationLaneView } from '../AutomationLane/AutomationLaneView'
 import { AutomationLaneHeader } from '../AutomationLane/AutomationLaneHeader'
 
-const HEADER_W = 172
+const HEADER_W = 240
 const RULER_H  = 28
 
 export function Timeline() {
@@ -20,41 +21,52 @@ export function Timeline() {
 
   const rulerRef    = useRef<HTMLCanvasElement>(null)
   const scrollRef   = useRef<HTMLDivElement>(null)
+  const themeVersion = useThemeVersion()
 
-  // Ruler canvas draw
+  // Ruler canvas draw — CSS değişkenleri canvas 2D API tarafından çözülemediğinden
+  // getCSSVar() ile hesaplanan değerleri kullanıyoruz; themeVersion tema değişimini tetikler
   useEffect(() => {
     const canvas = rulerRef.current
     if (!canvas) return
     const ctx    = canvas.getContext('2d')
     if (!ctx) return
     const W = canvas.width
+
+    // Renkleri çözümle (her çizimde taze değer)
+    const bgSubtle  = getCSSVar('--daw-subtle')
+    const border    = getCSSVar('--daw-border')
+    const text2     = getCSSVar('--daw-text2')
+    const text3     = getCSSVar('--daw-text3')
+
     ctx.clearRect(0, 0, W, RULER_H)
-    ctx.fillStyle   = C.bgRaised
+    ctx.fillStyle = bgSubtle
     ctx.fillRect(0, 0, W, RULER_H)
+
+    // Bottom border line
+    ctx.fillStyle = border
+    ctx.fillRect(0, RULER_H - 1, W, 1)
 
     const step  = pickStep(zoom)
     const total = W / zoom + 4
 
-    ctx.fillStyle   = C.text3
-    ctx.strokeStyle = C.border
-    ctx.font        = '10px system-ui'
-    ctx.textAlign   = 'left'
-    ctx.lineWidth   = 1
+    ctx.font      = '10px "Inter", system-ui'
+    ctx.textAlign = 'left'
+    ctx.lineWidth = 1
 
     for (let t = 0; t < total; t += step) {
-      const x = Math.round(t * zoom)
+      const x       = Math.round(t * zoom)
       const isMajor = Math.round(t / step) % 4 === 0
       ctx.beginPath()
-      ctx.moveTo(x, isMajor ? 8 : 18)
-      ctx.lineTo(x, RULER_H)
-      ctx.strokeStyle = isMajor ? C.border : C.borderDim
+      ctx.moveTo(x, isMajor ? 6 : 16)
+      ctx.lineTo(x, RULER_H - 1)
+      ctx.strokeStyle = isMajor ? text3 : border
       ctx.stroke()
       if (isMajor) {
-        ctx.fillStyle = C.text2
-        ctx.fillText(formatTime(t), x + 2, 10)
+        ctx.fillStyle = text2
+        ctx.fillText(formatTime(t), x + 2, 9)
       }
     }
-  }, [zoom])
+  }, [zoom, themeVersion])
 
   // Scroll with wheel (horizontal zoom on Ctrl+wheel)
   function onWheel(e: React.WheelEvent) {
@@ -87,7 +99,7 @@ export function Timeline() {
 
   return (
     <div
-      style={{ flex: 1, display: 'flex', overflow: 'hidden', background: C.bgBase }}
+      style={{ flex: 1, display: 'flex', overflow: 'hidden', background: C.bgDeep }}
       onWheel={onWheel}
     >
       {/* Track headers column */}
@@ -95,50 +107,54 @@ export function Timeline() {
         width: HEADER_W, flexShrink: 0,
         display: 'flex', flexDirection: 'column',
         borderRight: `1px solid ${C.border}`,
+        background: C.bgBase,
+        boxShadow: `4px 0 10px -5px ${C.shadowSm}`,
+        zIndex: 10,
       }}>
-        {/* Ruler spacer */}
+        {/* Header toolbar (ruler spacer) */}
         <div style={{
-          height: RULER_H, flexShrink: 0,
-          background: C.bgRaised,
+          height:       RULER_H, flexShrink: 0,
+          background:   C.bgSelected,
           borderBottom: `1px solid ${C.border}`,
-          display: 'flex', alignItems: 'center', paddingLeft: 12,
+          display:      'flex', alignItems: 'center',
+          paddingInline: 8, gap: 6,
         }}>
-          {/* Zoom control */}
-          <span style={{ fontSize: 10, color: C.text3, userSelect: 'none' }}>
-            ×{(zoom / 80).toFixed(1)}
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: C.text3, textTransform: 'uppercase', flex: 1 }}>
+            TRACKS
           </span>
-          <div style={{ display:'flex', gap:2, marginLeft:'auto', marginRight:8 }}>
+          <div style={{ display:'flex', gap:2 }}>
             <ZoomBtn onClick={() => setZoom(zoom * 1.25)}>+</ZoomBtn>
             <ZoomBtn onClick={() => setZoom(zoom * 0.8)}>−</ZoomBtn>
           </div>
         </div>
 
         {/* Track headers + automation lane headers */}
-        {tracks.map(t => {
-          const lanes = automationLanes.filter(l => l.trackId === t.id)
-          return (
-            <div key={t.id} style={{ flexShrink: 0 }}>
-              <TrackHeader track={t} />
-              {lanes.map(lane => (
-                <AutomationLaneHeader key={lane.id} lane={lane} trackColor={t.color} />
-              ))}
-            </div>
-          )
-        })}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          {tracks.map(t => {
+            const lanes = automationLanes.filter(l => l.trackId === t.id)
+            return (
+              <div key={t.id} style={{ flexShrink: 0 }}>
+                <TrackHeader track={t} />
+                {lanes.map(lane => (
+                  <AutomationLaneHeader key={lane.id} lane={lane} trackColor={t.color} />
+                ))}
+              </div>
+            )
+          })}
 
-        {tracks.length === 0 && (
-          <div style={{
-            padding: '24px 12px', color: C.text3, fontSize: 12, textAlign: 'center',
-          }}>
-            Add a track to begin
-          </div>
-        )}
+          {tracks.length === 0 && (
+            <div style={{ padding: '32px 16px', color: C.text3, fontSize: 12, textAlign: 'center', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>♫</div>
+              Add a track to begin
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Scrollable lanes + ruler */}
       <div
         ref={scrollRef}
-        style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', position: 'relative' }}
+        style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', position: 'relative', background: C.bgDeep }}
       >
         <div style={{ width: timelineW, position: 'relative' }}>
           {/* Ruler */}
@@ -178,7 +194,7 @@ export function Timeline() {
             background: C.playhead,
             pointerEvents: 'none',
             zIndex: 20,
-            boxShadow: `0 0 4px ${C.accent}80`,
+            boxShadow: `0 0 4px ${alpha(C.accent, 50)}`,
           }}/>
 
           {/* Track lanes + automation lane views */}
@@ -214,129 +230,189 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
   const isSelected      = selectedId === track.id
   const existingParams  = automationLanes.filter(l => l.trackId === track.id).map(l => l.param)
 
-  const ALL_PARAMS = Object.keys(AUTOMATION_PARAM_LABELS) as import('../../types').AutomationParam[]
+  const ALL_PARAMS      = Object.keys(AUTOMATION_PARAM_LABELS) as import('../../types').AutomationParam[]
   const availableParams = ALL_PARAMS.filter(p => !existingParams.includes(p))
+
+  const isMidi = track.type === 'midi'
 
   return (
     <div
       onClick={() => selectTrack(track.id)}
       style={{
-        height: 72,
-        flexShrink: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        padding: '6px 10px',
-        borderBottom: `1px solid ${C.borderDim}`,
-        background: isSelected ? C.bgHover : C.bgRaised,
-        cursor: 'pointer',
-        userSelect: 'none',
+        height:      80,
+        flexShrink:  0,
+        display:     'flex',
+        alignItems:  'stretch',
+        borderBottom:`1px solid ${C.border}`,
+        background:  isSelected ? C.bgHover : C.bgBase,
+        cursor:      'pointer',
+        userSelect:  'none',
+        position:    'relative',
+        transition:  'background 0.1s',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <div style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: track.color, flexShrink: 0,
-        }}/>
-        <span style={{
-          fontSize: 12, fontWeight: 600, color: C.text1,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-        }}>
-          {track.name}
-        </span>
-        <span style={{
-          fontSize: 9, color: C.text3, background: C.bgSubtle,
-          padding: '1px 5px', borderRadius: 3,
-        }}>
-          {track.type.toUpperCase()}
-        </span>
-      </div>
+      {/* Color tab */}
+      <div style={{
+        width:      3,
+        flexShrink: 0,
+        background: track.color,
+      }}/>
 
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-        <SmallBtn
-          active={track.muted}
-          color={C.warning}
-          onClick={e => { e.stopPropagation(); updateTrack(track.id, { muted: !track.muted }) }}
-        >M</SmallBtn>
-        <SmallBtn
-          active={track.soloed}
-          color={C.success}
-          onClick={e => { e.stopPropagation(); updateTrack(track.id, { soloed: !track.soloed }) }}
-        >S</SmallBtn>
+      {/* Content */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '6px 8px 4px 6px' }}>
+        {/* Top row: icon + name + type badge + M/S/R */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: C.text3, flexShrink: 0 }}>
+            {isMidi ? '🎹' : '≈'}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: isSelected ? C.accentBright : C.text1,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+            letterSpacing: '0.01em',
+          }}>
+            {track.name}
+          </span>
+          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+            <TrackBtn
+              active={track.muted}
+              activeColor={C.warning}
+              onClick={e => { e.stopPropagation(); updateTrack(track.id, { muted: !track.muted }) }}
+              title="Mute"
+            >M</TrackBtn>
+            <TrackBtn
+              active={track.soloed}
+              activeColor={C.accent}
+              onClick={e => { e.stopPropagation(); updateTrack(track.id, { soloed: !track.soloed }) }}
+              title="Solo"
+            >S</TrackBtn>
+            <TrackBtn
+              active={false}
+              activeColor={C.error}
+              onClick={e => e.stopPropagation()}
+              title="Record arm"
+            >R</TrackBtn>
+          </div>
+        </div>
 
-        {/* Volume mini slider */}
-        <input
-          type="range" min={0} max={1} step={0.01}
-          value={track.volume}
-          onClick={e => e.stopPropagation()}
-          onChange={e => updateTrack(track.id, { volume: parseFloat(e.target.value) })}
-          style={{ flex: 1, accentColor: track.color, height: 3 }}
-        />
+        {/* Bottom row: V slider + P slider + utils */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* Volume */}
+          <span style={{ fontSize: 8, color: C.text3, width: 10, flexShrink: 0 }}>V</span>
+          <div style={{ position: 'relative', flex: 1, height: 4 }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: C.bgDeep, borderRadius: 2,
+              boxShadow: `inset 0 1px 3px ${C.shadowSm}`,
+            }}/>
+            <div style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width:  `${track.volume * 100}%`,
+              background: C.accent, borderRadius: 2,
+            }}/>
+            <input
+              type="range" min={0} max={1} step={0.01}
+              value={track.volume}
+              onClick={e => e.stopPropagation()}
+              onChange={e => updateTrack(track.id, { volume: parseFloat(e.target.value) })}
+              style={{
+                position: 'absolute', inset: '-4px 0',
+                opacity: 0, cursor: 'pointer', width: '100%', margin: 0,
+              }}
+            />
+          </div>
 
-        {/* Add automation lane */}
-        {availableParams.length > 0 && (
-          <select
-            title="Add automation lane"
-            value=""
-            onClick={e => e.stopPropagation()}
-            onChange={e => {
-              e.stopPropagation()
-              if (e.target.value) {
-                addLane(track.id, e.target.value as import('../../types').AutomationParam)
-              }
-            }}
-            style={{
-              background: C.bgSubtle,
-              color: C.text3,
-              border: `1px solid ${C.borderDim}`,
-              borderRadius: 3,
-              fontSize: 9,
-              cursor: 'pointer',
-              width: 20, height: 20,
-              padding: 0,
-              textAlign: 'center',
-            }}
-          >
-            <option value="">+A</option>
-            {availableParams.map(p => (
-              <option key={p} value={p}>{AUTOMATION_PARAM_LABELS[p]}</option>
-            ))}
-          </select>
-        )}
+          {/* Pan */}
+          <span style={{ fontSize: 8, color: C.text3, width: 10, flexShrink: 0, borderLeft: `1px solid ${C.border}`, paddingLeft: 4 }}>P</span>
+          <div style={{ position: 'relative', flex: 1, height: 4 }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: C.bgDeep, borderRadius: 2,
+              boxShadow: `inset 0 1px 3px ${C.shadowSm}`,
+            }}/>
+            <div style={{
+              position: 'absolute', top: 0, bottom: 0,
+              left: '50%', width: 1, background: C.text3,
+            }}/>
+            <input
+              type="range" min={-1} max={1} step={0.01}
+              value={track.pan ?? 0}
+              onClick={e => e.stopPropagation()}
+              onChange={e => updateTrack(track.id, { pan: parseFloat(e.target.value) })}
+              style={{
+                position: 'absolute', inset: '-4px 0',
+                opacity: 0, cursor: 'pointer', width: '100%', margin: 0,
+              }}
+            />
+          </div>
 
-        <button
-          onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: C.text3, fontSize: 14, padding: '0 2px',
-            lineHeight: 1,
-          }}
-          title="Remove track"
-        >×</button>
+          {/* Automation + remove */}
+          <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+            {availableParams.length > 0 && (
+              <select
+                title="Add automation lane"
+                value=""
+                onClick={e => e.stopPropagation()}
+                onChange={e => {
+                  e.stopPropagation()
+                  if (e.target.value) addLane(track.id, e.target.value as import('../../types').AutomationParam)
+                }}
+                style={{
+                  background: C.bgSubtle, color: C.text3,
+                  border: `1px solid ${C.border}`, borderRadius: 2,
+                  fontSize: 8, cursor: 'pointer',
+                  width: 18, height: 18, padding: 0, textAlign: 'center',
+                }}
+              >
+                <option value="">+A</option>
+                {availableParams.map(p => (
+                  <option key={p} value={p}>{AUTOMATION_PARAM_LABELS[p]}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); removeTrack(track.id) }}
+              style={{
+                width: 18, height: 18,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: C.text3, fontSize: 13, padding: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 2,
+              }}
+              title="Remove track"
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = C.error }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = C.text3 }}
+            >×</button>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-function SmallBtn({
-  children, active, color, onClick,
-}: {
-  children: React.ReactNode
-  active: boolean
-  color: string
-  onClick: (e: React.MouseEvent) => void
+function TrackBtn({ children, active, activeColor, onClick, title }: {
+  children:    React.ReactNode
+  active:      boolean
+  activeColor: string
+  onClick:     (e: React.MouseEvent) => void
+  title?:      string
 }) {
   return (
     <button
       onClick={onClick}
+      title={title}
       style={{
-        width: 20, height: 20,
-        background: active ? color + '30' : C.bgSubtle,
-        color: active ? color : C.text3,
-        border: `1px solid ${active ? color + '60' : C.borderDim}`,
-        borderRadius: 3,
-        fontSize: 9, fontWeight: 700,
-        cursor: 'pointer',
+        width:      18,
+        height:     18,
+        borderRadius: 2,
+        background: active ? alpha(activeColor, 19) : C.bgHover,
+        color:      active ? activeColor : C.text3,
+        border:     `1px solid ${active ? alpha(activeColor, 38) : C.border}`,
+        fontSize:   9,
+        fontWeight: 700,
+        cursor:     'pointer',
+        display:    'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow:  active ? `0 0 6px ${alpha(activeColor, 31)}` : 'none',
+        transition: 'all 0.1s',
       }}
     >
       {children}
@@ -349,12 +425,15 @@ function ZoomBtn({ children, onClick }: { children: React.ReactNode; onClick: ()
     <button
       onClick={onClick}
       style={{
-        width: 18, height: 18,
-        background: C.bgSubtle, color: C.text2,
+        width: 20, height: 20,
+        background: C.bgHover, color: C.text2,
         border: `1px solid ${C.border}`,
         borderRadius: 3, fontSize: 13, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'all 0.1s',
       }}
+      onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.color = C.accent; el.style.borderColor = C.accent }}
+      onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.color = C.text2; el.style.borderColor = C.border }}
     >
       {children}
     </button>

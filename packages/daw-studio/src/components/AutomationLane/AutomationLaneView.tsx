@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useDAWStore } from '../../store/useDAWStore'
 import { C } from '../../constants'
+import { getCSSVar, useThemeVersion } from '../../lib/cssVars'
 import { AUTOMATION_PARAM_RANGES } from '../../types'
 import type { AutomationLane, AutomationPoint } from '../../types'
 
@@ -20,6 +21,7 @@ export function AutomationLaneView({ lane, zoom, width }: Props) {
   const addPoint    = useDAWStore(s => s.addAutomationPoint)
   const updatePoint = useDAWStore(s => s.updateAutomationPoint)
   const removePoint = useDAWStore(s => s.removeAutomationPoint)
+  const themeVersion = useThemeVersion()
 
   const [minVal, maxVal] = AUTOMATION_PARAM_RANGES[lane.param]
 
@@ -36,6 +38,7 @@ export function AutomationLaneView({ lane, zoom, width }: Props) {
   }
 
   // ── Draw ──────────────────────────────────────────────────────────────────
+  // Canvas 2D API CSS değişkenlerini çözemez; getCSSVar() ile gerçek renkleri al
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -44,14 +47,20 @@ export function AutomationLaneView({ lane, zoom, width }: Props) {
     const W = canvas.width
     const H = canvas.height
 
+    // Renkleri taze çözümle
+    const bgDeep    = getCSSVar('--daw-deep')
+    const borderDim = getCSSVar('--daw-border-dim')
+    const text3     = getCSSVar('--daw-text3')
+    const accent    = getCSSVar('--daw-accent')
+
     ctx.clearRect(0, 0, W, H)
 
-    // Background
-    ctx.fillStyle = C.bgDeep + 'cc'
+    // Background — %80 opaklık
+    ctx.fillStyle = bgDeep + 'cc'
     ctx.fillRect(0, 0, W, H)
 
     // Midline
-    ctx.strokeStyle = C.borderDim
+    ctx.strokeStyle = borderDim
     ctx.lineWidth   = 1
     ctx.setLineDash([4, 4])
     ctx.beginPath()
@@ -61,14 +70,14 @@ export function AutomationLaneView({ lane, zoom, width }: Props) {
     ctx.setLineDash([])
 
     if (!lane.enabled) {
-      ctx.fillStyle = C.text3 + '40'
+      ctx.fillStyle = text3 + '40'
       ctx.fillRect(0, 0, W, H)
       return
     }
 
     if (lane.points.length === 0) return
 
-    const color = lane.enabled ? C.accent : C.text3
+    const color = lane.enabled ? accent : text3
 
     // Filled area under curve
     ctx.beginPath()
@@ -123,13 +132,13 @@ export function AutomationLaneView({ lane, zoom, width }: Props) {
 
       ctx.beginPath()
       ctx.arc(px, py, PT_R, 0, Math.PI * 2)
-      ctx.fillStyle = isDragging ? '#fff' : color
+      ctx.fillStyle = isDragging ? getCSSVar('--daw-text1') : color
       ctx.fill()
-      ctx.strokeStyle = C.bgDeep
+      ctx.strokeStyle = bgDeep
       ctx.lineWidth   = 1.5
       ctx.stroke()
     }
-  }, [lane, zoom, width]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lane, zoom, width, themeVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { draw() }, [draw])
 

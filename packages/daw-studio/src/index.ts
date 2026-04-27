@@ -1,4 +1,5 @@
-export { DAWLayout }  from './components/DAWLayout'
+export { DAWLayout }      from './components/DAWLayout'
+export type { DAWLayoutProps } from './components/DAWLayout'
 export { useDAWStore }    from './store/useDAWStore'
 export { useAudioEngine } from './store/useAudioEngine'
 export { exportMix, exportMixMp3, exportMixOgg, renderMix } from './lib/exportMix'

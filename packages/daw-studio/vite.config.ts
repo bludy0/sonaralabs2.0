@@ -4,6 +4,12 @@ import { resolve } from 'path'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  server: {
+    hmr: { port: 5175 },
+  },
+  resolve: {
+    dedupe: ['react', 'react-dom', 'zustand'],
+  },
   build: mode === 'lib' ? {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),

@@ -107,8 +107,16 @@ app.post("/", upload.single("file"), async (req, res) => {
     const key      = `uploads/${userId}/${crypto.randomUUID()}${ext}`;
     const metadata = { "Content-Type": req.file.mimetype };
 
-    const fileStream = fs.createReadStream(req.file.path);
-    await minioClient.putObject(MINIO_BUCKET, key, fileStream, fileSize, metadata);
+    try {
+      const fileStream = fs.createReadStream(req.file.path);
+      await minioClient.putObject(MINIO_BUCKET, key, fileStream, fileSize, metadata);
+    } catch (minioErr) {
+      // MinIO failed after storageUsed was already incremented — roll back quota
+      fs.unlink(req.file.path, () => {});
+      await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -fileSize } }).catch(() => {});
+      console.error("upload minio error", minioErr);
+      return res.status(502).json({ success: false, error: "Storage backend error. Please try again." });
+    }
     fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
     const audioUrl = `http://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET}/${key}`;
 
@@ -177,6 +185,28 @@ app.get("/internal/uploads", async (req, res) => {
     res.json({ success: true, data: uploads } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
+// DELETE /internal/uploads/:id — library servisi için (userId query param olarak gelir)
+app.delete("/internal/uploads/:id", async (req, res) => {
+  try {
+    getPayload(req);
+    const userId = req.query.userId as string;
+    if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+
+    const doc = await Upload.findOne({ _id: req.params.id, userId });
+    if (!doc) return res.status(404).json({ success: false, error: "Upload not found" });
+
+    const key = doc.audioUrl!.split(`/${MINIO_BUCKET}/`)[1];
+    if (key) await minioClient.removeObject(MINIO_BUCKET, key).catch(() => {});
+
+    await Upload.deleteOne({ _id: doc._id });
+    await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -doc.fileSize! } });
+
+    res.json({ success: true, message: "Deleted" } as ApiResponse);
+  } catch {
+    res.status(500).json({ success: false, error: "Delete failed" });
   }
 });
 

@@ -2,17 +2,88 @@
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
+import Stripe from "stripe";
 import { InternalJwtPayload, SpendCreditPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
-app.use(express.json());
 
 const { PORT = "3005", MONGO_URI, INTERNAL_JWT_SECRET } = process.env;
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { console.error("Missing env"); process.exit(1); }
 
+// ── STRIPE ───────────────────────────────────────────────────────────────────
+const stripeClient = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" })
+  : null;
+
+// ── CREDIT PACKAGES ──────────────────────────────────────────────────────────
+const CREDIT_PACKAGES = [
+  { id: "pack_100",  credits: 100,  price: 499,  label: "100 credits" },
+  { id: "pack_500",  credits: 500,  price: 1999, label: "500 credits" },
+  { id: "pack_1200", credits: 1200, price: 3999, label: "1200 credits" },
+] as const;
+
+// ── WEBHOOK route — MUST be before express.json() ────────────────────────────
+app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const sig = req.headers["stripe-signature"] as string;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeClient || !webhookSecret) {
+    return res.status(503).json({ error: "Webhook not configured" });
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripeClient.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
+  } catch (err) {
+    console.error("[webhook] Signature verification failed:", err);
+    return res.status(400).json({ error: "Invalid signature" });
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const userId  = session.metadata?.userId;
+    const credits = parseInt(session.metadata?.credits ?? "0");
+
+    // Metadata eksikse log at — Stripe tekrar denemesi için yine 200 döner
+    if (!userId || credits <= 0) {
+      console.error("[webhook] checkout.session.completed: missing/invalid metadata in session", session.id, { userId, credits });
+    } else {
+      try {
+        const user = await User.findByIdAndUpdate(
+          userId,
+          { $inc: { creditBalance: credits } },
+          { new: true, select: "creditBalance" }
+        );
+        if (user) {
+          await CreditLog.create({
+            userId,
+            amount: credits,
+            type: "earn",
+            reason: `stripe_purchase:${session.metadata?.packageId}`,
+            relatedId: session.id,
+            relatedModel: "stripe_session",
+            balanceAfter: user.creditBalance,
+          });
+          console.log(`[webhook] Added ${credits} credits to user ${userId}`);
+        } else {
+          console.error("[webhook] User not found for userId:", userId, "session:", session.id);
+        }
+      } catch (err) {
+        console.error("[webhook] Failed to add credits:", err);
+        return res.status(500).json({ error: "Failed to process payment" });
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
+// ── JSON middleware (after webhook raw route) ─────────────────────────────────
+app.use(express.json());
+
 // ── MODELS ────────────────────────────────────────────────────────────────────
 const userSchema = new mongoose.Schema({
-  creditBalance: { type: Number, default: 100 },
+  creditBalance: { type: Number, default: 0 },  // auth servisiyle senkron; earn endpoint ile 100 verilir
 }, { strict: false, timestamps: true });
 
 const User = mongoose.model("User", userSchema);
@@ -37,6 +108,11 @@ function getInternalPayload(req: express.Request): InternalJwtPayload {
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
+
+// GET /packages — available credit packages (no auth required)
+app.get("/packages", (_req, res) => {
+  res.json({ success: true, data: CREDIT_PACKAGES });
+});
 
 // GET /balance — kullanıcının kredi bakiyesi
 app.get("/balance", async (req, res) => {
@@ -136,9 +212,49 @@ app.post("/earn", async (req, res) => {
   }
 });
 
-// POST /purchase — MVP'de stub
-app.post("/purchase", (_req, res) => {
-  res.status(503).json({ success: false, error: "Payment system not yet available. Coming in v1.1." });
+// POST /purchase — Stripe Checkout session oluştur
+app.post("/purchase", async (req, res) => {
+  if (!stripeClient) {
+    return res.status(503).json({ success: false, error: "Payment system not configured" });
+  }
+  try {
+    const { sub: userId } = getInternalPayload(req);
+    const { packageId, successUrl, cancelUrl } = req.body as {
+      packageId: string;
+      successUrl?: string;
+      cancelUrl?: string;
+    };
+
+    const pkg = CREDIT_PACKAGES.find(p => p.id === packageId);
+    if (!pkg) return res.status(400).json({ success: false, error: "Invalid package" });
+
+    const session = await stripeClient.checkout.sessions.create({
+      mode: "payment",
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          unit_amount: pkg.price,
+          product_data: {
+            name: `Sonaralabs — ${pkg.label}`,
+            description: `${pkg.credits} AI generation credits`,
+          },
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        userId,
+        packageId: pkg.id,
+        credits: String(pkg.credits),
+      },
+      success_url: successUrl ?? `${process.env.FRONTEND_URL ?? "http://localhost:5173"}/dashboard?purchase=success`,
+      cancel_url: cancelUrl ?? `${process.env.FRONTEND_URL ?? "http://localhost:5173"}/dashboard?purchase=cancelled`,
+    });
+
+    res.json({ success: true, data: { checkoutUrl: session.url, sessionId: session.id } });
+  } catch (err) {
+    console.error("[purchase]", err);
+    res.status(500).json({ success: false, error: "Failed to create checkout session" });
+  }
 });
 
 // GET /internal/credit-logs — diğer servislerin internal erişimi

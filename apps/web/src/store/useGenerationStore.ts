@@ -125,6 +125,14 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
   fetchHistory: async (status) => {
     const params = status ? `?status=${status}&limit=50` : "?limit=50";
     const { data } = await api.get(`/api/generate/history${params}`);
-    set({ items: data.data.items });
+    const fetched: GenerationItem[] = data.data.items;
+    const fetchedIds = new Set(fetched.map((i: GenerationItem) => i._id));
+    // Preserve any optimistic items (no _id yet on server) that aren't in the response
+    set(s => ({
+      items: [
+        ...fetched,
+        ...s.items.filter(i => !fetchedIds.has(i._id) && !i._id),
+      ],
+    }));
   },
 }));

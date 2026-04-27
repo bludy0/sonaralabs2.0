@@ -20,7 +20,7 @@ export function EffectsPanel({ trackId, onClose }: { trackId: string; onClose: (
       transform: 'translate(-50%, -50%)',
       width: 340, background: C.bgRaised,
       border: `1px solid ${C.border}`,
-      borderRadius: 10, boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
+      borderRadius: 10, boxShadow: `0 8px 40px ${C.shadowLg}`,
       zIndex: 1000,
     }}>
       {/* Header */}

@@ -10,10 +10,29 @@ volumes:
   mongo_data:
   redis_data:
   minio_data:
+  postgres_data:
 
 services:
 
   # ── INFRASTRUCTURE ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [sonaralabs]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-sonaralabs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS:-sonaralabs_dev}
+      POSTGRES_DB:       sonaralabs
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonaralabs} -d sonaralabs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mongo:
     image: mongo:7
@@ -78,7 +97,9 @@ services:
         mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin};
         mc mb --ignore-existing local/sonaralabs-audio;
         mc anonymous set download local/sonaralabs-audio;
-        echo 'MinIO bucket ready';
+        mc mb --ignore-existing local/sonaralabs-avatars;
+        mc anonymous set download local/sonaralabs-avatars;
+        echo 'MinIO buckets ready';
       "
 
   # ── SERVICES ────────────────────────────────────────────────────────────────
@@ -110,8 +131,12 @@ services:
       CREDIT_SERVICE_URL: http://credit:3005
       ADMIN_SERVICE_URL: http://admin:3006
       NOTIFICATION_SERVICE_URL: http://notification:3007
+      PROFILE_SERVICE_URL:      http://profile:3008
+      SOCIAL_SERVICE_URL:       http://social:3009
       # Redis (rate limit store)
       REDIS_URL: redis://redis:6379
+      # CORS
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
     depends_on:
       redis:
         condition: service_healthy
@@ -275,10 +300,54 @@ services:
       redis:
         condition: service_healthy
 
+  profile:
+    build:
+      context: .
+      dockerfile: services/profile/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3008:3008"
+    environment:
+      PORT: 3008
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  social:
+    build:
+      context: .
+      dockerfile: services/social/Dockerfile
+    restart: unless-stopped
+    networks: [sonaralabs]
+    ports:
+      - "3009:3009"
+    environment:
+      PORT: 3009
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      REDIS_URL: redis://redis:6379
+      PROFILE_SERVICE_URL: http://profile:3008
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      profile:
+        condition: service_started
+
   frontend:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
       target: dev
     restart: unless-stopped
     networks: [sonaralabs]
@@ -287,7 +356,8 @@ services:
     environment:
       VITE_API_BASE_URL: http://localhost:3000
     volumes:
-      - ./frontend:/app
+      - .:/app
       - /app/node_modules
+      - /app/apps/web/node_modules
     depends_on:
       - gateway

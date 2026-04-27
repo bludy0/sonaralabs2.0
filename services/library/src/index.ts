@@ -31,6 +31,22 @@ const collectionSchema = new mongoose.Schema({
 
 const Collection = mongoose.model("Collection", collectionSchema);
 
+// ── DAW PROJECTS ───────────────────────────────────────────────────────────────
+const dawProjectSchema = new mongoose.Schema({
+  userId:       { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  name:         { type: String, required: true, maxlength: 120, default: "Untitled Project" },
+  tracks:       { type: mongoose.Schema.Types.Mixed, default: [] },   // serialized DAWTrack[]
+  bpm:          { type: Number, default: 120 },
+  masterVolume: { type: Number, default: 0.8 },
+  loopStart:    { type: Number, default: 0 },
+  loopEnd:      { type: Number, default: 8 },
+  loopEnabled:  { type: Boolean, default: false },
+  isPublic:     { type: Boolean, default: false },
+  shareToken:   { type: String, sparse: true, index: true },
+}, { timestamps: true });
+
+const DawProject = mongoose.model("DawProject", dawProjectSchema);
+
 // favorites "Generation" ve "Upload" modellerinde isFavorited flag ile tutulur.
 // Library servisi bu verilere internal HTTP ile erişir.
 
@@ -56,9 +72,11 @@ app.get("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
     const headers = { "x-internal-token": internalToken() };
-    const page  = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const favOnly = req.query.favorites === "true";
+    const page       = parseInt(req.query.page as string) || 1;
+    const limit      = parseInt(req.query.limit as string) || 20;
+    const favOnly    = req.query.favorites === "true";
+    const typeFilter = req.query.type as string | undefined;
+    const q          = (req.query.q as string | undefined)?.toLowerCase().trim();
 
     // limit=200: tüm itemlar in-memory çekilip sayfalanır (her servis max 200)
     const [genRes, upRes] = await Promise.allSettled([
@@ -75,7 +93,15 @@ app.get("/", async (req, res) => {
       ...uploads.map((u: any)     => ({ ...u, _type: "upload"     })),
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    const filtered  = favOnly ? items.filter((i: any) => i.isFavorited) : items;
+    const filtered = items.filter((i: any) => {
+      if (favOnly && !i.isFavorited) return false;
+      if (typeFilter && typeFilter !== "all" && i._type !== typeFilter) return false;
+      if (q) {
+        const label = ((i.originalName ?? i.prompt ?? "") as string).toLowerCase();
+        if (!label.includes(q)) return false;
+      }
+      return true;
+    });
     const total     = filtered.length;
     const paginated = filtered.slice((page - 1) * limit, page * limit);
 
@@ -115,7 +141,7 @@ app.delete("/:model/:id", async (req, res) => {
     const headers = { "x-internal-token": internalToken() };
 
     if (model === "upload") {
-      await axios.delete(`${UPLOAD_SERVICE_URL}/${id}?userId=${userId}`, { headers });
+      await axios.delete(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}?userId=${userId}`, { headers });
     } else {
       return res.status(400).json({ success: false, error: "Only uploads can be deleted from library directly." });
     }
@@ -164,9 +190,10 @@ app.patch("/collections/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
     const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ success: false, error: "Name required" });
     const col = await Collection.findOneAndUpdate(
       { _id: req.params.id, userId },
-      { name: name?.trim() },
+      { name: name.trim() },
       { new: true }
     );
     if (!col) return res.status(404).json({ success: false, error: "Not found" });
@@ -212,6 +239,138 @@ app.delete("/collections/:id/items/:refId", async (req, res) => {
     );
     if (!col) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, data: col } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// ── DAW PROJECT ROUTES ────────────────────────────────────────────────────────
+
+const MAX_PROJECT_BYTES = 2 * 1024 * 1024; // 2 MB serialized limit
+
+// GET /projects/share/:token — public (no auth required)
+app.get("/projects/share/:token", async (req, res) => {
+  try {
+    const project = await DawProject.findOne({ shareToken: req.params.token, isPublic: true });
+    if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    res.json({ success: true, data: project });
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// GET /projects — list my projects
+app.get("/projects", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const projects = await DawProject.find({ userId })
+      .select("_id name bpm masterVolume isPublic shareToken createdAt updatedAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+    res.json({ success: true, data: projects } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// POST /projects — create new project
+app.post("/projects", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const { name, tracks, bpm, masterVolume, loopStart, loopEnd, loopEnabled } = req.body;
+    if (!name?.trim()) return res.status(400).json({ success: false, error: "name required" });
+    if (tracks !== undefined && JSON.stringify(tracks).length > MAX_PROJECT_BYTES)
+      return res.status(413).json({ success: false, error: "Project data too large (max 2 MB)" });
+
+    const project = await DawProject.create({
+      userId,
+      name: name.trim(),
+      tracks: tracks ?? [],
+      bpm: bpm ?? 120,
+      masterVolume: masterVolume ?? 0.8,
+      loopStart: loopStart ?? 0,
+      loopEnd: loopEnd ?? 8,
+      loopEnabled: loopEnabled ?? false,
+    });
+    res.status(201).json({ success: true, data: project } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// GET /projects/:id — load project (owner or public)
+app.get("/projects/:id", async (req, res) => {
+  try {
+    const hasToken = !!req.headers["x-internal-token"];
+    if (hasToken) {
+      // Authenticated request — only the owner can load their project
+      const { sub: userId } = getPayload(req); // throws 401 on bad/expired token
+      const project = await DawProject.findOne({ _id: req.params.id, userId });
+      if (!project) return res.status(404).json({ success: false, error: "Not found" });
+      return res.json({ success: true, data: project } as ApiResponse);
+    } else {
+      // Unauthenticated — only public projects
+      const project = await DawProject.findOne({ _id: req.params.id, isPublic: true });
+      if (!project) return res.status(404).json({ success: false, error: "Not found" });
+      return res.json({ success: true, data: project } as ApiResponse);
+    }
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// PUT /projects/:id — save (update) project
+app.put("/projects/:id", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const { name, tracks, bpm, masterVolume, loopStart, loopEnd, loopEnabled } = req.body;
+    if (tracks !== undefined && JSON.stringify(tracks).length > MAX_PROJECT_BYTES)
+      return res.status(413).json({ success: false, error: "Project data too large (max 2 MB)" });
+
+    const project = await DawProject.findOneAndUpdate(
+      { _id: req.params.id, userId },
+      {
+        ...(name && { name: name.trim() }),
+        ...(tracks !== undefined && { tracks }),
+        ...(bpm !== undefined && { bpm }),
+        ...(masterVolume !== undefined && { masterVolume }),
+        ...(loopStart !== undefined && { loopStart }),
+        ...(loopEnd !== undefined && { loopEnd }),
+        ...(loopEnabled !== undefined && { loopEnabled }),
+      },
+      { new: true }
+    );
+    if (!project) return res.status(404).json({ success: false, error: "Not found" });
+    res.json({ success: true, data: project } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// DELETE /projects/:id
+app.delete("/projects/:id", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const result = await DawProject.findOneAndDelete({ _id: req.params.id, userId });
+    if (!result) return res.status(404).json({ success: false, error: "Not found" });
+    res.json({ success: true, message: "Project deleted" } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
+});
+
+// POST /projects/:id/share — toggle public share link
+app.post("/projects/:id/share", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const project = await DawProject.findOne({ _id: req.params.id, userId });
+    if (!project) return res.status(404).json({ success: false, error: "Not found" });
+
+    if (project.isPublic && project.shareToken) {
+      // Toggle off
+      project.isPublic   = false;
+      project.shareToken = undefined;
+    } else {
+      // Generate new token and make public
+      const crypto = await import("crypto");
+      project.shareToken = crypto.randomBytes(16).toString("hex");
+      project.isPublic   = true;
+    }
+    await project.save();
+
+    res.json({
+      success: true,
+      data: {
+        isPublic:   project.isPublic,
+        shareToken: project.shareToken ?? null,
+      }
+    } as ApiResponse);
   } catch { res.status(500).json({ success: false, error: "Failed" }); }
 });
 

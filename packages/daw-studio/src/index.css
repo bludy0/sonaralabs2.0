@@ -2,5 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * DAW Studio CSS değişkenleri — varsayılan: Deep Cyan tema.
+ * Web uygulamasında ThemeProvider bu değerleri tema seçimine göre günceller.
+ * Standalone modda (daw-studio/dev:app) bu default değerler kullanılır.
+ */
+:root {
+  --daw-deep:          #0e0e10;
+  --daw-base:          #131315;
+  --daw-raised:        #1b1b1d;
+  --daw-subtle:        #201f21;
+  --daw-hover:         #2a2a2c;
+  --daw-selected:      #353437;
+  --daw-border:        #3b494b;
+  --daw-border-dim:    #1b1b1d;
+  --daw-accent:        #00dbe9;
+  --daw-accent-bright: #7df4ff;
+  --daw-accent-dim:    #004f54;
+  --daw-accent-on:     #002022;
+  --daw-success:       #2ae500;
+  --daw-success-dim:   #0f6d00;
+  --daw-warning:       #ffba20;
+  --daw-warning-dim:   #7d5800;
+  --daw-error:         #ffb4ab;
+  --daw-error-cont:    #93000a;
+  --daw-text1:         #e5e1e4;
+  --daw-text2:         #b9cacb;
+  --daw-text3:         #849495;
+  --daw-playhead:      #ffb4ab;
+  --daw-loop-bg:       rgba(0,219,233,0.06);
+  --daw-loop-border:   #00dbe9;
+
+  /* ── Gölge & overlay — koyu tema varsayılanları ──────────────────────── */
+  --daw-shadow:        rgba(0, 0, 0, 0.45);
+  --daw-shadow-lg:     rgba(0, 0, 0, 0.65);
+  --daw-overlay:       rgba(0, 0, 0, 0.72);
+
+  /* ── Piyano tuşları ──────────────────────────────────────────────────── */
+  --daw-piano-white:   var(--daw-raised);
+  --daw-piano-black:   var(--daw-deep);
+}
+
+/* ── Açık tema geçersiz kılmaları ────────────────────────────────────────── */
+:root[data-theme-light="true"] {
+  /* Hafif gölgeler */
+  --daw-shadow:        rgba(0, 0, 0, 0.10);
+  --daw-shadow-lg:     rgba(0, 0, 0, 0.18);
+  --daw-overlay:       rgba(0, 0, 0, 0.38);
+
+  /* Açık temada piyano tuşları kontrast için sabit renkler */
+  --daw-piano-white:   #f5f5f5;
+  --daw-piano-black:   #2a2a2a;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; background: #111; color: #fff; font-family: system-ui, sans-serif; }
+
+body {
+  margin: 0;
+  background: var(--daw-base);
+  color: var(--daw-text1);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s, color 0.25s;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--daw-deep); }
+::-webkit-scrollbar-thumb  { background: var(--daw-selected); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--daw-text3); }
+
+/* Açık temada scrollbar */
+:root[data-theme-light="true"] ::-webkit-scrollbar-track  { background: var(--daw-subtle); }
+:root[data-theme-light="true"] ::-webkit-scrollbar-thumb  { background: var(--daw-border); }
+
+/* Panel shadows — tema duyarlı */
+.inset-panel   { box-shadow: inset 0 1px 3px var(--daw-shadow), inset 0 0 10px var(--daw-shadow); }
+.raised-button { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--daw-text1) 10%, transparent),
+                              0 1px 2px var(--daw-shadow); }

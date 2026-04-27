@@ -89,6 +89,10 @@ interface DAWState {
   updateMidiNote: (trackId: string, clipId: string, noteId: string, patch: Partial<Omit<MidiNote, 'id'>>) => void
   removeMidiNote: (trackId: string, clipId: string, noteId: string) => void
 
+  // Instrument (soundfont sampler)
+  setInstrument:    (trackId: string, instrumentId: string | null) => void
+  replaceMidiNotes: (trackId: string, clipId: string, notes: Omit<MidiNote, 'id'>[]) => void
+
   // Effects
   updateEffects: (trackId: string, patch: Partial<EffectChain>) => void
   updateSynth:   (trackId: string, patch: Partial<SynthPreset>) => void
@@ -144,7 +148,8 @@ function makeMidiTrack(tracks: DAWTrack[]): MidiTrack {
     muted: false, soloed: false,
     effects: defaultEffectChain(),
     clips: [],
-    synth: { ...DEFAULT_SYNTH },
+    synth:      { ...DEFAULT_SYNTH },
+    instrument: null,
   }
 }
 
@@ -342,6 +347,30 @@ export const useDAWStore = create<DAWState>((set, get) => {
             ? { ...t, synth: { ...t.synth, ...patch } }
             : t
         ),
+      })),
+
+    setInstrument: (trackId, instrumentId) =>
+      record(s => ({
+        tracks: s.tracks.map(t =>
+          t.id === trackId && t.type === 'midi'
+            ? { ...t, instrument: instrumentId }
+            : t
+        ),
+      })),
+
+    replaceMidiNotes: (trackId, clipId, notes) =>
+      record(s => ({
+        tracks: s.tracks.map(t => {
+          if (t.id !== trackId || t.type !== 'midi') return t
+          return {
+            ...t,
+            clips: t.clips.map(c =>
+              c.id === clipId
+                ? { ...c, notes: notes.map(n => ({ ...n, id: uuid() })) }
+                : c
+            ),
+          }
+        }),
       })),
 
     // ── Automation ────────────────────────────────────────────────────────────

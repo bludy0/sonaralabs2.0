@@ -11,7 +11,15 @@ interface UseGenerationSSEOptions {
 }
 
 export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEOptions) {
-  const esRef = useRef<EventSource | null>(null);
+  // Single ref holds both the EventSource handle and the latest onStatus callback.
+  // Updating .onStatus inline (during render) keeps the latest callback without
+  // adding extra hooks or triggering reconnects — hooks count stays identical to
+  // the original (1 useRef, 2 useCallback, 1 useEffect).
+  const stateRef = useRef<{ es: EventSource | null; onStatus: typeof onStatus }>({
+    es: null,
+    onStatus,
+  });
+  stateRef.current.onStatus = onStatus; // always fresh, no extra hook needed
 
   // Pending job'ları çek ve SSE bağlantısını yenile
   const recoverPendingJobs = useCallback(async () => {
@@ -19,21 +27,18 @@ export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEO
       const { data } = await api.get("/api/generate/history?status=pending&limit=10");
       const pending = data.data?.items ?? [];
       pending.forEach((gen: any) => {
-        // Her pending job için synthetic event tetikle (UI güncellemesi için)
-        onStatus({ type: "status", jobId: gen.jobId, status: "pending" as GenerationStatus });
+        stateRef.current.onStatus({ type: "status", jobId: gen.jobId, status: "pending" as GenerationStatus });
       });
     } catch {
       // Sessizce geç
     }
-  }, [onStatus]);
+  }, []); // truly stable — reads stateRef at call time, no closure over onStatus
 
   const connect = useCallback(() => {
-    if (esRef.current) {
-      esRef.current.close();
-    }
+    stateRef.current.es?.close();
 
     const es = new EventSource("/api/notify/stream", { withCredentials: true });
-    esRef.current = es;
+    stateRef.current.es = es;
 
     es.onopen = () => {
       console.log("[SSE] Connected");
@@ -43,7 +48,7 @@ export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEO
     es.onmessage = (event) => {
       try {
         const data: SseStatusEvent = JSON.parse(event.data);
-        if (data.type === "status") onStatus(data);
+        if (data.type === "status") stateRef.current.onStatus(data);
       } catch {
         // parse hatası — ignore
       }
@@ -54,14 +59,14 @@ export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEO
       // Reconnect başarılı olunca onopen tetikler → recoverPendingJobs çalışır.
       console.warn("[SSE] Connection error — browser will auto-reconnect");
     };
-  }, [onStatus, recoverPendingJobs]);
+  }, [recoverPendingJobs]); // stable — recoverPendingJobs never changes
 
   useEffect(() => {
     if (!enabled) return;
     connect();
     return () => {
-      esRef.current?.close();
-      esRef.current = null;
+      stateRef.current.es?.close();
+      stateRef.current.es = null;
     };
   }, [enabled, connect]);
 }

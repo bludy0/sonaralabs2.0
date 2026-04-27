@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { getAudioContext, getMasterGain, resumeContext } from '../engine/context'
-import { TrackNode } from '../engine/TrackNode'
-import { SynthEngine } from '../engine/SynthEngine'
-import { useDAWStore } from './useDAWStore'
+import { TrackNode }     from '../engine/TrackNode'
+import { SynthEngine }   from '../engine/SynthEngine'
+import { SamplerEngine } from '../engine/SamplerEngine'
+import { useDAWStore }   from './useDAWStore'
 import type { AudioTrack, MidiTrack, AutomationPoint } from '../types'
 
 /** Linear interpolation between automation points at a given time. */
@@ -37,10 +38,11 @@ let _startContextTime = 0  // AudioContext.currentTime when play() was called
 let _startOffset      = 0  // timeline seconds we started from
 let _raf: number | null = null
 
-// Per-track nodes and synth engines
-const trackNodes   = new Map<string, TrackNode>()
-const synthEngines = new Map<string, SynthEngine>()
-const midiTimers:  ReturnType<typeof setTimeout>[] = []
+// Per-track nodes and synth/sampler engines
+const trackNodes     = new Map<string, TrackNode>()
+const synthEngines   = new Map<string, SynthEngine>()
+const samplerEngines = new Map<string, SamplerEngine>()
+const midiTimers:    ReturnType<typeof setTimeout>[] = []
 
 function clearMidiTimers() {
   midiTimers.forEach(clearTimeout)
@@ -58,6 +60,7 @@ function syncTrackNodes() {
       trackNodes.get(id)!.stopAll()
       trackNodes.delete(id)
       synthEngines.delete(id)
+      samplerEngines.delete(id)
     }
   }
 
@@ -66,8 +69,20 @@ function syncTrackNodes() {
     if (!trackNodes.has(track.id)) {
       trackNodes.set(track.id, new TrackNode(ctx, track.id, master))
     }
-    if (track.type === 'midi' && !synthEngines.has(track.id)) {
-      synthEngines.set(track.id, new SynthEngine())
+    if (track.type === 'midi') {
+      if (!synthEngines.has(track.id)) {
+        synthEngines.set(track.id, new SynthEngine())
+      }
+      // Ensure a SamplerEngine exists; load instrument if set
+      if (!samplerEngines.has(track.id)) {
+        samplerEngines.set(track.id, new SamplerEngine())
+      }
+      const sampler = samplerEngines.get(track.id)!
+      const midiTrack = track as MidiTrack
+      if (midiTrack.instrument && sampler.currentInstrument !== midiTrack.instrument) {
+        // Fire-and-forget async load — engine will be ready before playback
+        sampler.loadInstrument(midiTrack.instrument, ctx as AudioContext).catch(() => {/* ignore */})
+      }
     }
     trackNodes.get(track.id)!.sync(track)
   }
@@ -121,22 +136,28 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
     // Schedule MIDI clips
     for (const track of tracks) {
       if (track.muted || track.type !== 'midi') continue
-      const synth = synthEngines.get(track.id)
-      const node  = trackNodes.get(track.id)
-      if (!synth || !node) continue
+      const midiTrack = track as MidiTrack
+      const node      = trackNodes.get(track.id)
+      if (!node) continue
 
-      for (const clip of (track as MidiTrack).clips) {
+      // Choose engine: sampler (if instrument loaded) or synth fallback
+      const sampler = samplerEngines.get(track.id)
+      const synth   = synthEngines.get(track.id)
+      const engine  = (sampler?.isReady) ? sampler : synth
+      if (!engine) continue
+
+      for (const clip of midiTrack.clips) {
         const secPerBeat = 60 / transport.bpm
         const clipDur    = clip.durationBeats * secPerBeat
         if (clip.startTime + clipDur <= startSec) continue
 
         const clipContextStart = _startContextTime + Math.max(0, clip.startTime - startSec)
-        const timers = synth.scheduleMidiClip(
+        const timers = engine.scheduleMidiClip(
           clip.notes,
           clipContextStart,
           transport.bpm,
-          (track as MidiTrack).synth,
-          node['gain' as never] as unknown as AudioNode,
+          midiTrack.synth,
+          node.input,
           ctx,
         )
         midiTimers.push(...timers)
@@ -177,16 +198,20 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
     if (!get().isPlaying) return
     if (_raf) cancelAnimationFrame(_raf)
     clearMidiTimers()
-    for (const node of trackNodes.values()) node.stopAll()
-    for (const [, synth] of synthEngines) synth.stopAll(getAudioContext())
+    const ctx = getAudioContext()
+    for (const node    of trackNodes.values())     node.stopAll()
+    for (const [, syn] of synthEngines)             syn.stopAll(ctx)
+    for (const [, smp] of samplerEngines)           smp.stopAll(ctx)
     set({ isPlaying: false })
   },
 
   stop: () => {
     if (_raf) cancelAnimationFrame(_raf)
     clearMidiTimers()
-    for (const node of trackNodes.values()) node.stopAll()
-    for (const [, synth] of synthEngines) synth.stopAll(getAudioContext())
+    const ctx = getAudioContext()
+    for (const node    of trackNodes.values())     node.stopAll()
+    for (const [, syn] of synthEngines)             syn.stopAll(ctx)
+    for (const [, smp] of samplerEngines)           smp.stopAll(ctx)
     set({ isPlaying: false, currentTime: 0 })
   },
 
