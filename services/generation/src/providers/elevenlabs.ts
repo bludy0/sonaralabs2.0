@@ -1,28 +1,20 @@
-// ElevenLabs Sound Effects API — SFX generation
-// Requires Starter plan ($5/mo) or higher.
-// Docs: https://elevenlabs.io/docs/api-reference/sound-generation
+/**
+ * providers/elevenlabs.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ElevenLabs Sound Effects API — SFX generation.
+ * Docs: https://elevenlabs.io/docs/api-reference/sound-generation
+ * Plan: Starter ($5/mo) minimum — Free plan doesn't include SFX API.
+ */
 import axios from "axios";
-import * as Minio from "minio";
+import { ELEVENLABS_CONFIG } from "./config";
+import { uploadAudioBuffer } from "./minio-client";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const MINIO_ENDPOINT     = process.env.MINIO_ENDPOINT     || "minio";
-const MINIO_PORT         = parseInt(process.env.MINIO_PORT || "9000");
-const MINIO_ACCESS_KEY   = process.env.MINIO_ACCESS_KEY   || "minioadmin";
-const MINIO_SECRET_KEY   = process.env.MINIO_SECRET_KEY   || "minioadmin";
-const MINIO_USE_SSL      = process.env.MINIO_USE_SSL === "true";
-const MINIO_BUCKET       = process.env.MINIO_BUCKET       || "sonaralabs-audio";
-
-const minioClient = new Minio.Client({
-  endPoint: MINIO_ENDPOINT,
-  port: MINIO_PORT,
-  useSSL: MINIO_USE_SSL,
-  accessKey: MINIO_ACCESS_KEY,
-  secretKey: MINIO_SECRET_KEY,
-});
 
 export interface SFXGenerateParams {
   prompt: string;
-  durationSeconds?: number; // 0.5 – 22 seconds, defaults to auto
+  /** 0.5 – 22 saniye; undefined = otomatik */
+  durationSeconds?: number;
 }
 
 export interface SFXGenerateResult {
@@ -42,42 +34,38 @@ export class ElevenLabsProvider {
       throw new Error("ELEVENLABS_API_KEY not set. Starter plan ($5/mo) required.");
     }
 
+    const cfg = ELEVENLABS_CONFIG;
+
     const body: Record<string, unknown> = {
-      text: params.prompt,
-      prompt_influence: 0.3,
+      text:             params.prompt,
+      prompt_influence: cfg.promptInfluence,
     };
     if (params.durationSeconds) {
       body.duration_seconds = params.durationSeconds;
     }
 
-    // API returns audio/mpeg binary
-    const response = await axios.post(
-      "https://api.elevenlabs.io/v1/sound-generation",
+    // ElevenLabs → binary audio/mpeg
+    const response = await axios.post<ArrayBuffer>(
+      `${cfg.baseUrl}${cfg.sfxEndpoint}`,
       body,
       {
         headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
+          "xi-api-key":   ELEVENLABS_API_KEY,
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
-        timeout: 60_000,
-      }
+        timeout:      cfg.timeoutMs,
+      },
     );
 
-    const audioBuffer = Buffer.from(response.data);
+    const buffer = Buffer.from(response.data);
 
-    // Estimate duration from content-length if not known
-    // ElevenLabs returns mp3 at 44.1kHz, ~128kbps → bytes / (128000 / 8)
+    // Duration tahmini: bytes / (bitrate_kbps * 1000 / 8)
     const estimatedDuration = params.durationSeconds
-      ?? Math.round(audioBuffer.length / (128000 / 8));
+      ?? Math.round(buffer.length / (cfg.bitrateKbps * 1000 / 8));
 
-    // Upload to MinIO
-    const objectName = `sfx/${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
-    await minioClient.putObject(MINIO_BUCKET, objectName, audioBuffer, audioBuffer.length, {
-      "Content-Type": "audio/mpeg",
-    });
+    const audioUrl = await uploadAudioBuffer(buffer, "sfx", cfg.outputFormat, "audio/mpeg");
 
-    const audioUrl = `http://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET}/${objectName}`;
     return { audioUrl, durationSeconds: estimatedDuration };
   }
 }

@@ -5,14 +5,27 @@ import jwt from "jsonwebtoken";
 import { Queue, Worker, Job } from "bullmq";
 import { createClient } from "redis";
 import axios from "axios";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { randomUUID } from "crypto";
+import multer from "multer";
 import {
   GenerationRequest, SFXRequest, GenerationStatus, MusicProvider, SFXProvider,
   InternalJwtPayload, ApiResponse, NotifyJobPayload, GenerationType,
+  MUSIC_CREDIT_COST, SFX_CREDIT_COST, getMusicCreditCost, getSFXCreditCost,
 } from "@sonaralabs/types";
 import { BeatovenProvider } from "./providers/beatoven";
-import { analyzeImageWithGemini } from "./providers/gemini-vision";
-import { StabilityAudioProvider } from "./providers/stability";
+import { SonautoProvider }  from "./providers/sonauto";
 import { ElevenLabsProvider } from "./providers/elevenlabs";
+import { analyzeImageWithGemini } from "./providers/gemini-vision";
+import { GEMINI_MASTERING_CONFIG, GEMINI_MIDI_CONFIG } from "./providers/config";
+
+const execFileAsync = promisify(execFile);
+// 25 MB cap — a 60-second 48kHz stereo WAV is ≈10 MB; 200 MB would hold the entire file in heap
+const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 const app = express();
 app.use(express.json({ limit: "15mb" }));
@@ -31,7 +44,7 @@ const generationSchema = new mongoose.Schema({
   userId:            { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   type:              { type: String, enum: ["music", "sfx"], default: "music" },
   prompt:            { type: String, required: true },
-  provider:          { type: String, enum: ["beatoven", "lyria", "stability", "elevenlabs"] },
+  provider:          { type: String, enum: ["beatoven", "lyria", "sonauto", "elevenlabs"] },
   status:            { type: String, enum: ["pending","processing","done","failed"], default: "pending" },
   audioUrl:          String,
   duration:          Number,   // music: seconds (15/30/60); sfx: seconds (float)
@@ -59,40 +72,16 @@ interface IMusicProvider {
   generate(prompt: string, duration: number, style: string, mood: string): Promise<string>;
 }
 
-class LyriaProvider implements IMusicProvider {
-  name = "lyria" as const;
-  async generate(_p: string, _d: number, _s: string, _m: string): Promise<string> {
-    throw new Error("Lyria provider not yet implemented — API under review");
-  }
-}
-
+// ── PROVIDER REGISTRY ─────────────────────────────────────────────────────────
+// Yeni provider eklemek için: providers/ altında dosya oluştur + buraya 1 satır ekle.
+// "lyria" henüz stabil değil — Gemini Audio API hazır olunca eklenecek.
 const musicProviders = new Map<MusicProvider, IMusicProvider>([
-  ["beatoven",  new BeatovenProvider()],
-  ["lyria",     new LyriaProvider()],
-  ["stability", new StabilityAudioProvider()],
+  ["beatoven", new BeatovenProvider()],
+  ["sonauto",  new SonautoProvider()],
 ]);
 
 const sfxProvider = new ElevenLabsProvider();
 
-// ── CREDIT COST TABLES ────────────────────────────────────────────────────────
-const MUSIC_CREDIT_COST: Record<MusicProvider, Record<number, number>> = {
-  beatoven:  { 15: 3, 30: 5, 60: 8 },
-  lyria:     { 15: 2, 30: 3, 60: 5 },
-  stability: { 15: 2, 30: 3, 60: 5 }, // Stability: budget tier
-};
-
-const SFX_CREDIT_COST: Record<SFXProvider, number> = {
-  elevenlabs: 1, // 1 credit per SFX regardless of duration
-};
-
-function getMusicCreditCost(provider: MusicProvider, duration: number, isRetry = false): number {
-  const base = MUSIC_CREDIT_COST[provider]?.[duration] ?? 5;
-  return isRetry ? Math.ceil(base / 2) : base;
-}
-
-function getSFXCreditCost(provider: SFXProvider): number {
-  return SFX_CREDIT_COST[provider] ?? 1;
-}
 
 // ── IMAGE VALIDATION ──────────────────────────────────────────────────────────
 const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
@@ -290,7 +279,7 @@ app.post("/analyze-image", async (req, res) => {
     }
 
     try {
-      await spendCredit(userId, 1, "image-analysis", "image_analysis");
+      await spendCredit(userId, 1, `img-${Date.now()}`, "image_analysis");
     } catch (err: any) {
       return res.status(err.response?.status === 422 ? 422 : 500).json({
         success: false, error: err.response?.data?.error || "Credit error",
@@ -409,13 +398,243 @@ app.get("/internal/generations", async (req, res) => {
   }
 });
 
+// POST /export/ogg — server-side WAV → OGG conversion via FFmpeg
+app.post("/export/ogg", (req, res, next) => {
+  // Run multer middleware first, then handle with async function
+  uploadMem.single("wav")(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: "File upload error: " + err.message });
+    }
+    try {
+      getPayload(req);
+    } catch {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!req.file) return res.status(400).json({ error: "No WAV file provided" });
+
+    const tmpDir = os.tmpdir();
+    const id = randomUUID();
+    const wavPath = path.join(tmpDir, `${id}.wav`);
+    const oggPath = path.join(tmpDir, `${id}.ogg`);
+
+    try {
+      await fs.promises.writeFile(wavPath, req.file.buffer);
+      // execFile (args array) — no shell, no injection risk even with unusual paths
+      await execFileAsync("ffmpeg", ["-i", wavPath, "-c:a", "libvorbis", "-q:a", "6", oggPath]);
+
+      const ogg = await fs.promises.readFile(oggPath);
+      res.setHeader("Content-Type", "audio/ogg");
+      res.setHeader("Content-Disposition", 'attachment; filename="export.ogg"');
+      res.send(ogg);
+    } catch (err) {
+      console.error("[export/ogg]", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "OGG conversion failed. Ensure ffmpeg is installed." });
+      }
+    } finally {
+      // Always clean up temp files regardless of success or error
+      fs.promises.unlink(wavPath).catch(() => {});
+      fs.promises.unlink(oggPath).catch(() => {});
+    }
+  });
+});
+
+// POST /master — AI mastering assistant (Gemini)
+app.post("/master", async (req, res) => {
+  try {
+    getPayload(req);
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const { bpm, tracks } = req.body as {
+      bpm: number;
+      tracks: Array<{
+        id: string;
+        name: string;
+        type: "audio" | "midi";
+        volume: number;
+        pan: number;
+        muted: boolean;
+        effects: {
+          eq: { lowGain: number; loMidGain: number; hiMidGain: number; highGain: number; enabled: boolean };
+          reverb: { roomSize: number; wet: number; enabled: boolean };
+          delay: { time: number; feedback: number; wet: number; enabled: boolean };
+          compressor: { threshold: number; ratio: number; attack: number; release: number; enabled: boolean };
+        };
+      }>;
+    };
+
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) return res.status(503).json({ error: "Gemini API not configured" });
+
+    const masterCfg = GEMINI_MASTERING_CONFIG;
+    const trackDescriptions = tracks.map((t, i) => {
+      const e = t.effects;
+      return `Track ${i + 1} "${t.name}" (${t.type}):
+  - Volume: ${(t.volume * 100).toFixed(0)}%, Pan: ${t.pan > 0 ? "R" : t.pan < 0 ? "L" : "C"}${(Math.abs(t.pan) * 100).toFixed(0)}%
+  - EQ: ${e.eq.enabled ? `Low ${e.eq.lowGain}dB, LoMid ${e.eq.loMidGain}dB, HiMid ${e.eq.hiMidGain}dB, High ${e.eq.highGain}dB` : "OFF"}
+  - Reverb: ${e.reverb.enabled ? `room=${e.reverb.roomSize.toFixed(2)}, wet=${(e.reverb.wet * 100).toFixed(0)}%` : "OFF"}
+  - Delay: ${e.delay.enabled ? `time=${e.delay.time.toFixed(2)}s, wet=${(e.delay.wet * 100).toFixed(0)}%` : "OFF"}
+  - Compressor: ${e.compressor.enabled ? `thresh=${e.compressor.threshold}dB, ratio=${e.compressor.ratio}:1` : "OFF"}`;
+    }).join("\n\n");
+
+    const prompt = `You are a professional audio mastering engineer analyzing a game music mix.
+
+BPM: ${bpm}
+Tracks (${tracks.length} total):
+${trackDescriptions}
+
+Provide 3-6 specific, actionable mastering suggestions to improve this mix for game use.
+Focus on: clarity, punch, spatial depth, loop-readiness.
+
+Return ONLY a valid JSON array, no other text:
+[
+  {
+    "trackIndex": 0,
+    "parameter": "reverb.wet",
+    "currentValue": 0.2,
+    "suggestedValue": 0.35,
+    "reason": "Brief reason (max 80 chars)"
+  }
+]`;
+
+    const geminiResp = await fetch(
+      `${masterCfg.baseUrl}/models/${masterCfg.model}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: masterCfg.temperature, maxOutputTokens: masterCfg.maxOutputTokens },
+        }),
+      }
+    );
+
+    if (!geminiResp.ok) throw new Error("Gemini API error");
+
+    const geminiData = await geminiResp.json() as any;
+    const rawText: string = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    const suggestions = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
+    res.json({ data: { suggestions } });
+  } catch (err) {
+    console.error("[master]", err);
+    res.status(500).json({ error: "Mastering analysis failed" });
+  }
+});
+
+// POST /midi — AI MIDI melody generation via Gemini Flash (1 credit)
+app.post("/midi", async (req, res) => {
+  let userId: string;
+  try {
+    userId = getPayload(req).sub;
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const { prompt, bars = 4, bpm = 120, key = "C", scale = "Major", durationBeats } = req.body as {
+      prompt:         string;
+      bars?:          number;
+      bpm?:           number;
+      key?:           string;
+      scale?:         string;
+      durationBeats?: number;
+    };
+
+    if (!prompt) return res.status(400).json({ error: "prompt required" });
+
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) return res.status(503).json({ error: "Gemini API not configured" });
+
+    const midiCfg = GEMINI_MIDI_CONFIG;
+    // Charge 1 credit
+    try {
+      await spendCredit(userId, 1, `midi-${Date.now()}`, "midi_generation");
+    } catch (err: any) {
+      return res.status(err.response?.status === 422 ? 422 : 500).json({
+        error: err.response?.data?.error || "Credit error",
+      });
+    }
+
+    const totalBeats = durationBeats ?? bars * 4;
+
+    const systemPrompt = `You are a professional MIDI composer for game music.
+Generate a melody in ${key} ${scale} with ${bars} bars at ${bpm} BPM.
+Style: ${prompt}
+
+Rules:
+- Use pitches MIDI 48-84 (C3-C6)
+- Each note: { "pitch": <0-127>, "velocity": <40-110>, "startBeat": <0 to ${totalBeats - 0.25}>, "durationBeats": <0.25-2> }
+- Total duration: ${totalBeats} beats (${bars} bars of 4/4)
+- 8-20 notes for a good melody
+- No overlapping notes on same pitch
+- Fit the style and key described
+
+Return ONLY valid JSON array, no markdown, no explanation:
+[{"pitch":60,"velocity":80,"startBeat":0,"durationBeats":0.5},...]`;
+
+    const geminiResp = await fetch(
+      `${midiCfg.baseUrl}/models/${midiCfg.model}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: systemPrompt }] }],
+          generationConfig: { temperature: midiCfg.temperature, maxOutputTokens: midiCfg.maxOutputTokens },
+        }),
+      }
+    );
+
+    if (!geminiResp.ok) throw new Error(`Gemini error: ${geminiResp.status}`);
+
+    const geminiData = await geminiResp.json() as any;
+    const rawText: string = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+
+    // Extract JSON array from response (handle potential markdown wrapping)
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("No valid JSON array in Gemini response");
+
+    const notes = JSON.parse(jsonMatch[0]) as Array<{
+      pitch: number; velocity: number; startBeat: number; durationBeats: number;
+    }>;
+
+    // Sanitize: clamp values, filter invalid entries
+    const sanitized = notes
+      .filter(n => typeof n.pitch === "number" && typeof n.startBeat === "number" && typeof n.durationBeats === "number")
+      .map(n => ({
+        pitch:         Math.max(21, Math.min(108, Math.round(n.pitch))),
+        velocity:      Math.max(1,  Math.min(127, Math.round(n.velocity ?? 80))),
+        startBeat:     Math.max(0,  Math.round(n.startBeat * 4) / 4),
+        durationBeats: Math.max(0.25, Math.min(4, Math.round(n.durationBeats * 4) / 4)),
+      }))
+      .filter(n => n.startBeat < totalBeats)
+      .slice(0, 32);  // cap at 32 notes
+
+    res.json({ notes: sanitized, bpm, key, scale, bars, totalBeats });
+  } catch (err) {
+    console.error("[generate/midi]", err);
+    res.status(500).json({ error: "MIDI generation failed" });
+  }
+});
+
 app.get("/health", (_, res) => res.json({
   status: "ok", service: "generation",
   providers: {
-    beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
-    stability: Boolean(process.env.STABILITY_API_KEY),
-    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
-    lyria:     Boolean(process.env.GEMINI_API_KEY),
+    music: {
+      beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
+      sonauto:   Boolean(process.env.SONAUTO_API_KEY),
+      lyria:     false, // not yet — Gemini Audio API stabil değil
+    },
+    sfx: {
+      elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
+    },
+    vision: {
+      gemini: Boolean(process.env.GEMINI_API_KEY),
+    },
   },
 }));
 

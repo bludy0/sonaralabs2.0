@@ -1,23 +1,36 @@
+/**
+ * providers/gemini-vision.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Google Gemini — oyun screenshot'ından müzik prompt'u üretir.
+ * Ücretsiz tier: 1500 istek/gün (Flash modeli).
+ * Model ve prompt'u değiştirmek için: providers/config.ts → GEMINI_VISION_CONFIG
+ */
 import axios from "axios";
+import { GEMINI_VISION_CONFIG } from "./config";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-export async function analyzeImageWithGemini(imageBase64: string, mimeType: string): Promise<string> {
+export async function analyzeImageWithGemini(
+  imageBase64: string,
+  mimeType: string,
+): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set");
 
-  const geminiRes = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+  const cfg = GEMINI_VISION_CONFIG;
+
+  const res = await axios.post(
+    `${cfg.baseUrl}/models/${cfg.model}:generateContent?key=${GEMINI_API_KEY}`,
     {
       contents: [{
         parts: [
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          { text: "Analyze this game screenshot and generate a music prompt. Describe: atmosphere, color palette, genre, emotional tone. Output a concise music prompt in English, max 50 words, suitable for AI music generation." },
+          { text: cfg.systemPrompt },
         ],
       }],
-    }
+    },
   );
 
-  const promptText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!promptText) throw new Error("No prompt from Gemini");
-  return promptText.trim();
+  const text: string | undefined = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini Vision: empty response");
+  return text.trim();
 }
