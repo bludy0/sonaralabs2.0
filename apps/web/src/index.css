@@ -1,1 +1,62 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Space Grotesk", sans-serif;
+}
+
+/* ── Tema CSS değişkenleri (varsayılan: Cyber Yellow) ────────────────────── */
+:root {
+  /* Yüzeyler */
+  --bg-page:    #0e0e0e;
+  --bg-card:    #131313;
+  --bg-mid:     #191919;
+  --bg-input:   #1f2937;
+  --bg-border:  #262626;
+  --bg-bright:  #2c2c2c;
+
+  /* Metin */
+  --text-1:  #ffffff;
+  --text-2:  #ababab;
+  --text-3:  #484848;
+
+  /* Vurgu */
+  --accent:      var(--accent);
+  --accent-on:   #624e00;
+  --accent-dim:  #2a2100;
+
+  /* Durum */
+  --success:  #6ec96e;
+  --error:    #ff7351;
+  --teal:     #64c8b4;
+}
+
+/* ── Gövde ───────────────────────────────────────────────────────────────── */
+body {
+  font-family: "Space Grotesk", sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s, color 0.25s;
+}
+
+/* ── Material Symbols ────────────────────────────────────────────────────── */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 300, "GRAD" 0, "opsz" 24;
+  user-select: none;
+}
+
+/* ── Fayda sınıfları ─────────────────────────────────────────────────────── */
+.glow-accent {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: var(--bg-page); }
+::-webkit-scrollbar-thumb  { background: var(--bg-border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* Açık tema — daha belirgin scrollbar */
+[data-theme-light="true"] ::-webkit-scrollbar-thumb { background: var(--text-3); }
+[data-theme-light="true"] ::-webkit-scrollbar-track  { background: var(--bg-input); }

@@ -12,7 +12,7 @@ export function SelectField({ id, label, value, onChange, options }: SelectField
       <label
         htmlFor={id}
         className="block text-[9px] font-bold tracking-[0.2em] uppercase"
-        style={{ color: "#484848" }}
+        style={{ color: "var(--text-3)" }}
       >
         {label}
       </label>
@@ -22,10 +22,10 @@ export function SelectField({ id, label, value, onChange, options }: SelectField
         value={value}
         onChange={e => onChange(e.target.value)}
         className="w-full rounded-lg px-3 py-2.5 text-xs font-medium capitalize outline-none transition-all duration-100"
-        style={{ background: "#1f2937", color: "#ffffff", border: "none" }}
+        style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
       >
         {options.map(o => (
-          <option key={o.value} value={o.value} className="bg-[#131313] capitalize">{o.label}</option>
+          <option key={o.value} value={o.value} className="capitalize">{o.label}</option>
         ))}
       </select>
     </div>

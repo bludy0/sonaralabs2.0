@@ -179,7 +179,7 @@ export default function LibraryPage() {
 
 
   return (
-    <div className="min-h-screen p-6" style={{ background: "#0e0e0e", color: "#ffffff" }}>
+    <div className="min-h-screen p-6" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
       {publishItem && (
         <PublishModal
           item={publishItem}
@@ -192,13 +192,13 @@ export default function LibraryPage() {
       <div className="mb-8">
         <p
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
-          style={{ color: "#484848" }}
+          style={{ color: "var(--text-3)" }}
         >
           SONARALABS / LIBRARY
         </p>
         <h1
           className="text-2xl font-bold uppercase"
-          style={{ color: "#ffffff", letterSpacing: "-0.01em" }}
+          style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
         >
           Library
         </h1>
@@ -212,9 +212,9 @@ export default function LibraryPage() {
             {/* Search input */}
             <div
               className="flex items-center gap-2 rounded-lg px-3 py-2 flex-1 min-w-[180px]"
-              style={{ background: "#131313" }}
+              style={{ background: "var(--bg-card)" }}
             >
-              <span className="material-symbols-outlined text-base shrink-0" style={{ color: "#484848" }}>
+              <span className="material-symbols-outlined text-base shrink-0" style={{ color: "var(--text-3)" }}>
                 search
               </span>
               <input
@@ -223,13 +223,13 @@ export default function LibraryPage() {
                 onChange={e => handleSearchChange(e.target.value)}
                 placeholder="Search by name or prompt…"
                 className="flex-1 text-sm bg-transparent focus:outline-none"
-                style={{ color: "#ffffff" }}
+                style={{ color: "var(--text-1)" }}
               />
               {searchInput && (
                 <button
                   onClick={() => { setSearchInput(""); setSearchQ(""); }}
                   className="shrink-0"
-                  style={{ color: "#484848" }}
+                  style={{ color: "var(--text-3)" }}
                 >
                   <span className="material-symbols-outlined text-base">close</span>
                 </button>
@@ -245,8 +245,8 @@ export default function LibraryPage() {
                   className="text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
                   style={
                     typeFilter === key
-                      ? { background: "#ffdd73", color: "#624e00" }
-                      : { background: "#131313", color: "#484848" }
+                      ? { background: "var(--accent)", color: "var(--accent-on)" }
+                      : { background: "var(--bg-card)", color: "var(--text-3)" }
                   }
                 >
                   {label}
@@ -260,8 +260,8 @@ export default function LibraryPage() {
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-bold transition-colors"
               style={
                 favOnly
-                  ? { background: "rgba(255,115,81,0.15)", color: "#ff7351" }
-                  : { background: "#131313", color: "#484848" }
+                  ? { background: "color-mix(in srgb, var(--error) 15%, transparent)", color: "var(--error)" }
+                  : { background: "var(--bg-card)", color: "var(--text-3)" }
               }
             >
               <span className="material-symbols-outlined text-base">
@@ -275,7 +275,7 @@ export default function LibraryPage() {
           <div className="flex flex-wrap items-center gap-3 mb-6">
             {/* Sort chips */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "#484848" }}>
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "var(--text-3)" }}>
                 Sort
               </span>
               {([
@@ -290,8 +290,8 @@ export default function LibraryPage() {
                   className="text-xs px-2.5 py-1 rounded-full font-bold transition-colors"
                   style={
                     sortBy === key
-                      ? { background: "#262626", color: "#ffffff" }
-                      : { background: "#131313", color: "#484848" }
+                      ? { background: "var(--bg-border)", color: "var(--text-1)" }
+                      : { background: "var(--bg-card)", color: "var(--text-3)" }
                   }
                 >
                   {label}
@@ -300,11 +300,11 @@ export default function LibraryPage() {
             </div>
 
             {/* Divider */}
-            <div className="w-px h-4 shrink-0" style={{ background: "#262626" }} />
+            <div className="w-px h-4 shrink-0" style={{ background: "var(--bg-border)" }} />
 
             {/* Status chips */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "#484848" }}>
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase mr-1" style={{ color: "var(--text-3)" }}>
                 Status
               </span>
               {([
@@ -314,10 +314,10 @@ export default function LibraryPage() {
                 ["failed", "Failed"],
               ] as [StatusFilter, string][]).map(([key, label]) => {
                 const activeColors: Record<string, { bg: string; text: string }> = {
-                  done: { bg: "rgba(110,201,110,0.15)", text: "#6ec96e" },
-                  processing: { bg: "rgba(255,221,115,0.15)", text: "#ffdd73" },
-                  failed: { bg: "rgba(255,115,81,0.15)", text: "#ff7351" },
-                  all: { bg: "#262626", text: "#ffffff" },
+                  done: { bg: "color-mix(in srgb, var(--success) 15%, transparent)", text: "var(--success)" },
+                  processing: { bg: "color-mix(in srgb, var(--accent) 15%, transparent)", text: "var(--accent)" },
+                  failed: { bg: "color-mix(in srgb, var(--error) 15%, transparent)", text: "var(--error)" },
+                  all: { bg: "var(--bg-border)", text: "#ffffff" },
                 };
                 const isActive = statusFilter === key;
                 return (
@@ -328,7 +328,7 @@ export default function LibraryPage() {
                     style={
                       isActive
                         ? { background: activeColors[key].bg, color: activeColors[key].text }
-                        : { background: "#131313", color: "#484848" }
+                        : { background: "var(--bg-card)", color: "var(--text-3)" }
                     }
                   >
                     {label}
@@ -341,24 +341,24 @@ export default function LibraryPage() {
           {/* Upload area */}
           <div
             className="mb-6 rounded-lg p-5"
-            style={{ background: "#131313" }}
+            style={{ background: "var(--bg-card)" }}
           >
             <p
               className="text-[10px] font-bold tracking-[0.25em] uppercase mb-3"
-              style={{ color: "#484848" }}
+              style={{ color: "var(--text-3)" }}
             >
               Upload Audio
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <div
                 className="flex items-center gap-2 rounded-lg px-4 py-2.5 cursor-pointer transition-colors"
-                style={{ background: "#1f2937" }}
+                style={{ background: "var(--bg-input)" }}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <span className="material-symbols-outlined text-base" style={{ color: "#ababab" }}>
+                <span className="material-symbols-outlined text-base" style={{ color: "var(--text-2)" }}>
                   upload_file
                 </span>
-                <span className="text-sm" style={{ color: "#ababab" }}>
+                <span className="text-sm" style={{ color: "var(--text-2)" }}>
                   {uploadFile ? uploadFile.name : "Choose file…"}
                 </span>
               </div>
@@ -374,29 +374,29 @@ export default function LibraryPage() {
                 disabled={!uploadFile || uploading}
                 className="px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40"
                 style={{
-                  background: "#ffdd73",
-                  color: "#624e00",
-                  boxShadow: "0px 0px 20px rgba(250,204,21,0.3)",
+                  background: "var(--accent)",
+                  color: "var(--accent-on)",
+                  boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
                 }}
               >
                 {uploading ? "Uploading..." : "Upload"}
               </button>
               {uploadError && (
-                <span className="text-xs" style={{ color: "#ff7351" }}>{uploadError}</span>
+                <span className="text-xs" style={{ color: "var(--error)" }}>{uploadError}</span>
               )}
             </div>
           </div>
 
           {/* Error */}
           {error && (
-            <p className="text-sm mb-4" style={{ color: "#ff7351" }}>{error}</p>
+            <p className="text-sm mb-4" style={{ color: "var(--error)" }}>{error}</p>
           )}
 
           {/* Items list */}
           {loading && items.length === 0 ? (
-            <div className="py-16 text-center text-sm" style={{ color: "#484848" }}>Loading...</div>
+            <div className="py-16 text-center text-sm" style={{ color: "var(--text-3)" }}>Loading...</div>
           ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm" style={{ color: "#484848" }}>No items found.</div>
+            <div className="py-16 text-center text-sm" style={{ color: "var(--text-3)" }}>No items found.</div>
           ) : (
             <ul className="space-y-2">
               {sortedItems.map(item => (
@@ -419,7 +419,7 @@ export default function LibraryPage() {
                 onClick={handleLoadMore}
                 disabled={loading}
                 className="px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
-                style={{ background: "#1f2937", color: "#ababab" }}
+                style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
               >
                 {loading ? "Loading..." : `Load More (${items.length}/${total})`}
               </button>
@@ -429,10 +429,10 @@ export default function LibraryPage() {
 
         {/* Right panel — Collections */}
         <aside className="w-full lg:w-72 shrink-0">
-          <div className="rounded-lg p-4" style={{ background: "#131313" }}>
+          <div className="rounded-lg p-4" style={{ background: "var(--bg-card)" }}>
             <p
               className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-              style={{ color: "#484848" }}
+              style={{ color: "var(--text-3)" }}
             >
               Collections
             </p>
@@ -447,19 +447,19 @@ export default function LibraryPage() {
                 placeholder="New collection name..."
                 className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none"
                 style={{
-                  background: "#0e0e0e",
-                  color: "#ffffff",
+                  background: "var(--bg-page)",
+                  color: "var(--text-1)",
                   border: "none",
-                  borderBottom: "1px solid #262626",
+                  borderBottom: "1px solid var(--bg-border)",
                 }}
-                onFocus={e => (e.currentTarget.style.borderBottom = "1px solid #ffdd73")}
-                onBlur={e => (e.currentTarget.style.borderBottom = "1px solid #262626")}
+                onFocus={e => (e.currentTarget.style.borderBottom = "1px solid var(--accent)")}
+                onBlur={e => (e.currentTarget.style.borderBottom = "1px solid var(--bg-border)")}
               />
               <button
                 onClick={handleCreateCollection}
                 disabled={!newColName.trim() || colLoading}
                 className="px-3 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-40"
-                style={{ background: "#ffdd73", color: "#624e00" }}
+                style={{ background: "var(--accent)", color: "var(--accent-on)" }}
               >
                 +
               </button>
@@ -467,17 +467,17 @@ export default function LibraryPage() {
 
             {/* Collection list */}
             {collections.length === 0 ? (
-              <p className="text-sm" style={{ color: "#484848" }}>No collections yet.</p>
+              <p className="text-sm" style={{ color: "var(--text-3)" }}>No collections yet.</p>
             ) : (
               <ul className="space-y-1.5">
                 {collections.map(col => (
                   <li
                     key={col._id}
                     className="flex items-center justify-between rounded px-3 py-2"
-                    style={{ background: "#1f2937" }}
+                    style={{ background: "var(--bg-input)" }}
                   >
-                    <span className="text-sm truncate" style={{ color: "#ffffff" }}>{col.name}</span>
-                    <span className="text-[9px] font-bold tracking-[0.15em] uppercase ml-2 shrink-0" style={{ color: "#484848" }}>
+                    <span className="text-sm truncate" style={{ color: "var(--text-1)" }}>{col.name}</span>
+                    <span className="text-[9px] font-bold tracking-[0.15em] uppercase ml-2 shrink-0" style={{ color: "var(--text-3)" }}>
                       {col.items?.length ?? 0}
                     </span>
                   </li>

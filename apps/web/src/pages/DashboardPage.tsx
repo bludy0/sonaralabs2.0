@@ -37,10 +37,10 @@ interface CreditPackage {
 
 
 const statusDotColor: Record<string, string> = {
-  done: "#6ec96e",
-  failed: "#ff7351",
-  processing: "#ffdd73",
-  pending: "#484848",
+  done: "var(--success)",
+  failed: "var(--error)",
+  processing: "var(--accent)",
+  pending: "var(--text-3)",
 };
 
 interface MetricCardProps {
@@ -52,21 +52,21 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, sub, accentValue }: MetricCardProps) {
   return (
-    <div className="rounded-lg p-5" style={{ background: "#131313" }}>
+    <div className="rounded-lg p-5" style={{ background: "var(--bg-card)" }}>
       <p
         className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
-        style={{ color: "#484848" }}
+        style={{ color: "var(--text-3)" }}
       >
         {label}
       </p>
       <p
         className="text-2xl font-bold"
-        style={{ color: accentValue ? "#ffdd73" : "#ffffff" }}
+        style={{ color: accentValue ? "var(--accent)" : "var(--text-1)" }}
       >
         {value}
       </p>
       {sub && (
-        <p className="text-xs mt-1" style={{ color: "#484848" }}>
+        <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>
           {sub}
         </p>
       )}
@@ -179,25 +179,25 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0e0e0e" }}>
-        <p className="text-sm" style={{ color: "#484848" }}>Loading dashboard...</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-page)" }}>
+        <p className="text-sm" style={{ color: "var(--text-3)" }}>Loading dashboard...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-6" style={{ background: "#0e0e0e", color: "#ffffff" }}>
+    <div className="min-h-screen p-6" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
       {/* Page header */}
       <div className="mb-8">
         <p
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-2"
-          style={{ color: "#484848" }}
+          style={{ color: "var(--text-3)" }}
         >
           SONARALABS / DASHBOARD
         </p>
         <h1
           className="text-2xl font-bold uppercase"
-          style={{ color: "#ffffff", letterSpacing: "-0.01em" }}
+          style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
         >
           Dashboard
         </h1>
@@ -207,13 +207,13 @@ export default function DashboardPage() {
       {buyError && (
         <div
           className="mb-6 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
-          style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}
+          style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
         >
           <span>{buyError}</span>
           <button
             onClick={() => setBuyError(null)}
             className="ml-4 transition-colors"
-            style={{ color: "#ff7351" }}
+            style={{ color: "var(--error)" }}
           >
             ✕
           </button>
@@ -222,13 +222,13 @@ export default function DashboardPage() {
       {purchaseBanner === "success" && (
         <div
           className="mb-6 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
-          style={{ background: "rgba(110,201,110,0.08)", color: "#6ec96e" }}
+          style={{ background: "color-mix(in srgb, var(--success) 8%, transparent)", color: "var(--success)" }}
         >
           <span>Purchase successful! Credits have been added to your account.</span>
           <button
             onClick={() => setPurchaseBanner(null)}
             className="ml-4 transition-colors"
-            style={{ color: "#6ec96e" }}
+            style={{ color: "var(--success)" }}
           >
             ✕
           </button>
@@ -237,13 +237,13 @@ export default function DashboardPage() {
       {purchaseBanner === "cancelled" && (
         <div
           className="mb-6 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
-          style={{ background: "rgba(255,221,115,0.08)", color: "#ffdd73" }}
+          style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)", color: "var(--accent)" }}
         >
           <span>Purchase cancelled. No charges were made.</span>
           <button
             onClick={() => setPurchaseBanner(null)}
             className="ml-4 transition-colors"
-            style={{ color: "#ffdd73" }}
+            style={{ color: "var(--accent)" }}
           >
             ✕
           </button>
@@ -279,36 +279,36 @@ export default function DashboardPage() {
       <section className="mb-8">
         <p
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-          style={{ color: "#484848" }}
+          style={{ color: "var(--text-3)" }}
         >
           Recent Activity
         </p>
         {recentItems.length === 0 ? (
-          <p className="text-sm" style={{ color: "#484848" }}>No generations yet.</p>
+          <p className="text-sm" style={{ color: "var(--text-3)" }}>No generations yet.</p>
         ) : (
           <ul className="space-y-2">
             {recentItems.map(item => (
               <li
                 key={item._id}
                 className="flex items-center gap-3 rounded-lg px-4 py-3"
-                style={{ background: "#131313" }}
+                style={{ background: "var(--bg-card)" }}
               >
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span
                     className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: statusDotColor[item.status] ?? "#484848" }}
+                    style={{ background: statusDotColor[item.status] ?? "var(--text-3)" }}
                   />
                   <span
                     className="text-[9px] font-bold tracking-[0.15em] uppercase"
-                    style={{ color: statusDotColor[item.status] ?? "#484848" }}
+                    style={{ color: statusDotColor[item.status] ?? "var(--text-3)" }}
                   >
                     {item.status}
                   </span>
                 </div>
-                <p className="flex-1 text-sm truncate" style={{ color: "#ababab" }}>
+                <p className="flex-1 text-sm truncate" style={{ color: "var(--text-2)" }}>
                   {item.prompt?.slice(0, 80) ?? "—"}
                 </p>
-                <span className="text-xs shrink-0" style={{ color: "#484848" }}>
+                <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>
                   {formatDate(item.createdAt)}
                 </span>
               </li>
@@ -321,51 +321,51 @@ export default function DashboardPage() {
       <section className="mb-8">
         <p
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-          style={{ color: "#484848" }}
+          style={{ color: "var(--text-3)" }}
         >
           Credit History
         </p>
         {creditLogs.length === 0 ? (
-          <p className="text-sm" style={{ color: "#484848" }}>No transactions yet.</p>
+          <p className="text-sm" style={{ color: "var(--text-3)" }}>No transactions yet.</p>
         ) : (
           <div className="space-y-1.5">
             {/* Header row */}
             <div className="flex items-center gap-4 px-4 py-2">
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "#484848" }}>Type</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "#484848" }}>Reason</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "#484848" }}>Amount</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "#484848" }}>Balance After</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 text-right shrink-0" style={{ color: "#484848" }}>Date</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "var(--text-3)" }}>Type</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Reason</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "var(--text-3)" }}>Amount</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "var(--text-3)" }}>Balance After</span>
+              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 text-right shrink-0" style={{ color: "var(--text-3)" }}>Date</span>
             </div>
             {creditLogs.map(log => (
               <div
                 key={log._id}
                 className="flex items-center gap-4 rounded-lg px-4 py-3"
-                style={{ background: "#131313" }}
+                style={{ background: "var(--bg-card)" }}
               >
                 <span
                   className="text-[9px] font-bold tracking-[0.15em] uppercase px-2 py-0.5 rounded w-16 shrink-0 text-center"
                   style={
                     log.type === "earn"
-                      ? { background: "rgba(110,201,110,0.1)", color: "#6ec96e" }
+                      ? { background: "color-mix(in srgb, var(--success) 10%, transparent)", color: "var(--success)" }
                       : log.type === "refund"
-                      ? { background: "rgba(100,150,255,0.1)", color: "#6496ff" }
-                      : { background: "rgba(255,115,81,0.08)", color: "#ff7351" }
+                      ? { background: "color-mix(in srgb, var(--info, #6496ff) 10%, transparent)", color: "var(--info, #6496ff)" }
+                      : { background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }
                   }
                 >
                   {log.type}
                 </span>
-                <span className="flex-1 text-xs truncate" style={{ color: "#ababab" }}>{log.reason}</span>
+                <span className="flex-1 text-xs truncate" style={{ color: "var(--text-2)" }}>{log.reason}</span>
                 <span
                   className="text-sm font-bold font-mono w-16 text-right shrink-0"
-                  style={{ color: log.type === "spend" ? "#ff7351" : "#6ec96e" }}
+                  style={{ color: log.type === "spend" ? "var(--error)" : "var(--success)" }}
                 >
                   {log.type === "spend" ? "-" : "+"}{log.amount}
                 </span>
-                <span className="text-sm font-mono w-20 text-right shrink-0" style={{ color: "#ffffff" }}>
+                <span className="text-sm font-mono w-20 text-right shrink-0" style={{ color: "var(--text-1)" }}>
                   {log.balanceAfter}
                 </span>
-                <span className="text-xs w-24 text-right shrink-0" style={{ color: "#484848" }}>
+                <span className="text-xs w-24 text-right shrink-0" style={{ color: "var(--text-3)" }}>
                   {formatDate(log.createdAt)}
                 </span>
               </div>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
         <section className="mb-8">
           <p
             className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-            style={{ color: "#484848" }}
+            style={{ color: "var(--text-3)" }}
           >
             Buy Credits
           </p>
@@ -388,13 +388,13 @@ export default function DashboardPage() {
               <div
                 key={pkg.id}
                 className="rounded-lg p-5 flex flex-col gap-3"
-                style={{ background: "#131313" }}
+                style={{ background: "var(--bg-card)" }}
               >
                 <div>
-                  <p className="text-lg font-bold" style={{ color: "#ffffff" }}>{pkg.credits} Credits</p>
-                  <p className="text-xs mt-0.5" style={{ color: "#484848" }}>{pkg.label}</p>
+                  <p className="text-lg font-bold" style={{ color: "var(--text-1)" }}>{pkg.credits} Credits</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{pkg.label}</p>
                 </div>
-                <p className="text-2xl font-semibold" style={{ color: "#ffdd73" }}>
+                <p className="text-2xl font-semibold" style={{ color: "var(--accent)" }}>
                   ${(pkg.price / 100).toFixed(2)}
                 </p>
                 <button
@@ -402,9 +402,9 @@ export default function DashboardPage() {
                   disabled={buyingId !== null}
                   className="mt-auto w-full py-2 px-4 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40"
                   style={{
-                    background: "#ffdd73",
-                    color: "#624e00",
-                    boxShadow: "0px 0px 20px rgba(250,204,21,0.3)",
+                    background: "var(--accent)",
+                    color: "var(--accent-on)",
+                    boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
                   }}
                 >
                   {buyingId === pkg.id ? "Redirecting..." : "Buy"}
@@ -420,29 +420,29 @@ export default function DashboardPage() {
         <section>
           <p
             className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-            style={{ color: "#484848" }}
+            style={{ color: "var(--text-3)" }}
           >
             Daily Stats (last 30 days)
           </p>
           {dailyStats.length === 0 ? (
-            <p className="text-sm" style={{ color: "#484848" }}>No data available.</p>
+            <p className="text-sm" style={{ color: "var(--text-3)" }}>No data available.</p>
           ) : (
             <div className="space-y-1.5">
               {/* Header row */}
               <div className="flex items-center gap-4 px-4 py-2">
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "#484848" }}>Date</span>
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "#484848" }}>Generations</span>
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "#484848" }}>Credits Spent</span>
+                <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Date</span>
+                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Generations</span>
+                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits Spent</span>
               </div>
               {dailyStats.map(row => (
                 <div
                   key={row._id}
                   className="flex items-center gap-4 rounded-lg px-4 py-3"
-                  style={{ background: "#131313" }}
+                  style={{ background: "var(--bg-card)" }}
                 >
-                  <span className="flex-1 text-sm" style={{ color: "#ababab" }}>{row._id}</span>
-                  <span className="text-sm w-28 text-right shrink-0" style={{ color: "#ffffff" }}>{row.count}</span>
-                  <span className="text-sm w-28 text-right shrink-0" style={{ color: "#ffffff" }}>{row.credits}</span>
+                  <span className="flex-1 text-sm" style={{ color: "var(--text-2)" }}>{row._id}</span>
+                  <span className="text-sm w-28 text-right shrink-0" style={{ color: "var(--text-1)" }}>{row.count}</span>
+                  <span className="text-sm w-28 text-right shrink-0" style={{ color: "var(--text-1)" }}>{row.credits}</span>
                 </div>
               ))}
             </div>

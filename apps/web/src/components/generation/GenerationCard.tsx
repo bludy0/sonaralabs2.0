@@ -13,10 +13,10 @@ function waveformBars(seed: string, count = 22): number[] {
 
 function StatusBadge({ status }: { status: GenerationItem["status"] }) {
   const configs: Record<GenerationItem["status"], { label: string; bg: string; color: string }> = {
-    pending:    { label: "QUEUED",     bg: "rgba(255,221,115,0.1)",  color: "#ffdd73" },
-    processing: { label: "PROCESSING", bg: "rgba(255,221,115,0.15)", color: "#ffdd73" },
-    done:       { label: "SUCCESS",    bg: "rgba(100,200,100,0.1)",  color: "#6ec96e" },
-    failed:     { label: "FAILED",     bg: "rgba(255,115,81,0.1)",   color: "#ff7351" },
+    pending:    { label: "QUEUED",     bg: "color-mix(in srgb, var(--accent) 10%, transparent)",  color: "var(--accent)" },
+    processing: { label: "PROCESSING", bg: "color-mix(in srgb, var(--accent) 15%, transparent)",  color: "var(--accent)" },
+    done:       { label: "SUCCESS",    bg: "color-mix(in srgb, var(--success) 10%, transparent)", color: "var(--success)" },
+    failed:     { label: "FAILED",     bg: "color-mix(in srgb, var(--error) 10%, transparent)",   color: "var(--error)" },
   };
   const cfg = configs[status];
   return (
@@ -26,7 +26,7 @@ function StatusBadge({ status }: { status: GenerationItem["status"] }) {
       style={{ background: cfg.bg, color: cfg.color }}
     >
       {status === "processing" && (
-        <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "#ffdd73" }} />
+        <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--accent)" }} />
       )}
       {cfg.label}
     </span>
@@ -75,21 +75,21 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
   }
 
   const borderColor =
-    item.status === "done"       ? "rgba(110,201,110,0.3)" :
-    item.status === "processing" ? "rgba(255,221,115,0.3)" :
-    item.status === "failed"     ? "rgba(255,115,81,0.3)"  :
-                                   "rgba(72,72,72,0.5)";
+    item.status === "done"       ? "color-mix(in srgb, var(--success) 30%, transparent)" :
+    item.status === "processing" ? "color-mix(in srgb, var(--accent) 30%, transparent)"  :
+    item.status === "failed"     ? "color-mix(in srgb, var(--error) 30%, transparent)"   :
+                                   "var(--bg-border)";
 
   return (
     <article
       className="relative rounded-lg overflow-hidden space-y-3 p-4"
-      style={{ background: "#131313", borderLeft: `2px solid ${borderColor}` }}
+      style={{ background: "var(--bg-card)", borderLeft: `2px solid ${borderColor}` }}
     >
-      <div className="absolute top-3 right-3 text-[8px] font-semibold tracking-[0.2em] uppercase" style={{ color: "#484848" }}>
+      <div className="absolute top-3 right-3 text-[8px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--text-3)" }}>
         {isSFX ? "SFX_ENGINE" : "AI_MODEL_v2.0"}
       </div>
 
-      <p className="text-[12px] leading-relaxed pr-20 line-clamp-2" style={{ color: "#ababab" }}>
+      <p className="text-[12px] leading-relaxed pr-20 line-clamp-2" style={{ color: "var(--text-2)" }}>
         {item.prompt}
       </p>
 
@@ -97,18 +97,18 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
         <StatusBadge status={item.status} />
         {isSFX ? (
           <span className="text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded"
-            style={{ background: "rgba(100,200,180,0.1)", color: "#64c8b4" }}>
+            style={{ background: "color-mix(in srgb, var(--teal) 10%, transparent)", color: "var(--teal)" }}>
             SFX
           </span>
         ) : (
           <>
             <span className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded capitalize"
-              style={{ background: "#1f2937", color: "#484848" }}>
+              style={{ background: "var(--bg-input)", color: "var(--text-3)" }}>
               {item.provider}
             </span>
             {item.style && (
               <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded capitalize"
-                style={{ background: "#1f2937", color: "#484848" }}>
+                style={{ background: "var(--bg-input)", color: "var(--text-3)" }}>
                 {item.style}
               </span>
             )}
@@ -116,17 +116,17 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
         )}
         {item.duration != null && (
           <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded"
-            style={{ background: "#1f2937", color: "#484848" }}>
+            style={{ background: "var(--bg-input)", color: "var(--text-3)" }}>
             {item.duration}s
           </span>
         )}
         <span className="text-[9px] font-semibold px-2 py-0.5 rounded"
-          style={{ background: "#1f2937", color: "#ffdd73" }}>
+          style={{ background: "var(--bg-input)", color: "var(--accent)" }}>
           {item.creditCost} cr
         </span>
         {item.isImageGeneration && (
           <span className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded"
-            style={{ background: "rgba(150,100,255,0.1)", color: "#a78bfa" }}>
+            style={{ background: "color-mix(in srgb, var(--purple, #a78bfa) 10%, transparent)", color: "var(--purple, #a78bfa)" }}>
             from img
           </span>
         )}
@@ -134,10 +134,10 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
 
       {item.status === "processing" && (
         <div className="space-y-1">
-          <div className="h-0.5 rounded-full overflow-hidden" style={{ background: "#1f2937" }}>
-            <div className="h-full rounded-full animate-pulse" style={{ background: "#ffdd73", width: "60%" }} />
+          <div className="h-0.5 rounded-full overflow-hidden" style={{ background: "var(--bg-input)" }}>
+            <div className="h-full rounded-full animate-pulse" style={{ background: "var(--accent)", width: "60%" }} />
           </div>
-          <p className="text-[9px] uppercase tracking-widest" style={{ color: "#484848" }}>
+          <p className="text-[9px] uppercase tracking-widest" style={{ color: "var(--text-3)" }}>
             AI synthesis in progress…
           </p>
         </div>
@@ -147,16 +147,16 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
         <>
           <div className="flex items-center gap-[2px] h-8">
             {bars.map((h, i) => (
-              <div key={i} className="flex-1 rounded-full" style={{ height: `${h}%`, background: "#d4a800" }} />
+              <div key={i} className="flex-1 rounded-full" style={{ height: `${h}%`, background: "var(--accent)" }} />
             ))}
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => onOpenEditor(item.audioUrl!)}
               className="flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100"
-              style={{ background: "#1f2937", color: "#ababab" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "#262626")}
-              onMouseLeave={e => (e.currentTarget.style.background = "#1f2937")}
+              style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-border)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-input)")}
             >
               Open Editor
             </button>
@@ -164,15 +164,15 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
               onClick={() => onOpenInStudio(item)}
               title="Open in DAW Studio"
               className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 flex items-center gap-1"
-              style={{ background: "#1f2937", color: "#ffdd73" }}
+              style={{ background: "var(--bg-input)", color: "var(--accent)" }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background  = "#ffdd73";
-                (e.currentTarget as HTMLButtonElement).style.color       = "#624e00";
-                (e.currentTarget as HTMLButtonElement).style.boxShadow   = "0px 0px 12px rgba(250,204,21,0.3)";
+                (e.currentTarget as HTMLButtonElement).style.background  = "var(--accent)";
+                (e.currentTarget as HTMLButtonElement).style.color       = "var(--accent-on)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow   = "0px 0px 12px color-mix(in srgb, var(--accent) 30%, transparent)";
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background  = "#1f2937";
-                (e.currentTarget as HTMLButtonElement).style.color       = "#ffdd73";
+                (e.currentTarget as HTMLButtonElement).style.background  = "var(--bg-input)";
+                (e.currentTarget as HTMLButtonElement).style.color       = "var(--accent)";
                 (e.currentTarget as HTMLButtonElement).style.boxShadow   = "none";
               }}
             >
@@ -184,9 +184,9 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
               disabled={exporting}
               title="Export as OGG"
               className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 flex items-center gap-1 disabled:opacity-40"
-              style={{ background: "#1f2937", color: "#ababab" }}
-              onMouseEnter={e => !exporting && ((e.currentTarget as HTMLButtonElement).style.background = "#262626")}
-              onMouseLeave={e =>              ((e.currentTarget as HTMLButtonElement).style.background = "#1f2937")}
+              style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
+              onMouseEnter={e => !exporting && ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-border)")}
+              onMouseLeave={e =>              ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-input)")}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>download</span>
               {exporting ? "…" : "OGG"}
@@ -199,7 +199,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
         <div className="space-y-2">
           {item.failReason && (
             <p className="text-[10px] rounded px-2 py-1.5 leading-relaxed"
-              style={{ background: "rgba(255,115,81,0.08)", color: "#ff7351" }}>
+              style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
               {item.failReason}
             </p>
           )}
@@ -207,7 +207,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
             onClick={handleRetry}
             disabled={retrying}
             className="w-full rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40"
-            style={{ background: "#1f2937", color: "#ababab" }}
+            style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
           >
             {retrying ? "Retrying…" : "↺ Retry"}
           </button>

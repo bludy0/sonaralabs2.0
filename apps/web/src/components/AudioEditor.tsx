@@ -214,23 +214,39 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
+
+  const inputCls = "w-full rounded-lg px-3 py-2 text-sm tabular-nums focus:outline-none disabled:opacity-40"
+
   return (
     /* Modal overlay */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "color-mix(in srgb, var(--bg-page) 30%, transparent)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="relative w-full max-w-2xl bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 flex flex-col gap-0 overflow-hidden">
-
+      <div
+        className="relative w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col gap-0 overflow-hidden"
+        style={{
+          background:  "var(--bg-card)",
+          border:      "1px solid var(--bg-border)",
+          boxShadow:   "0 8px 40px color-mix(in srgb, var(--bg-page) 60%, transparent)",
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 className="text-base font-semibold text-white tracking-tight">
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: "1px solid var(--bg-border)" }}
+        >
+          <h2 className="text-base font-semibold tracking-tight" style={{ color: "var(--text-1)" }}>
             Audio Editor
           </h2>
           <button
             onClick={onClose}
             aria-label="Close editor"
-            className="text-gray-400 hover:text-white transition-colors text-xl leading-none"
+            className="text-xl leading-none transition-colors"
+            style={{ color: "var(--text-3)" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--text-1)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
           >
             ×
           </button>
@@ -242,7 +258,8 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
           {/* Waveform */}
           <div
             ref={containerRef}
-            className="w-full rounded-lg overflow-hidden bg-gray-800"
+            className="w-full rounded-lg overflow-hidden"
+            style={{ background: "var(--bg-mid)" }}
           />
 
           {/* Play / Pause + Loop */}
@@ -250,33 +267,31 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
             <button
               onClick={handlePlayPause}
               disabled={!isReady}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: "var(--accent)", color: "var(--accent-on)" }}
             >
               {isPlaying ? (
-                <>
-                  <span className="text-base">&#9646;&#9646;</span> Pause
-                </>
+                <><span className="text-base">&#9646;&#9646;</span> Pause</>
               ) : (
-                <>
-                  <span className="text-base">&#9654;</span> Play
-                </>
+                <><span className="text-base">&#9654;</span> Play</>
               )}
             </button>
 
             <button
               onClick={handleLoopToggle}
               disabled={!isReady}
-              className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed border ${
-                loop
-                  ? "bg-indigo-900/60 border-indigo-500 text-indigo-300"
-                  : "bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400"
-              }`}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background: loop ? "color-mix(in srgb, var(--accent-dim) 60%, transparent)" : "var(--bg-mid)",
+                border:     `1px solid ${loop ? "var(--accent)" : "var(--bg-border)"}`,
+                color:      loop ? "var(--accent)" : "var(--text-2)",
+              }}
             >
               <span className="text-base">&#8635;</span> Loop
             </button>
 
             {isReady && (
-              <span className="ml-auto text-xs text-gray-500 tabular-nums">
+              <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
                 {formatTime(duration)}
               </span>
             )}
@@ -285,26 +300,24 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
           {/* BPM / Pitch (playbackRate) */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-300 uppercase tracking-wider">
+              <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
                 Tempo / Pitch
               </span>
-              <span className="text-xs text-indigo-400 tabular-nums font-mono">
+              <span className="text-xs tabular-nums font-mono" style={{ color: "var(--accent)" }}>
                 {playbackRate.toFixed(2)}x
               </span>
             </div>
             <input
-              type="range"
-              min={0.5}
-              max={2.0}
-              step={0.01}
+              type="range" min={0.5} max={2.0} step={0.01}
               value={playbackRate}
               onChange={handlePlaybackRateChange}
               disabled={!isReady}
-              className="w-full accent-indigo-500 disabled:opacity-40"
+              className="w-full disabled:opacity-40"
+              style={{ accentColor: "var(--accent)" }}
             />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <div className="flex justify-between text-xs mt-1" style={{ color: "var(--text-3)" }}>
               <span>0.5x</span>
-              <span className="text-yellow-400/80 text-center flex-1 px-2">
+              <span className="text-center flex-1 px-2" style={{ color: "var(--teal)" }}>
                 Preview only — pitch and tempo change together
               </span>
               <span>2.0x</span>
@@ -313,104 +326,70 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
 
           {/* Fade In / Fade Out */}
           <section className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-300 uppercase tracking-wider">
-                  Fade In
-                </span>
-                <span className="text-xs text-indigo-400 tabular-nums font-mono">
-                  {fadeIn.toFixed(1)}s
-                </span>
+            {[
+              { label: "Fade In",  value: fadeIn,  onChange: (v: number) => setFadeIn(v) },
+              { label: "Fade Out", value: fadeOut, onChange: (v: number) => setFadeOut(v) },
+            ].map(({ label, value, onChange }) => (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+                    {label}
+                  </span>
+                  <span className="text-xs tabular-nums font-mono" style={{ color: "var(--accent)" }}>
+                    {value.toFixed(1)}s
+                  </span>
+                </div>
+                <input
+                  type="range" min={0} max={5} step={0.1} value={value}
+                  onChange={e => onChange(parseFloat(e.target.value))}
+                  disabled={!isReady}
+                  className="w-full disabled:opacity-40"
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                <div className="flex justify-between text-xs mt-1" style={{ color: "var(--text-3)" }}>
+                  <span>0s</span><span>5s</span>
+                </div>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={5}
-                step={0.1}
-                value={fadeIn}
-                onChange={(e) => setFadeIn(parseFloat(e.target.value))}
-                disabled={!isReady}
-                className="w-full accent-indigo-500 disabled:opacity-40"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0s</span>
-                <span>5s</span>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-300 uppercase tracking-wider">
-                  Fade Out
-                </span>
-                <span className="text-xs text-indigo-400 tabular-nums font-mono">
-                  {fadeOut.toFixed(1)}s
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={5}
-                step={0.1}
-                value={fadeOut}
-                onChange={(e) => setFadeOut(parseFloat(e.target.value))}
-                disabled={!isReady}
-                className="w-full accent-indigo-500 disabled:opacity-40"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0s</span>
-                <span>5s</span>
-              </div>
-            </div>
+            ))}
           </section>
 
           {/* Trim */}
           <section>
-            <span className="text-xs font-medium text-gray-300 uppercase tracking-wider block mb-3">
+            <span className="text-xs font-medium uppercase tracking-wider block mb-3" style={{ color: "var(--text-2)" }}>
               Trim
             </span>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">
-                  Start (s)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={trimEnd - 0.1}
-                  step={0.1}
-                  value={trimStart.toFixed(1)}
-                  onChange={handleTrimStartChange}
-                  disabled={!isReady}
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-indigo-500 disabled:opacity-40"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">
-                  End (s)
-                </label>
-                <input
-                  type="number"
-                  min={trimStart + 0.1}
-                  max={duration}
-                  step={0.1}
-                  value={trimEnd.toFixed(1)}
-                  onChange={handleTrimEndChange}
-                  disabled={!isReady}
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-indigo-500 disabled:opacity-40"
-                />
-              </div>
+              {[
+                { label: "Start (s)", value: trimStart, min: 0,            max: trimEnd - 0.1, onChange: handleTrimStartChange },
+                { label: "End (s)",   value: trimEnd,   min: trimStart+0.1, max: duration,     onChange: handleTrimEndChange   },
+              ].map(({ label, value, min, max, onChange }) => (
+                <div key={label}>
+                  <label className="block text-xs mb-1" style={{ color: "var(--text-2)" }}>{label}</label>
+                  <input
+                    type="number" min={min} max={max} step={0.1}
+                    value={value.toFixed(1)}
+                    onChange={onChange}
+                    disabled={!isReady}
+                    className={inputCls}
+                    style={{
+                      background: "var(--bg-input)",
+                      border:     "1px solid var(--bg-border)",
+                      color:      "var(--text-1)",
+                    }}
+                  />
+                </div>
+              ))}
             </div>
             {isReady && (
-              <p className="text-xs text-gray-500 mt-2 tabular-nums">
+              <p className="text-xs mt-2 tabular-nums" style={{ color: "var(--text-3)" }}>
                 Trim length: {(trimEnd - trimStart).toFixed(1)}s of {formatTime(duration)}
               </p>
             )}
           </section>
 
           {/* Export */}
-          <section className="border-t border-gray-700 pt-5">
-            <span className="text-xs font-medium text-gray-300 uppercase tracking-wider block mb-3">
+          <section style={{ borderTop: "1px solid var(--bg-border)", paddingTop: 20 }}>
+            <span className="text-xs font-medium uppercase tracking-wider block mb-3" style={{ color: "var(--text-2)" }}>
               Export
             </span>
 
@@ -418,15 +397,13 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
               {(["wav", "ogg", "mp3"] as ExportFormat[]).map((fmt) => (
                 <button
                   key={fmt}
-                  onClick={() => {
-                    setExportFormat(fmt);
-                    setExportStub(null);
+                  onClick={() => { setExportFormat(fmt); setExportStub(null); }}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium uppercase tracking-wider transition-colors"
+                  style={{
+                    background: exportFormat === fmt ? "var(--accent)"    : "var(--bg-mid)",
+                    border:     `1px solid ${exportFormat === fmt ? "var(--accent)" : "var(--bg-border)"}`,
+                    color:      exportFormat === fmt ? "var(--accent-on)" : "var(--text-2)",
                   }}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-medium uppercase tracking-wider border transition-colors ${
-                    exportFormat === fmt
-                      ? "bg-indigo-600 border-indigo-500 text-white"
-                      : "bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400"
-                  }`}
                 >
                   {fmt}
                 </button>
@@ -434,23 +411,25 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
             </div>
 
             {exportStub && (
-              <p className="text-xs text-yellow-400 mb-3">{exportStub}</p>
+              <p className="text-xs mb-3" style={{ color: "var(--teal)" }}>{exportStub}</p>
             )}
 
             <button
               onClick={handleExport}
               disabled={!isReady || isExporting}
-              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: "var(--success)", color: "#000" }}
             >
               {isExporting ? (
                 <>
-                  <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />
+                  <span
+                    className="inline-block w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
+                    style={{ borderColor: "currentColor", borderTopColor: "transparent" }}
+                  />
                   Exporting…
                 </>
               ) : (
-                <>
-                  <span className="text-base">&#8659;</span> Download {exportFormat.toUpperCase()}
-                </>
+                <><span className="text-base">&#8659;</span> Download {exportFormat.toUpperCase()}</>
               )}
             </button>
           </section>

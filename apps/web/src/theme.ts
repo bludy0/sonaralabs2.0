@@ -1,23 +1,37 @@
+/**
+ * Web app tasarım tokenları — tüm değerler CSS değişkenine bağlıdır.
+ * ThemeProvider :root'taki değişkenleri değiştirerek tüm renkleri günceller.
+ */
 export const C = {
-  // Backgrounds
-  pageBg:   "#0e0e0e",
-  cardBg:   "#131313",
-  inputBg:  "#1f2937",
-  border:   "#262626",
+  // Yüzeyler
+  pageBg:   "var(--bg-page)",
+  cardBg:   "var(--bg-card)",
+  midBg:    "var(--bg-mid)",
+  inputBg:  "var(--bg-input)",
+  border:   "var(--bg-border)",
+  brightBg: "var(--bg-bright)",
 
-  // Text
-  textPrimary: "#ffffff",
-  textMuted:   "#ababab",
-  textDim:     "#484848",
+  // Alias'lar — bazı componentler eski isimleri kullanıyor
+  bgBase:   "var(--bg-card)",
+  bgSubtle: "var(--bg-mid)",
+  bgHover:  "var(--bg-bright)",
 
-  // Accent (yellow)
-  accent:     "#ffdd73",
-  accentDark: "#624e00",
+  // Metin
+  text1: "var(--text-1)",
+  text2: "var(--text-2)",
+  text3: "var(--text-3)",
 
-  // Status
-  success: "#6ec96e",
-  error:   "#ff7351",
-  teal:    "#64c8b4",
+  // Vurgu
+  accent:       "var(--accent)",
+  accentBright: "var(--accent)",
+  accentOn:     "var(--accent-on)",
+  accentDark:   "var(--accent-dim)",
+
+  // Durum
+  success: "var(--success)",
+  warning: "var(--teal)",   // teal = uyarı tonunda yeterli, ayrı var eklenene kadar
+  error:   "var(--error)",
+  teal:    "var(--teal)",
 } as const;
 
-export type ThemeColor = typeof C[keyof typeof C];
+export type ThemeToken = keyof typeof C;

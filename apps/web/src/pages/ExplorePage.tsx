@@ -167,17 +167,17 @@ export default function ExplorePage() {
   const hasMore = tracks.length < total;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "#0e0e0e", color: "#ffffff" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
 
       {/* ── HERO ──────────────────────────────────────────────────────────────── */}
       <div className="px-8 pt-10 pb-8">
         {/* System label */}
-        <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-3" style={{ color: "#ababab" }}>
+        <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-3" style={{ color: "var(--text-2)" }}>
           SONARALABS / DISCOVERY_ENGINE
         </p>
         <h1
           className="text-[2.8rem] font-bold leading-none tracking-tight uppercase mb-6"
-          style={{ letterSpacing: "-0.02em", color: "#ffffff" }}
+          style={{ letterSpacing: "-0.02em", color: "var(--text-1)" }}
         >
           Explore
         </h1>
@@ -186,23 +186,23 @@ export default function ExplorePage() {
         <div className="flex gap-3 items-center max-w-2xl mb-6">
           <div
             className="flex-1 flex items-center gap-3 rounded-lg px-4 py-3"
-            style={{ background: "#1f2937" }}
+            style={{ background: "var(--bg-input)" }}
           >
-            <span className="material-symbols-outlined text-[18px]" style={{ color: "#ababab" }}>search</span>
+            <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-2)" }}>search</span>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search tracks, artists, genres…"
               className="flex-1 bg-transparent text-sm outline-none placeholder-[#484848]"
-              style={{ color: "#ffffff" }}
+              style={{ color: "var(--text-1)" }}
             />
           </div>
           <select
             value={mood}
             onChange={e => setMood(e.target.value)}
             className="rounded-lg px-3 py-3 text-xs font-medium uppercase tracking-wider outline-none"
-            style={{ background: "#1f2937", color: "#ababab", border: "none" }}
+            style={{ background: "var(--bg-input)", color: "var(--text-2)", border: "none" }}
           >
             <option value="">All moods</option>
             {MOODS.map(m => <option key={m} value={m} className="capitalize">{m}</option>)}
@@ -218,8 +218,8 @@ export default function ExplorePage() {
               className="px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-100"
               style={
                 activeChip === chip
-                  ? { background: "#ffdd73", color: "#624e00" }
-                  : { background: "#1f2937", color: "#ababab" }
+                  ? { background: "var(--accent)", color: "var(--accent-on)" }
+                  : { background: "var(--bg-input)", color: "var(--text-2)" }
               }
             >
               {chip}
@@ -232,13 +232,13 @@ export default function ExplorePage() {
       <div className="flex-1 px-8 pb-28">
         {loading && tracks.length === 0 ? (
           <div className="flex items-center justify-center h-48">
-            <p className="text-xs tracking-widest uppercase" style={{ color: "#484848" }}>
+            <p className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
               Loading stream…
             </p>
           </div>
         ) : tracks.length === 0 ? (
           <div className="flex items-center justify-center h-48">
-            <p className="text-xs tracking-widest uppercase" style={{ color: "#484848" }}>
+            <p className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
               No tracks found.
             </p>
           </div>
@@ -266,7 +266,7 @@ export default function ExplorePage() {
               onClick={() => { const next = page + 1; setPage(next); fetchTracks(next, true); }}
               disabled={loading}
               className="px-6 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-widest transition-all duration-100 disabled:opacity-40"
-              style={{ background: "#1f2937", color: "#ababab" }}
+              style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
             >
               {loading ? "Loading…" : `Load more (${tracks.length}/${total})`}
             </button>
@@ -279,9 +279,9 @@ export default function ExplorePage() {
         <div
           className="fixed bottom-24 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider z-50 pointer-events-none"
           style={{
-            background: "rgba(255,221,115,0.12)",
-            color: "#ffdd73",
-            border: "1px solid rgba(255,221,115,0.25)",
+            background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+            color: "var(--accent)",
+            border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
             backdropFilter: "blur(12px)",
           }}
         >
@@ -294,9 +294,9 @@ export default function ExplorePage() {
         <div
           className="fixed bottom-0 left-[220px] right-0 h-[72px] flex items-center gap-5 px-8"
           style={{
-            background: "rgba(14,14,14,0.85)",
+            background: "color-mix(in srgb, var(--bg-page) 85%, transparent)",
             backdropFilter: "blur(20px)",
-            borderTop: "1px solid rgba(255,221,115,0.15)",
+            borderTop: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)",
           }}
         >
           {/* Play/pause */}
@@ -304,9 +304,9 @@ export default function ExplorePage() {
             onClick={() => handlePlay(nowPlaying)}
             className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-100"
             style={{
-              background: "#ffdd73",
-              color: "#624e00",
-              boxShadow: "0px 0px 16px rgba(250,204,21,0.35)",
+              background: "var(--accent)",
+              color: "var(--accent-on)",
+              boxShadow: "0px 0px 16px color-mix(in srgb, var(--accent) 35%, transparent)",
             }}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
@@ -317,7 +317,7 @@ export default function ExplorePage() {
           {/* Track info */}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate">{nowPlaying.title}</p>
-            <p className="text-[11px] truncate" style={{ color: "#ababab" }}>@{nowPlaying.username}</p>
+            <p className="text-[11px] truncate" style={{ color: "var(--text-2)" }}>@{nowPlaying.username}</p>
           </div>
 
           {/* Waveform visualization */}
@@ -328,7 +328,7 @@ export default function ExplorePage() {
                 className="w-[2px] rounded-full transition-all duration-75"
                 style={{
                   height: `${playing === nowPlaying.id ? h : h * 0.5}%`,
-                  background: playing === nowPlaying.id ? "#ffdd73" : "#484848",
+                  background: playing === nowPlaying.id ? "var(--accent)" : "var(--text-3)",
                   opacity: playing === nowPlaying.id ? 1 : 0.6,
                 }}
               />
@@ -338,12 +338,12 @@ export default function ExplorePage() {
           {/* Meta */}
           <div className="flex items-center gap-4 shrink-0">
             {nowPlaying.bpm && (
-              <span className="text-[10px] uppercase tracking-wider" style={{ color: "#484848" }}>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
                 {nowPlaying.bpm} BPM
               </span>
             )}
             {nowPlaying.durationSec > 0 && (
-              <span className="text-[10px] uppercase tracking-wider" style={{ color: "#484848" }}>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
                 {formatDuration(nowPlaying.durationSec)}
               </span>
             )}
@@ -353,7 +353,7 @@ export default function ExplorePage() {
           <button
             onClick={() => handleShare(nowPlaying)}
             className="material-symbols-outlined transition-colors duration-100"
-            style={{ fontSize: 18, color: copiedId === nowPlaying.id ? "#ffdd73" : "#484848" }}
+            style={{ fontSize: 18, color: copiedId === nowPlaying.id ? "var(--accent)" : "var(--text-3)" }}
             title="Share track"
           >
             {copiedId === nowPlaying.id ? "check" : "share"}
@@ -363,7 +363,7 @@ export default function ExplorePage() {
           <button
             onClick={() => { audioRef.current?.pause(); setPlaying(null); setNowPlaying(null); }}
             className="material-symbols-outlined transition-colors duration-100"
-            style={{ fontSize: 18, color: "#484848" }}
+            style={{ fontSize: 18, color: "var(--text-3)" }}
           >
             close
           </button>
@@ -394,14 +394,14 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
       ref={cardRef}
       className="rounded-lg overflow-hidden group cursor-default transition-all duration-150"
       style={{
-        background: "#1f2937",
-        outline: isPlaying ? "1px solid rgba(255,221,115,0.3)" : "none",
+        background: "var(--bg-input)",
+        outline: isPlaying ? "1px solid color-mix(in srgb, var(--accent) 30%, transparent)" : "none",
       }}
     >
       {/* Thumbnail zone */}
       <div
         className="relative h-36 flex items-center justify-center overflow-hidden"
-        style={{ background: "#131313" }}
+        style={{ background: "var(--bg-card)" }}
       >
         {/* Waveform visualization */}
         <div className="flex items-center gap-[2px] h-16 px-4 w-full">
@@ -411,7 +411,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
               className="flex-1 rounded-full transition-all duration-100"
               style={{
                 height: `${isPlaying ? h : Math.max(h * 0.6, 12)}%`,
-                background: isPlaying ? "#ffdd73" : "#2c2c2c",
+                background: isPlaying ? "var(--accent)" : "var(--bg-bright)",
               }}
             />
           ))}
@@ -426,9 +426,9 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
           <div
             className="w-11 h-11 rounded-full flex items-center justify-center"
             style={{
-              background: "#ffdd73",
-              color: "#624e00",
-              boxShadow: "0px 0px 20px rgba(250,204,21,0.4)",
+              background: "var(--accent)",
+              color: "var(--accent-on)",
+              boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 40%, transparent)",
             }}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
@@ -440,7 +440,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
         {/* AI model badge — top right */}
         <div
           className="absolute top-2 right-2 px-2 py-0.5 rounded text-[9px] font-semibold tracking-widest uppercase"
-          style={{ background: "rgba(0,0,0,0.7)", color: "#ababab" }}
+          style={{ background: "rgba(0,0,0,0.7)", color: "var(--text-2)" }}
         >
           AI_GEN
         </div>
@@ -449,7 +449,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
         {track.isLoop && (
           <div
             className="absolute top-2 left-2 px-2 py-0.5 rounded text-[9px] font-semibold tracking-widest uppercase"
-            style={{ background: "rgba(255,221,115,0.15)", color: "#ffdd73" }}
+            style={{ background: "color-mix(in srgb, var(--accent) 15%, transparent)", color: "var(--accent)" }}
           >
             Loop
           </div>
@@ -459,7 +459,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
         {isPlaying && (
           <div
             className="absolute bottom-0 left-0 right-0 h-0.5"
-            style={{ background: "#ffdd73" }}
+            style={{ background: "var(--accent)" }}
           />
         )}
       </div>
@@ -468,11 +468,11 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
       <div className="p-4 space-y-3">
         {/* Title + username */}
         <div>
-          <p className="text-sm font-semibold truncate" style={{ color: "#ffffff" }}>{track.title}</p>
+          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>{track.title}</p>
           <Link
             to={`/profile/${track.username}`}
             className="text-[11px] transition-colors duration-100"
-            style={{ color: "#ababab" }}
+            style={{ color: "var(--text-2)" }}
           >
             @{track.username}
           </Link>
@@ -484,7 +484,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
             <span
               key={tag}
               className="px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider capitalize"
-              style={{ background: "#131313", color: "#484848" }}
+              style={{ background: "var(--bg-card)", color: "var(--text-3)" }}
             >
               {tag}
             </span>
@@ -493,7 +493,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
 
         {/* Meta + actions */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider" style={{ color: "#484848" }}>
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
             {track.durationSec > 0 && <span>{formatDuration(track.durationSec)}</span>}
             {track.bpm && <span>{track.bpm} BPM</span>}
             <span>{timeAgo(track.createdAt)}</span>
@@ -503,7 +503,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
             <button
               onClick={() => onShare(track)}
               className="flex items-center gap-1 text-[11px] transition-colors duration-100"
-              style={{ color: isCopied ? "#ffdd73" : "#484848" }}
+              style={{ color: isCopied ? "var(--accent)" : "var(--text-3)" }}
               title="Share track"
             >
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
@@ -514,7 +514,7 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
             <button
               onClick={() => onLike(track)}
               className="flex items-center gap-1 text-[11px] transition-colors duration-100"
-              style={{ color: isLiked ? "#ff7351" : "#484848" }}
+              style={{ color: isLiked ? "var(--error)" : "var(--text-3)" }}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 14, fontVariationSettings: `"FILL" ${isLiked ? 1 : 0}` }}>
                 favorite
