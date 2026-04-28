@@ -188,7 +188,7 @@ const userSchema = new mongoose.Schema({
   email:               { type: String, required: true, unique: true, lowercase: true },
   passwordHash:        { type: String, required: true, select: false },
   role:                { type: String, enum: ["user", "admin"], default: "user" },
-  creditBalance:       { type: Number, default: 100 },
+  creditBalance:       { type: Number, default: 0 },
   storageUsed:         { type: Number, default: 0 },
   preferences:         { accentColor: { type: String, default: "#0F3460" } },
   // ── Email onayı ──────────────────────────────────────────────────────────
@@ -282,15 +282,19 @@ app.post("/register", async (req, res) => {
       console.error("[auth] Email gönderilemedi:", err.message)
     );
 
-    // Kayıt bonusu log (non-fatal)
-    const internalToken = jwt.sign(
-      { sub: String(user._id), role: user.role, _internal: true },
-      INTERNAL_JWT_SECRET!, { expiresIn: "5m" }
-    );
-    axios.post(`${CREDIT_SERVICE_URL}/earn`,
-      { userId: String(user._id), amount: 100, reason: "register_bonus" },
-      { headers: { "x-internal-token": internalToken } }
-    ).catch(err => console.warn("[auth] Credit earn log failed:", err.message));
+    // Kayıt bonusu: şu an 0 — iletişim sonrası manuel verilir
+    // Aktif etmek için INITIAL_CREDIT_BALANCE env'ini ayarla
+    const INITIAL_CREDIT = parseInt(process.env.INITIAL_CREDIT_BALANCE ?? "0");
+    if (INITIAL_CREDIT > 0) {
+      const internalToken = jwt.sign(
+        { sub: String(user._id), role: user.role, _internal: true },
+        INTERNAL_JWT_SECRET!, { expiresIn: "5m" }
+      );
+      axios.post(`${CREDIT_SERVICE_URL}/earn`,
+        { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
+        { headers: { "x-internal-token": internalToken } }
+      ).catch(err => console.warn("[auth] Credit earn log failed:", err.message));
+    }
 
     res.status(201).json({
       success: true,

@@ -28,13 +28,6 @@ interface DailyStatRow {
   credits: number;
 }
 
-interface CreditPackage {
-  id: string;
-  credits: number;
-  price: number;  // cents
-  label: string;
-}
-
 
 const statusDotColor: Record<string, string> = {
   done: "var(--success)",
@@ -84,19 +77,15 @@ export default function DashboardPage() {
   const [historyTotal, setHistoryTotal]   = useState(0);
   const [dailyStats, setDailyStats]       = useState<DailyStatRow[]>([]);
   const [loading, setLoading]             = useState(true);
-  const [packages, setPackages]           = useState<CreditPackage[]>([]);
-  const [buyingId, setBuyingId]           = useState<string | null>(null);
-  const [buyError, setBuyError]           = useState<string | null>(null);
   const [purchaseBanner, setPurchaseBanner] = useState<"success" | "cancelled" | null>(null);
 
   const isAdmin = user?.role === "admin";
 
   useEffect(() => {
-    // Handle purchase redirect banner
+    // Handle purchase redirect banner (gelecekte ödeme sistemi için)
     const purchase = searchParams.get("purchase");
     if (purchase === "success" || purchase === "cancelled") {
-      setPurchaseBanner(purchase);
-      // Remove param from URL without triggering a navigation
+      setPurchaseBanner(purchase as "success" | "cancelled");
       const next = new URLSearchParams(searchParams);
       next.delete("purchase");
       setSearchParams(next, { replace: true });
@@ -107,11 +96,10 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true);
       try {
-        const [balanceRes, historyRes, logsRes, packagesRes] = await Promise.all([
+        const [balanceRes, historyRes, logsRes] = await Promise.all([
           api.get("/api/credits/balance"),
           api.get("/api/generate/history"),
           api.get("/api/credits/history", { params: { limit: 10 } }),
-          api.get("/api/credits/packages"),
         ]);
 
         const bal =
@@ -132,10 +120,6 @@ export default function DashboardPage() {
           logsRes.data?.data?.items ?? logsRes.data?.items ?? [];
         setCreditLogs(logs);
 
-        const pkgs: CreditPackage[] =
-          packagesRes.data?.data ?? packagesRes.data ?? [];
-        setPackages(pkgs);
-
         if (isAdmin) {
           const statsRes = await api.get("/api/admin/stats/daily");
           const rows: DailyStatRow[] =
@@ -154,28 +138,6 @@ export default function DashboardPage() {
 
   const doneCount = historyItems.filter(i => i.status === "done").length;
   const recentItems = historyItems.slice(0, 5);
-
-  async function handleBuy(pkg: CreditPackage) {
-    setBuyingId(pkg.id);
-    setBuyError(null);
-    try {
-      const res = await api.post("/api/credits/purchase", {
-        packageId: pkg.id,
-        successUrl: `${window.location.origin}/dashboard?purchase=success`,
-        cancelUrl:  `${window.location.origin}/dashboard?purchase=cancelled`,
-      });
-      const checkoutUrl: string = res.data?.data?.checkoutUrl ?? res.data?.checkoutUrl;
-      if (checkoutUrl && checkoutUrl.startsWith("https://checkout.stripe.com/")) {
-        window.location.href = checkoutUrl;
-      } else {
-        setBuyError("Could not open checkout. Please try again.");
-      }
-    } catch {
-      setBuyError("Purchase failed. Please check your connection and try again.");
-    } finally {
-      setBuyingId(null);
-    }
-  }
 
   if (loading) {
     return (
@@ -203,22 +165,6 @@ export default function DashboardPage() {
         </h1>
       </div>
 
-      {/* Purchase result banner */}
-      {buyError && (
-        <div
-          className="mb-6 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
-          style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
-        >
-          <span>{buyError}</span>
-          <button
-            onClick={() => setBuyError(null)}
-            className="ml-4 transition-colors"
-            style={{ color: "var(--error)" }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
       {purchaseBanner === "success" && (
         <div
           className="mb-6 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
@@ -375,45 +321,52 @@ export default function DashboardPage() {
       </section>
 
       {/* Buy Credits */}
-      {packages.length > 0 && (
-        <section className="mb-8">
-          <p
-            className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
-            style={{ color: "var(--text-3)" }}
+      <section className="mb-8">
+        <p
+          className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
+          style={{ color: "var(--text-3)" }}
+        >
+          Buy Credits
+        </p>
+        <div
+          className="rounded-lg p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5"
+          style={{ background: "var(--bg-card)", border: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}
+        >
+          {/* Icon */}
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center text-xl shrink-0"
+            style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)" }}
           >
-            Buy Credits
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {packages.map(pkg => (
-              <div
-                key={pkg.id}
-                className="rounded-lg p-5 flex flex-col gap-3"
-                style={{ background: "var(--bg-card)" }}
-              >
-                <div>
-                  <p className="text-lg font-bold" style={{ color: "var(--text-1)" }}>{pkg.credits} Credits</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{pkg.label}</p>
-                </div>
-                <p className="text-2xl font-semibold" style={{ color: "var(--accent)" }}>
-                  ${(pkg.price / 100).toFixed(2)}
-                </p>
-                <button
-                  onClick={() => handleBuy(pkg)}
-                  disabled={buyingId !== null}
-                  className="mt-auto w-full py-2 px-4 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40"
-                  style={{
-                    background: "var(--accent)",
-                    color: "var(--accent-on)",
-                    boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
-                  }}
-                >
-                  {buyingId === pkg.id ? "Redirecting..." : "Buy"}
-                </button>
-              </div>
-            ))}
+            ✉
           </div>
-        </section>
-      )}
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold mb-1" style={{ color: "var(--text-1)" }}>
+              Kredi satın almak için iletişime geçin
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
+              Ödeme sistemi henüz aktif değil. Kredi almak veya fiyat bilgisi için
+              doğrudan bize yazabilirsiniz — en kısa sürede dönüş yapacağız.
+            </p>
+          </div>
+
+          <a
+            href="mailto:yunuseaslan427@gmail.com?subject=Sonaralabs%20Kredi%20Talebi&body=Merhaba%2C%0A%0ASonaralabs%20hesab%C4%B1m%20i%C3%A7in%20kredi%20sat%C4%B1n%20almak%20istiyorum.%0A%0AKullan%C4%B1c%C4%B1%20email%3A%20"
+            className="shrink-0 px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-all"
+            style={{
+              background: "var(--accent)",
+              color: "var(--accent-on)",
+              boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.boxShadow = "0px 0px 28px color-mix(in srgb, var(--accent) 50%, transparent)")}
+            onMouseLeave={e => (e.currentTarget.style.boxShadow = "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)")}
+          >
+            İletişime Geç →
+          </a>
+        </div>
+      </section>
 
       {/* Admin section — daily stats table */}
       {isAdmin && (
