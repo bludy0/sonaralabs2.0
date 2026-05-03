@@ -13,6 +13,7 @@
     "@sonaralabs/daw-studio": "workspace:*",
     "@sonaralabs/types": "workspace:*",
     "axios": "^1.7.9",
+    "ogl": "^1.0.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.1",

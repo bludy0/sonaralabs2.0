@@ -3,8 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { useAuthStore } from "./store/useAuthStore";
 import Layout from "./components/Layout";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { ToastContainer } from "./components/ToastContainer";
 
 // Pages
+import WelcomePage     from "./pages/WelcomePage";
 import LoginPage       from "./pages/LoginPage";
 import RegisterPage    from "./pages/RegisterPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
@@ -43,6 +45,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      <ToastContainer />
       <BrowserRouter>
         <Routes>
           {/* Auth sayfaları */}
@@ -77,8 +80,8 @@ export default function App() {
             <Route path="/studio" element={<StudioPage />} />
           </Route>
 
-          <Route path="/" element={<Navigate to="/generate" replace />} />
-          <Route path="*" element={<Navigate to="/generate" replace />} />
+          <Route path="/" element={<WelcomePage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
