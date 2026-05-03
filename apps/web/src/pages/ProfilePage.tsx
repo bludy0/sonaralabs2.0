@@ -119,8 +119,12 @@ export default function ProfilePage() {
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Revoke the previous object URL to avoid memory leaks
+    setAvatarPreview(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
     setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
   }
 
   // ── Save profile ───────────────────────────────────────────────────────────
@@ -139,7 +143,7 @@ export default function ProfilePage() {
       setProfile(data.data);
       setEditing(false);
       setAvatarFile(null);
-      setAvatarPreview(null);
+      setAvatarPreview(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
     } catch { /* ignore */ }
     finally { setSaving(false); }
   }
@@ -358,7 +362,7 @@ export default function ProfilePage() {
                     {saving ? "Saving…" : "Save"}
                   </button>
                   <button
-                    onClick={() => { setEditing(false); setAvatarFile(null); setAvatarPreview(null); }}
+                    onClick={() => { setEditing(false); setAvatarFile(null); setAvatarPreview(prev => { if (prev) URL.revokeObjectURL(prev); return null; }); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-100"
                     style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
                   >

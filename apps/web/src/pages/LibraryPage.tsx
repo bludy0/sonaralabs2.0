@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { toast } from "../lib/toast";
 import { PublishModal } from "../components/library/PublishModal";
 import { LibraryItemCard } from "../components/library/LibraryItemCard";
 import type { LibraryItem, Collection, TypeFilter, SortBy, StatusFilter } from "../components/library/LibraryTypes";
@@ -25,8 +26,18 @@ export default function LibraryPage() {
   const [newColName, setNewColName] = useState("");
   const [colLoading, setColLoading] = useState(false);
 
+  // Collection management
+  const [activeColId,    setActiveColId]    = useState<string | null>(null);
+  const [activeColRefs,  setActiveColRefs]  = useState<Set<string>>(new Set());
+  const [loadingColId,   setLoadingColId]   = useState<string | null>(null);
+  const [renamingColId,  setRenamingColId]  = useState<string | null>(null);
+  const [renameValue,    setRenameValue]    = useState("");
+  const [deletingColId,  setDeletingColId]  = useState<string | null>(null);
+  const [addingToColId,  setAddingToColId]  = useState<string | null>(null); // itemId being added
+
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,7 +121,7 @@ export default function LibraryPage() {
       setItems(prev => prev.filter(i => i._id !== item._id));
       setTotal(prev => prev - 1);
     } catch {
-      alert("Silinemedi.");
+      toast("Could not delete item.", "error");
     }
   }
 
@@ -129,9 +140,95 @@ export default function LibraryPage() {
       setCollections(prev => [...prev, data.data ?? data]);
       setNewColName("");
     } catch {
-      alert("Koleksiyon oluşturulamadı.");
+      toast("Could not create collection.", "error");
     } finally {
       setColLoading(false);
+    }
+  }
+
+  // ── Koleksiyon seç / genişlet ────────────────────────────────────────────────
+  async function handleSelectCollection(colId: string) {
+    if (activeColId === colId) {
+      // Deselect
+      setActiveColId(null);
+      setActiveColRefs(new Set());
+      return;
+    }
+    setLoadingColId(colId);
+    try {
+      const { data } = await api.get(`/api/collections/${colId}`);
+      const col: Collection = data.data;
+      setActiveColId(colId);
+      setActiveColRefs(new Set(col.items.map(i => i.refId)));
+    } catch {
+      toast("Could not load collection.", "error");
+    } finally {
+      setLoadingColId(null);
+    }
+  }
+
+  // ── Koleksiyon yeniden adlandır ───────────────────────────────────────────────
+  async function handleRenameCollection(colId: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed) { setRenamingColId(null); return; }
+    try {
+      await api.patch(`/api/collections/${colId}`, { name: trimmed });
+      setCollections(prev => prev.map(c => c._id === colId ? { ...c, name: trimmed } : c));
+    } catch {
+      toast("Could not rename collection.", "error");
+    } finally {
+      setRenamingColId(null);
+    }
+  }
+
+  // ── Koleksiyon sil ────────────────────────────────────────────────────────────
+  async function handleDeleteCollection(colId: string) {
+    setDeletingColId(colId);
+    try {
+      await api.delete(`/api/collections/${colId}`);
+      setCollections(prev => prev.filter(c => c._id !== colId));
+      if (activeColId === colId) { setActiveColId(null); setActiveColRefs(new Set()); }
+    } catch {
+      toast("Could not delete collection.", "error");
+    } finally {
+      setDeletingColId(null);
+    }
+  }
+
+  // ── Item'ı koleksiyona ekle ───────────────────────────────────────────────────
+  async function handleAddToCollection(item: LibraryItem, colId: string) {
+    const refModel = item._type === "generation" ? "Generation" : "Upload";
+    setAddingToColId(item._id);
+    try {
+      await api.post(`/api/collections/${colId}/items`, { refId: item._id, refModel });
+      setCollections(prev => prev.map(c =>
+        c._id === colId
+          ? { ...c, items: [...c.items, { refId: item._id, refModel, addedAt: new Date().toISOString() }] }
+          : c
+      ));
+      if (activeColId === colId) setActiveColRefs(prev => new Set(prev).add(item._id));
+      toast("Added to collection.", "success");
+    } catch {
+      toast("Could not add to collection.", "error");
+    } finally {
+      setAddingToColId(null);
+    }
+  }
+
+  // ── Item'ı koleksiyondan çıkar ────────────────────────────────────────────────
+  async function handleRemoveFromCollection(colId: string, refId: string) {
+    try {
+      await api.delete(`/api/collections/${colId}/items/${refId}`);
+      setCollections(prev => prev.map(c =>
+        c._id === colId
+          ? { ...c, items: c.items.filter(i => i.refId !== refId) }
+          : c
+      ));
+      if (activeColId === colId) {
+        setActiveColRefs(prev => { const s = new Set(prev); s.delete(refId); return s; });
+      }
+    } catch {
+      toast("Could not remove from collection.", "error");
     }
   }
 
@@ -144,38 +241,45 @@ export default function LibraryPage() {
   async function handleUpload() {
     if (!uploadFile) return;
     setUploading(true);
+    setUploadProgress(0);
     setUploadError(null);
     try {
       const form = new FormData();
       form.append("file", uploadFile);
       await api.post("/api/upload", form, {
         headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress(e) {
+          if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        },
       });
       setUploadFile(null);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      toast("File uploaded successfully.", "success");
       setPage(1);
       await fetchItems(typeFilter, favOnly, searchQ, statusFilter, 1, false);
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.error ?? "Yükleme başarısız.";
+      const msg = err?.response?.data?.error ?? "Upload failed.";
       setUploadError(msg);
+      setUploadProgress(0);
     } finally {
       setUploading(false);
     }
   }
 
-  const hasMore = items.length < total;
+  const hasMore = !activeColId && items.length < total;
 
   const sortedItems = [...items]
+    .filter(item => !activeColId || activeColRefs.has(item._id))
     .filter(item => typeFilter === "all" || item._type === typeFilter)
     .filter(item => statusFilter === "all" || item.status === statusFilter)
     .sort((a, b) => {
-    if (sortBy === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    if (sortBy === "longest") return (b.duration ?? 0) - (a.duration ?? 0);
-    if (sortBy === "shortest") return (a.duration ?? 0) - (b.duration ?? 0);
-    return 0;
-  });
+      if (sortBy === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sortBy === "longest") return (b.duration ?? 0) - (a.duration ?? 0);
+      if (sortBy === "shortest") return (a.duration ?? 0) - (b.duration ?? 0);
+      return 0;
+    });
 
 
   return (
@@ -379,12 +483,28 @@ export default function LibraryPage() {
                   boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
                 }}
               >
-                {uploading ? "Uploading..." : "Upload"}
+                {uploading ? `Uploading… ${uploadProgress}%` : "Upload"}
               </button>
               {uploadError && (
                 <span className="text-xs" style={{ color: "var(--error)" }}>{uploadError}</span>
               )}
             </div>
+            {/* Upload progress bar */}
+            {uploading && (
+              <div
+                className="h-1 rounded-full overflow-hidden mt-2"
+                style={{ background: "var(--bg-border)" }}
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: `${uploadProgress}%`,
+                    background: "var(--accent)",
+                    boxShadow: "0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)",
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Error */}
@@ -392,21 +512,51 @@ export default function LibraryPage() {
             <p className="text-sm mb-4" style={{ color: "var(--error)" }}>{error}</p>
           )}
 
+          {/* Active collection banner */}
+          {activeColId && (
+            <div
+              className="mb-4 flex items-center gap-2 rounded-lg px-4 py-2.5"
+              style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}
+            >
+              <span className="material-symbols-outlined text-base" style={{ color: "var(--accent)" }}>folder_open</span>
+              <span className="text-sm font-semibold flex-1" style={{ color: "var(--accent)" }}>
+                {collections.find(c => c._id === activeColId)?.name ?? "Collection"}
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-3)" }}>{activeColRefs.size} items</span>
+              <button
+                onClick={() => { setActiveColId(null); setActiveColRefs(new Set()); }}
+                className="text-xs font-semibold transition-colors"
+                style={{ color: "var(--text-3)" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "var(--text-1)")}
+                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
+              >
+                ✕ Clear filter
+              </button>
+            </div>
+          )}
+
           {/* Items list */}
           {loading && items.length === 0 ? (
             <div className="py-16 text-center text-sm" style={{ color: "var(--text-3)" }}>Loading...</div>
-          ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm" style={{ color: "var(--text-3)" }}>No items found.</div>
+          ) : sortedItems.length === 0 ? (
+            <div className="py-16 text-center text-sm" style={{ color: "var(--text-3)" }}>
+              {activeColId ? "This collection is empty. Add items using the folder icon on any track." : "No items found."}
+            </div>
           ) : (
             <ul className="space-y-2">
               {sortedItems.map(item => (
                 <LibraryItemCard
                   key={item._id}
                   item={item}
+                  collections={collections}
+                  inActiveCollection={!!activeColId && activeColRefs.has(item._id)}
+                  addingToCol={addingToColId === item._id}
                   onFavoriteToggle={handleFavoriteToggle}
                   onDelete={handleDelete}
                   onOpenInStudio={handleOpenInStudio}
                   onPublish={item.audioUrl && item.status === "done" ? () => setPublishItem(item) : undefined}
+                  onAddToCollection={handleAddToCollection}
+                  onRemoveFromCollection={activeColId ? (refId) => handleRemoveFromCollection(activeColId, refId) : undefined}
                 />
               ))}
             </ul>
@@ -470,18 +620,95 @@ export default function LibraryPage() {
               <p className="text-sm" style={{ color: "var(--text-3)" }}>No collections yet.</p>
             ) : (
               <ul className="space-y-1.5">
-                {collections.map(col => (
-                  <li
-                    key={col._id}
-                    className="flex items-center justify-between rounded px-3 py-2"
-                    style={{ background: "var(--bg-input)" }}
-                  >
-                    <span className="text-sm truncate" style={{ color: "var(--text-1)" }}>{col.name}</span>
-                    <span className="text-[9px] font-bold tracking-[0.15em] uppercase ml-2 shrink-0" style={{ color: "var(--text-3)" }}>
-                      {col.items?.length ?? 0}
-                    </span>
-                  </li>
-                ))}
+                {collections.map(col => {
+                  const isActive   = activeColId === col._id;
+                  const isRenaming = renamingColId === col._id;
+                  const isDeleting = deletingColId === col._id;
+                  const isLoading  = loadingColId  === col._id;
+                  return (
+                    <li key={col._id}>
+                      <div
+                        className="flex items-center gap-1.5 rounded px-3 py-2 group transition-colors cursor-pointer"
+                        style={{
+                          background:  isActive ? "color-mix(in srgb, var(--accent) 12%, var(--bg-input))" : "var(--bg-input)",
+                          borderLeft: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
+                        }}
+                        onClick={() => { if (!isRenaming) handleSelectCollection(col._id); }}
+                      >
+                        {/* Folder icon */}
+                        <span
+                          className="material-symbols-outlined text-base shrink-0 transition-colors"
+                          style={{ color: isActive ? "var(--accent)" : "var(--text-3)", fontSize: 16 }}
+                        >
+                          {isLoading ? "hourglass_empty" : isActive ? "folder_open" : "folder"}
+                        </span>
+
+                        {/* Name / rename input */}
+                        {isRenaming ? (
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter")  handleRenameCollection(col._id, renameValue);
+                              if (e.key === "Escape") setRenamingColId(null);
+                            }}
+                            onBlur={() => handleRenameCollection(col._id, renameValue)}
+                            onClick={e => e.stopPropagation()}
+                            className="flex-1 min-w-0 text-sm bg-transparent outline-none border-b"
+                            style={{ color: "var(--text-1)", borderColor: "var(--accent)" }}
+                          />
+                        ) : (
+                          <span className="flex-1 min-w-0 text-sm truncate" style={{ color: isActive ? "var(--accent)" : "var(--text-1)" }}>
+                            {col.name}
+                          </span>
+                        )}
+
+                        {/* Item count badge */}
+                        <span
+                          className="text-[9px] font-bold tracking-wide shrink-0 px-1.5 py-0.5 rounded"
+                          style={{
+                            background: isActive ? "color-mix(in srgb, var(--accent) 20%, transparent)" : "var(--bg-page)",
+                            color: isActive ? "var(--accent)" : "var(--text-3)",
+                          }}
+                        >
+                          {col.items?.length ?? 0}
+                        </span>
+
+                        {/* Action buttons — visible on hover */}
+                        {!isRenaming && (
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            {/* Rename */}
+                            <button
+                              onClick={e => { e.stopPropagation(); setRenamingColId(col._id); setRenameValue(col.name); }}
+                              title="Rename"
+                              className="p-0.5 rounded transition-colors"
+                              style={{ color: "var(--text-3)" }}
+                              onMouseEnter={e => (e.currentTarget.style.color = "var(--text-1)")}
+                              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
+                            </button>
+                            {/* Delete */}
+                            <button
+                              onClick={e => { e.stopPropagation(); if (window.confirm(`Delete "${col.name}"?`)) handleDeleteCollection(col._id); }}
+                              disabled={isDeleting}
+                              title="Delete collection"
+                              className="p-0.5 rounded transition-colors disabled:opacity-40"
+                              style={{ color: "var(--text-3)" }}
+                              onMouseEnter={e => (e.currentTarget.style.color = "var(--error)")}
+                              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                                {isDeleting ? "hourglass_empty" : "delete"}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

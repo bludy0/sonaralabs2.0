@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { formatBytes, formatDate } from "../lib/format";
+import { toast } from "../lib/toast";
 
 interface PlatformStats {
   totalUsers?: number;
@@ -126,7 +127,7 @@ export default function AdminPage() {
         prev.map(u => (u._id === userId ? { ...u, role: newRole } : u))
       );
     } catch {
-      alert("Role could not be updated.");
+      toast("Role could not be updated.", "error");
     } finally {
       setRoleUpdating(null);
     }

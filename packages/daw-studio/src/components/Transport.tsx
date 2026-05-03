@@ -27,21 +27,31 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
   const toggleLoop   = useDAWStore(s => s.toggleLoop)
 
   const { isPlaying, currentTime, play, pause, stop } = useAudioEngine()
+  const masterVolume  = useAudioEngine(s => s.masterVolume)
+  const setMasterVol  = useAudioEngine(s => s.setMasterVol)
 
   const bpmInputRef = useRef<HTMLInputElement>(null)
   const exporting   = useRef(false)
   const [exportState, setExportState] = useState<'idle' | 'wav' | 'mp3'>('idle')
+  const [exportLoop,  setExportLoop]  = useState(false)
 
   async function handleExport(type: 'wav' | 'mp3') {
     if (exporting.current) return
     exporting.current = true
     setExportState(type)
     try {
-      const tracks = useDAWStore.getState().tracks
-      const blob = type === 'wav' ? await exportMix(tracks as any) : await exportMixMp3(tracks as any)
+      const { tracks, transport } = useDAWStore.getState()
+      const loopPoints = exportLoop
+        ? { startSec: transport.loopStart, endSec: transport.loopEnd }
+        : undefined
+      const blob = type === 'wav'
+        ? await exportMix(tracks as any, 44100, loopPoints)
+        : await exportMixMp3(tracks as any)
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      a.href = url; a.download = `mix.${type}`; a.click()
+      a.href = url
+      a.download = `mix.${type}`
+      a.click()
       URL.revokeObjectURL(url)
     } finally {
       exporting.current = false
@@ -211,8 +221,36 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         <SmallTextBtn onClick={addMidi}>+MIDI</SmallTextBtn>
       </div>
 
+      {/* ── Master Volume ───────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '0 10px', borderLeft: `1px solid ${C.border}`,
+        height: '100%',
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: C.text3, whiteSpace: 'nowrap' }}>
+          MASTER
+        </span>
+        <input
+          type="range" min={0} max={1} step={0.01}
+          value={masterVolume}
+          onChange={e => setMasterVol(parseFloat(e.target.value))}
+          title={`Master volume: ${Math.round(masterVolume * 100)}%`}
+          style={{ width: 64, cursor: 'pointer', accentColor: C.accent, margin: 0 }}
+        />
+        <span style={{ fontSize: 9, color: C.text3, width: 26, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+          {Math.round(masterVolume * 100)}%
+        </span>
+      </div>
+
       {/* ── Export ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, padding: '0 12px', borderLeft: `1px solid ${C.border}`, height: '100%', alignItems: 'center' }}>
+        <SmallTextBtn
+          onClick={() => setExportLoop(v => !v)}
+          accent={exportLoop}
+          title={exportLoop ? 'Exporting loop region only' : 'Export full mix (click to export loop only)'}
+        >
+          {exportLoop ? 'LOOP ✓' : 'LOOP'}
+        </SmallTextBtn>
         <SmallTextBtn onClick={() => handleExport('wav')} accent>
           {exportState === 'wav' ? '…' : 'WAV'}
         </SmallTextBtn>
@@ -300,14 +338,16 @@ function IconBtn({ children, active, onClick, title }: {
   )
 }
 
-function SmallTextBtn({ children, onClick, accent }: {
+function SmallTextBtn({ children, onClick, accent, title }: {
   children: React.ReactNode
   onClick: () => void
   accent?: boolean
+  title?: string
 }) {
   return (
     <button
       onClick={onClick}
+      title={title}
       style={{
         padding:       '3px 8px',
         borderRadius:  3,
