@@ -24,6 +24,10 @@ api.interceptors.response.use(
     const originalReq = error.config as any;
 
     // 401 ve auth/refresh endpoint değilse refresh dene
+    // _skipAuthRedirect: true ise (fetchMe gibi) sadece hata fırlat, redirect yapma
+    if (originalReq._skipAuthRedirect) {
+      return Promise.reject(error);
+    }
     if (
       error.response?.status === 401 &&
       !originalReq._retry &&
@@ -44,9 +48,14 @@ api.interceptors.response.use(
         return api(originalReq);
       } catch (refreshError) {
         processQueue(refreshError as AxiosError);
-        // Refresh başarısız — kullanıcıyı login'e yönlendir (zaten /login'deyse döngüyü önle)
-        if (!window.location.pathname.startsWith("/login")) {
-          window.location.href = "/login";
+        // Refresh başarısız — public sayfalarda yönlendirme yapma
+        const PUBLIC = ["/", "/login", "/register", "/verify-email", "/explore"];
+        const isPublic =
+          PUBLIC.includes(window.location.pathname) ||
+          window.location.pathname.startsWith("/profile/") ||
+          window.location.pathname.startsWith("/studio/share/");
+        if (!isPublic) {
+          window.location.href = "/login?reason=expired";
         }
         return Promise.reject(refreshError);
       } finally {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { AxiosError } from "axios";
 import { useAuthStore } from "../store/useAuthStore";
 import { api } from "../lib/api";
@@ -11,9 +11,11 @@ export default function LoginPage() {
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
-  const login      = useAuthStore(s => s.login);
-  const isLoading  = useAuthStore(s => s.isLoading);
-  const navigate   = useNavigate();
+  const login         = useAuthStore(s => s.login);
+  const isLoading     = useAuthStore(s => s.isLoading);
+  const navigate      = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionExpired = searchParams.get("reason") === "expired";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -80,6 +82,20 @@ export default function LoginPage() {
             Welcome back to Sonaralabs
           </p>
         </div>
+
+        {/* Session-expired banner */}
+        {sessionExpired && (
+          <div
+            className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
+            style={{
+              background: "color-mix(in srgb, var(--warning) 10%, transparent)",
+              border:     "1px solid color-mix(in srgb, var(--warning) 30%, transparent)",
+              color:      "var(--warning)",
+            }}
+          >
+            Your session has expired. Please sign in again.
+          </div>
+        )}
 
         {/* Divider */}
         <div className="h-px" style={{ background: "var(--bg-input)" }} />

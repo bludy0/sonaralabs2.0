@@ -70,7 +70,11 @@ export const useAuthStore = create<AuthState>()(
 
       fetchMe: async () => {
         try {
-          const { data } = await api.get("/api/users/me");
+          const { data } = await api.get("/api/users/me", {
+            // interceptor'ın bu isteği refresh döngüsüne sokmaması için
+            // hata durumunda sadece user: null yapacağız (public sayfalarda redirect yok)
+            _skipAuthRedirect: true,
+          } as any);
           set({ user: data.data });
         } catch {
           set({ user: null });
