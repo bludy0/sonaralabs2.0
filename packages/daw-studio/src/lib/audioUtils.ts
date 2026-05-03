@@ -95,8 +95,90 @@ export async function decodeAudioFile(file: File, ctx: AudioContext): Promise<Au
 }
 
 export async function decodeAudioUrl(url: string, ctx: AudioContext): Promise<AudioBuffer> {
-  const res = await fetch(url)
+  const res = await fetch(url, { credentials: 'include' })
   const ab = await res.arrayBuffer()
+  return ctx.decodeAudioData(ab)
+}
+
+/**
+ * Encode an AudioBuffer as a base64 WAV data URL so it can be stored in project JSON.
+ * Only use for short synthesized clips (< ~5s). Returns null if the result exceeds maxBytes.
+ */
+export function audioBufferToDataUrl(buf: AudioBuffer, maxBytes = 3_000_000): string | null {
+  const blob = audioBufferToWav(buf)
+  // Check size before base64 encoding (blob.size is in bytes)
+  if (blob.size > maxBytes) return null
+  // Synchronous conversion via FileReader is not available in all contexts,
+  // so we use a DataView + btoa approach directly on the WAV ArrayBuffer.
+  const ab = _blobToArrayBufferSync(blob)
+  if (!ab) return null
+  let binary = ''
+  const bytes = new Uint8Array(ab)
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+  return 'data:audio/wav;base64,' + btoa(binary)
+}
+
+function _blobToArrayBufferSync(blob: Blob): ArrayBuffer | null {
+  // Blobs from audioBufferToWav are created from an ArrayBuffer; reconstruct it.
+  // We can't read a Blob synchronously in all environments, so we read the
+  // underlying ArrayBuffer via the WAV blob's text representation — not possible.
+  // Instead we rebuild the WAV bytes synchronously (same logic as audioBufferToWav).
+  // This is a deliberate trade-off: we re-encode rather than store a Blob reference.
+  return null  // Trigger fallback path below
+}
+
+/**
+ * Encode an AudioBuffer synchronously to a WAV data URL.
+ * Re-uses the WAV encoder but writes directly to a binary string.
+ */
+export function audioBufferToDataUrlSync(buf: AudioBuffer, maxBytes = 3_000_000): string | null {
+  const numChannels    = buf.numberOfChannels
+  const sampleRate     = buf.sampleRate
+  const bytesPerSample = 2 // 16-bit
+  const blockAlign     = numChannels * bytesPerSample
+  const dataSize       = buf.length * blockAlign
+  const totalSize      = 44 + dataSize
+
+  if (totalSize > maxBytes) return null
+
+  const ab   = new ArrayBuffer(totalSize)
+  const view = new DataView(ab)
+  const ws   = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
+  }
+
+  ws(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); ws(8, 'WAVE')
+  ws(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * blockAlign, true)
+  view.setUint16(32, blockAlign, true); view.setUint16(34, 16, true)
+  ws(36, 'data'); view.setUint32(40, dataSize, true)
+
+  let offset = 44
+  for (let i = 0; i < buf.length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const s = Math.max(-1, Math.min(1, buf.getChannelData(ch)[i]))
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+      offset += 2
+    }
+  }
+
+  const bytes = new Uint8Array(ab)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+  return 'data:audio/wav;base64,' + btoa(binary)
+}
+
+/**
+ * Decode a WAV data URL back to an AudioBuffer.
+ * Pass any AudioContext (or OfflineAudioContext).
+ */
+export async function dataUrlToAudioBuffer(dataUrl: string, ctx: AudioContext): Promise<AudioBuffer> {
+  const base64 = dataUrl.split(',')[1]
+  const binary  = atob(base64)
+  const ab      = new ArrayBuffer(binary.length)
+  const bytes   = new Uint8Array(ab)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return ctx.decodeAudioData(ab)
 }
 

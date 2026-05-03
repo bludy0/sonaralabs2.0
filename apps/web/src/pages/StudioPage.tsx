@@ -9,6 +9,7 @@ import { ProjectPanel }  from '../components/studio/ProjectPanel'
 import { SamplesPanel }  from '../components/studio/SamplesPanel'
 import { PluginsPanel }  from '../components/studio/PluginsPanel'
 import { C } from '../theme'
+import { audioBufferToDataUrlSync, dataUrlToAudioBuffer } from '@sonaralabs/daw-studio'
 
 export interface SavedProjectMeta {
   _id:        string
@@ -166,9 +167,21 @@ export default function StudioPage() {
     setSaving(true); setSaveLabel(null)
     try {
       const rawTracks  = getSaveable()
-      const saveTracks = rawTracks.map(t =>
-        t.type === 'audio' ? { ...t, clips: t.clips.map(c => ({ ...c, buffer: null })) } : t
-      )
+      // For audio clips: keep the URL if it exists (remote/upload).
+      // For synthesized clips (buffer exists, no http URL), encode buffer → WAV data URL.
+      const saveTracks = rawTracks.map(t => {
+        if (t.type !== 'audio') return t
+        return {
+          ...t,
+          clips: t.clips.map(c => {
+            const hasRemoteUrl = c.url && (c.url.startsWith('http') || c.url.startsWith('blob'))
+            const dataUrl = (!hasRemoteUrl && c.buffer)
+              ? audioBufferToDataUrlSync(c.buffer, 3_000_000)
+              : null
+            return { ...c, buffer: null, url: dataUrl ?? c.url ?? '' }
+          }),
+        }
+      })
       const { bpm, loopStart, loopEnd, loopEnabled } = transport
       const payload = { name: projectName, tracks: saveTracks, bpm, loopStart, loopEnd, loopEnabled }
       let res
@@ -210,6 +223,20 @@ export default function StudioPage() {
       setProjectId(p._id)
       setShareToken(p.shareToken ?? null)
       setIsDirty(false)
+      // Decode synthesized clips stored as data URLs back to AudioBuffers
+      if (p.tracks?.length) {
+        const ctx = new AudioContext()
+        for (const track of p.tracks) {
+          if (track.type !== 'audio') continue
+          for (const clip of track.clips ?? []) {
+            if (clip.url?.startsWith('data:audio/')) {
+              dataUrlToAudioBuffer(clip.url, ctx).then((buf: AudioBuffer) => {
+                useDAWStore.getState().updateClip(track.id, clip.id, { buffer: buf })
+              }).catch(() => {})
+            }
+          }
+        }
+      }
     } catch {}
   }
 

@@ -1,47 +1,74 @@
 import { DAWTrack } from '../types'
 import { audioBufferToWav, LoopPoints } from './audioUtils'
 import { audioBufferToMp3 } from './exportMp3'
-import type { WorkerTrack, RenderResult, RenderError } from './renderMixWorker'
+import type { WorkerTrack, WorkerMidiClip, RenderResult, RenderError } from './renderMixWorker'
+import { DEFAULT_SYNTH } from '../types'
 
 /**
- * Serialize a DAWTrack's clips into transferable Float32Arrays for the worker.
- * AudioBuffers cannot cross thread boundaries — we extract raw PCM instead.
+ * Serialize DAWTracks (audio + MIDI) into transferable data for the render worker.
+ * AudioBuffers cannot cross thread boundaries — PCM is extracted as Float32Arrays.
+ * MIDI clips are passed as plain objects (already serialisable).
  */
-function serializeTracks(tracks: DAWTrack[]): { workerTracks: WorkerTrack[]; transferables: ArrayBuffer[] } {
+function serializeTracks(
+  tracks: DAWTrack[],
+  bpm: number,
+): { workerTracks: WorkerTrack[]; transferables: ArrayBuffer[] } {
   const transferables: ArrayBuffer[] = []
-  const workerTracks: WorkerTrack[] = tracks.map(track => ({
-    volume: track.volume,
-    pan: track.pan,
-    muted: track.muted,
-    effects: track.effects,
-    clips: (track.type === 'audio' ? track.clips : [])
-      .filter(c => c.buffer != null)
-      .map(c => {
-        const buf = c.buffer!
-        const channels: Float32Array[] = []
-        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-          const data = new Float32Array(buf.getChannelData(ch)) // own copy, transferable
-          channels.push(data)
-          transferables.push(data.buffer as ArrayBuffer)
-        }
-        return {
-          startTime: c.startTime,
-          trimStart: c.trimStart,
-          trimEnd: c.trimEnd,
-          duration: c.duration,
-          sampleRate: buf.sampleRate,
-          channels,
-        }
-      }),
-  }))
+  const workerTracks: WorkerTrack[] = tracks.map(track => {
+    // ── Audio track ────────────────────────────────────────────────────────
+    if (track.type === 'audio') {
+      const clips = track.clips
+        .filter(c => c.buffer != null)
+        .map(c => {
+          const buf = c.buffer!
+          const channels: Float32Array[] = []
+          for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+            const data = new Float32Array(buf.getChannelData(ch))
+            channels.push(data)
+            transferables.push(data.buffer as ArrayBuffer)
+          }
+          return {
+            startTime: c.startTime,
+            trimStart: c.trimStart,
+            trimEnd:   c.trimEnd,
+            duration:  c.duration,
+            sampleRate: buf.sampleRate,
+            channels,
+          }
+        })
+      return {
+        volume: track.volume, pan: track.pan, muted: track.muted,
+        effects: track.effects, bpm,
+        clips, midiClips: [], synth: null,
+      }
+    }
+
+    // ── MIDI track ─────────────────────────────────────────────────────────
+    const midiClips: WorkerMidiClip[] = track.clips.map(mc => ({
+      startTime:     mc.startTime,
+      durationBeats: mc.durationBeats,
+      loopBeats:     mc.loopBeats ?? mc.durationBeats,
+      notes:         mc.notes.map(n => ({
+        pitch:         n.pitch,
+        velocity:      n.velocity,
+        startBeat:     n.startBeat,
+        durationBeats: n.durationBeats,
+      })),
+    }))
+    return {
+      volume: track.volume, pan: track.pan, muted: track.muted,
+      effects: track.effects, bpm,
+      clips: [], midiClips, synth: track.synth ?? DEFAULT_SYNTH,
+    }
+  })
   return { workerTracks, transferables }
 }
 
 /**
- * Render all tracks via a Web Worker (OfflineAudioContext off main thread).
+ * Render all tracks (audio + MIDI) via a Web Worker.
  * Returns an AudioBuffer assembled from the worker's rendered PCM.
  */
-export function renderMix(tracks: DAWTrack[], sampleRate = 44100): Promise<AudioBuffer> {
+export function renderMix(tracks: DAWTrack[], sampleRate = 44100, bpm = 120): Promise<AudioBuffer> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./renderMixWorker.ts', import.meta.url), { type: 'module' })
 
@@ -52,7 +79,6 @@ export function renderMix(tracks: DAWTrack[], sampleRate = 44100): Promise<Audio
         reject(new Error(msg.message))
         return
       }
-      // Reassemble AudioBuffer from returned Float32Arrays
       const ctx = new OfflineAudioContext(msg.channels.length, msg.length, msg.sampleRate)
       const buf = ctx.createBuffer(msg.channels.length, msg.length, msg.sampleRate)
       for (let ch = 0; ch < msg.channels.length; ch++) {
@@ -66,7 +92,7 @@ export function renderMix(tracks: DAWTrack[], sampleRate = 44100): Promise<Audio
       reject(new Error(err.message))
     }
 
-    const { workerTracks, transferables } = serializeTracks(tracks)
+    const { workerTracks, transferables } = serializeTracks(tracks, bpm)
     worker.postMessage({ type: 'render', tracks: workerTracks, sampleRate }, { transfer: transferables })
   })
 }
@@ -76,8 +102,9 @@ export async function exportMix(
   tracks: DAWTrack[],
   sampleRate = 44100,
   loopPoints?: LoopPoints,
+  bpm = 120,
 ): Promise<Blob> {
-  const buf = await renderMix(tracks, sampleRate)
+  const buf = await renderMix(tracks, sampleRate, bpm)
   return audioBufferToWav(buf, loopPoints)
 }
 
@@ -86,8 +113,9 @@ export async function exportMixMp3(
   tracks: DAWTrack[],
   sampleRate = 44100,
   kbps = 192,
+  bpm = 120,
 ): Promise<Blob> {
-  const buf = await renderMix(tracks, sampleRate)
+  const buf = await renderMix(tracks, sampleRate, bpm)
   return audioBufferToMp3(buf, kbps)
 }
 

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sentry/react": "^10.51.0",
     "@sonaralabs/daw-studio": "workspace:*",
     "@sonaralabs/types": "workspace:*",
     "axios": "^1.7.9",

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { getCookie } from "hono/cookie";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { createClient } from "redis";
 import jwt from "jsonwebtoken";
 import type { Context, MiddlewareHandler } from "hono";
@@ -171,6 +172,16 @@ async function proxyTo(c: Context, baseUrl: string, overridePath?: string): Prom
 
 // ── APP ───────────────────────────────────────────────────────────────────────
 const app = new Hono();
+
+// Security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, etc.)
+app.use("*", secureHeaders({
+  xFrameOptions:           "DENY",
+  xContentTypeOptions:     "nosniff",
+  referrerPolicy:          "strict-origin-when-cross-origin",
+  strictTransportSecurity: "max-age=63072000; includeSubDomains",
+  // CSP intentionally omitted — frontend uses blob: URLs for audio and data: URLs for samples.
+  // A per-route CSP can be added later if needed.
+}));
 
 // CORS
 app.use("*", cors({

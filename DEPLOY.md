@@ -126,9 +126,22 @@ PROFILE_SERVICE_URL=https://profile.railway.internal
 SOCIAL_SERVICE_URL=https://social.railway.internal
 ```
 
+#### Generation & Upload servisleri — MINIO_PUBLIC_URL (kritik!)
+```
+# Backblaze B2 public URL (tarayıcıların sese eriştiği adres)
+MINIO_PUBLIC_URL=https://f005.backblazeb2.com/file/sonaralabs-audio
+# veya CDN domain'iniz varsa:
+# MINIO_PUBLIC_URL=https://cdn.sonaralabs.io
+```
+Bu değer **boş bırakılırsa** ses dosyalarının URL'leri `http://localhost:9000` olarak kaydedilir
+ve production'da ses çalmaz.
+
 #### Frontend
 ```
 VITE_API_BASE_URL=https://gateway.railway.app
+# Sentry hata izleme (ücretsiz 5k error/ay — https://sentry.io)
+VITE_SENTRY_DSN=https://xxxx@yyy.ingest.sentry.io/zzz
+VITE_APP_VERSION=1.0.0
 ```
 
 ### 4. Backblaze B2 bucket ayarları
@@ -147,11 +160,42 @@ b2 update-bucket --corsRules '[{
 }]' sonaralabs-audio
 ```
 
-### 5. PostgreSQL migration
+### 5. PostgreSQL (Railway plugin)
 
-Profile ve social servisleri ilk çalışmada tabloları otomatik oluşturur (`migrate()` fonksiyonu).
+Railway dashboard → "Add Plugin" → PostgreSQL seç.
+`DATABASE_URL` otomatik olarak `profile` ve `social` servislerine enjekte edilir.
+Tablolar ilk çalışmada otomatik oluşturulur (`migrate()` fonksiyonu).
 
-### 6. Sağlık kontrolü
+### 6. MongoDB Atlas — Yedek (backup)
+
+M0 (free tier) otomatik backup **içermez**. Seçenekler:
+
+| Yöntem | Maliyet | Açıklama |
+|--------|---------|----------|
+| Atlas M10+ | $57/ay | Continuous backup + point-in-time restore |
+| `mongodump` cron (Railway) | Ücretsiz | Günlük `mongodump \| gzip` → B2'ye yükle |
+| Atlas Scheduled Snapshots | M2/M5'te | Günlük snapshot, 7 gün saklama |
+
+**Minimum önerilen:** Atlas M2 ($9/ay) — snapshot backup dahil.
+
+Backup cron script:
+```bash
+# services/backup/backup.sh (Railway cron service olarak eklenebilir)
+#!/bin/sh
+DATE=$(date +%Y%m%d_%H%M)
+mongodump --uri="$MONGO_URI" --archive | gzip > /tmp/backup_$DATE.gz
+b2 upload-file sonaralabs-backups /tmp/backup_$DATE.gz backup_$DATE.gz
+rm /tmp/backup_$DATE.gz
+```
+
+### 7. Monitoring (Sentry)
+
+1. [sentry.io](https://sentry.io) → New Project → React
+2. DSN'i kopyala
+3. Frontend Railway servisine `VITE_SENTRY_DSN` olarak ekle
+4. (Opsiyonel) Gateway için `@sentry/node` eklenebilir
+
+### 8. Sağlık kontrolü
 
 ```bash
 curl https://gateway.railway.app/health

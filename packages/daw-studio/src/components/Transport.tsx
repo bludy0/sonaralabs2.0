@@ -45,8 +45,8 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         ? { startSec: transport.loopStart, endSec: transport.loopEnd }
         : undefined
       const blob = type === 'wav'
-        ? await exportMix(tracks as any, 44100, loopPoints)
-        : await exportMixMp3(tracks as any)
+        ? await exportMix(tracks as any, 44100, loopPoints, transport.bpm)
+        : await exportMixMp3(tracks as any, 44100, 192, transport.bpm)
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url
