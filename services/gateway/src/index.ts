@@ -219,10 +219,13 @@ app.all ("/api/upload/*", requireAuth, generalLimiter, (c) =>
 );
 
 // Library + Collections
-app.all("/api/library/*",     requireAuth, generalLimiter, (c) =>
+app.all("/api/library/*", requireAuth, generalLimiter, (c) =>
   proxyTo(c, LIBRARY_SERVICE_URL, c.req.path.replace("/api/library", "") || "/")
 );
-app.all("/api/collections/*", requireAuth, generalLimiter, (c) =>
+// Collections — explicit base-path routes (Hono's /* does not match bare /api/collections)
+app.get ("/api/collections",   requireAuth, generalLimiter, (c) => proxyTo(c, LIBRARY_SERVICE_URL, "/collections"));
+app.post("/api/collections",   requireAuth, generalLimiter, (c) => proxyTo(c, LIBRARY_SERVICE_URL, "/collections"));
+app.all ("/api/collections/*", requireAuth, generalLimiter, (c) =>
   proxyTo(c, LIBRARY_SERVICE_URL, "/collections" + c.req.path.replace("/api/collections", ""))
 );
 

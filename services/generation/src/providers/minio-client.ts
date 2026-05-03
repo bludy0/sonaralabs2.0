@@ -6,11 +6,16 @@
  */
 import * as Minio from "minio";
 
-const MINIO_ENDPOINT  = process.env.MINIO_ENDPOINT  || "localhost";
-const MINIO_PORT      = parseInt(process.env.MINIO_PORT || "9000");
+const MINIO_ENDPOINT   = process.env.MINIO_ENDPOINT  || "localhost";
+const MINIO_PORT       = parseInt(process.env.MINIO_PORT || "9000");
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || "minioadmin";
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || "minioadmin";
-const MINIO_USE_SSL   = process.env.MINIO_USE_SSL === "true";
+const MINIO_USE_SSL    = process.env.MINIO_USE_SSL === "true";
+
+// Browser-accessible base URL (bucket has anonymous-download policy).
+// Dev: localhost:9000 (Docker port-mapped). Prod: set MINIO_PUBLIC_URL to CDN/B2.
+const MINIO_PUBLIC_BASE = process.env.MINIO_PUBLIC_URL
+  ?? `http://localhost:${MINIO_PORT}`;
 
 export const MINIO_BUCKET = process.env.MINIO_BUCKET || "sonaralabs-audio";
 
@@ -33,7 +38,5 @@ export async function uploadAudioBuffer(
   await minioClient.putObject(MINIO_BUCKET, objectName, buffer, buffer.length, {
     "Content-Type": contentType,
   });
-  // Dev: http, Prod: MINIO_USE_SSL=true → https
-  const proto = MINIO_USE_SSL ? "https" : "http";
-  return `${proto}://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET}/${objectName}`;
+  return `${MINIO_PUBLIC_BASE}/${MINIO_BUCKET}/${objectName}`;
 }

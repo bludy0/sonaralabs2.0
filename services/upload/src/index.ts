@@ -18,9 +18,16 @@ const {
   MINIO_ENDPOINT = "minio", MINIO_PORT = "9000",
   MINIO_ACCESS_KEY = "minioadmin", MINIO_SECRET_KEY = "minioadmin",
   MINIO_BUCKET = "sonaralabs-audio",
+  // MINIO_PUBLIC_URL: browser-accessible base URL for stored files.
+  // Dev default = localhost (bucket policy = anonymous download, port 9000 exposed).
+  // Prod: set to CDN / Backblaze public URL.
+  MINIO_PUBLIC_URL,
   STORAGE_QUOTA_BYTES = "524288000",  // 500 MB
   MAX_FILE_SIZE_BYTES = "52428800",   // 50 MB
 } = process.env;
+
+// URL that browsers can reach — falls back to localhost when running outside Docker
+const MINIO_PUBLIC_BASE = MINIO_PUBLIC_URL ?? `http://localhost:${MINIO_PORT}`;
 
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
@@ -118,7 +125,7 @@ app.post("/", upload.single("file"), async (req, res) => {
       return res.status(502).json({ success: false, error: "Storage backend error. Please try again." });
     }
     fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
-    const audioUrl = `http://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET}/${key}`;
+    const audioUrl = `${MINIO_PUBLIC_BASE}/${MINIO_BUCKET}/${key}`;
 
     const doc = await Upload.create({
       userId, originalName: req.file.originalname,

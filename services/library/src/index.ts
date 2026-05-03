@@ -255,14 +255,17 @@ app.get("/projects/share/:token", async (req, res) => {
   } catch { res.status(500).json({ success: false, error: "Failed" }); }
 });
 
-// GET /projects — list my projects
+// GET /projects — list my projects (with trackCount, without full tracks payload)
 app.get("/projects", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const projects = await DawProject.find({ userId })
-      .select("_id name bpm masterVolume isPublic shareToken createdAt updatedAt")
-      .sort({ updatedAt: -1 })
-      .lean();
+    const projects = await DawProject.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+      { $addFields: { trackCount: { $size: { $ifNull: ["$tracks", []] } } } },
+      { $project: { _id: 1, name: 1, bpm: 1, isPublic: 1, shareToken: 1,
+                    createdAt: 1, updatedAt: 1, trackCount: 1 } },
+      { $sort: { updatedAt: -1 } },
+    ]);
     res.json({ success: true, data: projects } as ApiResponse);
   } catch { res.status(500).json({ success: false, error: "Failed" }); }
 });
