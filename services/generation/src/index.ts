@@ -382,6 +382,19 @@ app.patch("/internal/generations/:id/favorite", async (req, res) => {
   }
 });
 
+// DELETE /internal/generations/:id — for library service
+app.delete("/internal/generations/:id", async (req, res) => {
+  try {
+    getPayload(req);
+    const userId = req.query.userId as string;
+    const result = await Generation.findOneAndDelete({ _id: req.params.id, userId });
+    if (!result) return res.status(404).json({ success: false, error: "Not found" });
+    res.json({ success: true, message: "Deleted" } as ApiResponse);
+  } catch {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
 // GET /internal/generations — for library service
 app.get("/internal/generations", async (req, res) => {
   try {
@@ -389,6 +402,7 @@ app.get("/internal/generations", async (req, res) => {
     const userId = req.query.userId as string;
     const limit  = Math.min(200, parseInt(req.query.limit as string) || 50);
     const type   = req.query.type as GenerationType | undefined;
+    // Library şu an sadece "done" gösteriyor; status parametresi eklenerek genişletilebilir
     const filter: Record<string, unknown> = { userId, status: "done" };
     if (type) filter.type = type;
     const items = await Generation.find(filter).sort({ createdAt: -1 }).limit(limit);

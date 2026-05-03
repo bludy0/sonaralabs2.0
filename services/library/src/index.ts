@@ -142,8 +142,10 @@ app.delete("/:model/:id", async (req, res) => {
 
     if (model === "upload") {
       await axios.delete(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}?userId=${userId}`, { headers });
+    } else if (model === "generation") {
+      await axios.delete(`${GENERATION_SERVICE_URL}/internal/generations/${id}?userId=${userId}`, { headers });
     } else {
-      return res.status(400).json({ success: false, error: "Only uploads can be deleted from library directly." });
+      return res.status(400).json({ success: false, error: "Model must be 'generation' or 'upload'." });
     }
 
     res.json({ success: true, message: "Deleted" } as ApiResponse);

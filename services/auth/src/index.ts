@@ -282,9 +282,8 @@ app.post("/register", async (req, res) => {
       console.error("[auth] Email gönderilemedi:", err.message)
     );
 
-    // Kayıt bonusu: şu an 0 — iletişim sonrası manuel verilir
-    // Aktif etmek için INITIAL_CREDIT_BALANCE env'ini ayarla
-    const INITIAL_CREDIT = parseInt(process.env.INITIAL_CREDIT_BALANCE ?? "0");
+    // Kayıt bonusu: default 100 kredi. Sıfırlamak için INITIAL_CREDIT_BALANCE=0 set et.
+    const INITIAL_CREDIT = parseInt(process.env.INITIAL_CREDIT_BALANCE ?? "100");
     if (INITIAL_CREDIT > 0) {
       const internalToken = jwt.sign(
         { sub: String(user._id), role: user.role, _internal: true },

@@ -16,8 +16,12 @@ const {
   MINIO_SECRET_KEY = "minioadmin",
   MINIO_USE_SSL    = "false",
   MINIO_BUCKET_AVATARS = "sonaralabs-avatars",
+  MINIO_PUBLIC_URL,                            // browser-accessible base URL
   AVATAR_MAX_BYTES = "5242880", // 5 MB
 } = process.env;
+
+// URL tarayıcının erişebileceği formatta döner (Docker internal değil)
+const MINIO_PUBLIC_BASE = MINIO_PUBLIC_URL ?? `http://localhost:${MINIO_PORT}`;
 
 if (!DATABASE_URL || !INTERNAL_JWT_SECRET) {
   console.error("[profile] Missing DATABASE_URL or INTERNAL_JWT_SECRET");
@@ -78,7 +82,7 @@ async function ensureBucket() {
 }
 
 function avatarUrl(objectName: string): string {
-  return `http://${MINIO_ENDPOINT}:${MINIO_PORT}/${MINIO_BUCKET_AVATARS}/${objectName}`;
+  return `${MINIO_PUBLIC_BASE}/${MINIO_BUCKET_AVATARS}/${objectName}`;
 }
 
 function rowToProfile(row: Record<string, unknown>): UserProfile {

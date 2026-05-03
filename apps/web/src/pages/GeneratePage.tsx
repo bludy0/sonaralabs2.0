@@ -18,10 +18,11 @@ import type { GenerationItem } from "../store/useGenerationStore";
 const STYLES: MusicStyle[]            = ["ambient", "action", "puzzle", "horror", "platformer"];
 const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
+// Lyria provider UI'da gösterilmiyor — backend provider map'e henüz eklenmedi.
+// Hazır olduğunda bu listeye { value: "lyria", label: "Lyria" } ekle.
 const PROVIDERS: { value: MusicProvider; label: string }[] = [
   { value: "beatoven", label: "Beatoven" },
   { value: "sonauto",  label: "Sonauto" },
-  { value: "lyria",    label: "Lyria (soon)" },
 ];
 
 const MAX_IMAGE_BYTES     = 10 * 1024 * 1024;

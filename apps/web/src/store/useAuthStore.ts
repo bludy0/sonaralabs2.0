@@ -46,7 +46,8 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const { data } = await api.post("/api/auth/register", { email, password });
-          if (data.requiresVerification) {
+          // Response format: { success, data: { requiresVerification, email, message } }
+          if (data.data?.requiresVerification) {
             // Email verification required — no cookie set, user stays null
             return true;
           }
@@ -76,6 +77,8 @@ export const useAuthStore = create<AuthState>()(
             _skipAuthRedirect: true,
           } as any);
           set({ user: data.data });
+          // Profile service'de profil yoksa otomatik upsert eder (social publish için gerekli)
+          api.get("/api/profile/me", { _skipAuthRedirect: true } as any).catch(() => {});
         } catch {
           set({ user: null });
         }
