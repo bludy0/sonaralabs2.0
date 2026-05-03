@@ -58,28 +58,46 @@ export function redo() {
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
+// ── Clipboard ─────────────────────────────────────────────────────────────────
+interface ClipboardItem {
+  type:             'audio' | 'midi'
+  trackId:          string
+  clipSnapshot:     Omit<AudioClip | MidiClip, 'id'>
+  offsetFromAnchor: number   // seconds from earliest selected clip's startTime
+}
+
 interface DAWState {
-  tracks:          DAWTrack[]
-  transport:       TransportState
-  automationLanes: AutomationLane[]
-  selectedTrackId: string | null
-  selectedClipId:  string | null
-  zoom:            number
+  tracks:           DAWTrack[]
+  transport:        TransportState
+  automationLanes:  AutomationLane[]
+  selectedTrackId:  string | null
+  selectedClipId:   string | null   // primary selection (for piano roll)
+  selectedClipIds:  string[]        // multi-selection (superset of selectedClipId)
+  clipboard:        ClipboardItem[] | null
+  zoom:             number
 
   // Track mutations
-  addAudioTrack: () => void
-  addMidiTrack:  () => void
-  removeTrack:   (trackId: string) => void
-  updateTrack:   (trackId: string, patch: Partial<Omit<AudioTrack | MidiTrack, 'id' | 'type'>>) => void
-  selectTrack:   (trackId: string | null) => void
+  addAudioTrack:  () => void
+  addMidiTrack:   () => void
+  removeTrack:    (trackId: string) => void
+  updateTrack:    (trackId: string, patch: Partial<Omit<AudioTrack | MidiTrack, 'id' | 'type'>>) => void
+  selectTrack:    (trackId: string | null) => void
+  reorderTracks:  (fromId: string, toId: string) => void
 
   // Audio clip mutations
-  addClip:       (trackId: string, clip: Omit<AudioClip, 'id'>) => string
-  removeClip:    (trackId: string, clipId: string) => void
-  updateClip:    (trackId: string, clipId: string, patch: Partial<AudioClip>) => void
-  moveClip:      (trackId: string, clipId: string, newStart: number) => void
-  duplicateClip: (trackId: string, clipId: string) => void
-  selectClip:    (clipId: string | null) => void
+  addClip:              (trackId: string, clip: Omit<AudioClip, 'id'>) => string
+  removeClip:           (trackId: string, clipId: string) => void
+  updateClip:           (trackId: string, clipId: string, patch: Partial<AudioClip>) => void
+  moveClip:             (trackId: string, clipId: string, newStart: number) => void
+  moveSelectedClips:    (anchorClipId: string, newAnchorStart: number) => void
+  commitSelectedClipsMove: () => void
+  duplicateClip:        (trackId: string, clipId: string) => void
+  selectClip:           (clipId: string | null) => void
+  selectClipsInRect:    (ids: string[]) => void
+  toggleClipSelection:  (clipId: string) => void
+  selectAllClipsOnTrack:(trackId: string) => void
+  copySelectedClips:    () => void
+  pasteClips:           () => void
 
   // MIDI clip mutations
   addMidiClip:    (trackId: string, clip: Omit<MidiClip, 'id'>) => string
@@ -116,9 +134,10 @@ interface DAWState {
   setZoom: (z: number) => void
 
   // Project
-  reset:       () => void
-  loadTracks:  (tracks: DAWTrack[]) => void
-  getSaveable: () => DAWTrack[]
+  reset:         () => void
+  loadTracks:    (tracks: DAWTrack[]) => void
+  loadTransport: (patch: Partial<TransportState>) => void
+  getSaveable:   () => DAWTrack[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -185,6 +204,8 @@ export const useDAWStore = create<DAWState>((set, get) => {
     automationLanes: [],
     selectedTrackId: null,
     selectedClipId:  null,
+    selectedClipIds: [],
+    clipboard:       null,
     zoom:            DEFAULTS.PIXELS_PER_SECOND,
 
     // ── Tracks ────────────────────────────────────────────────────────────────
@@ -211,6 +232,17 @@ export const useDAWStore = create<DAWState>((set, get) => {
 
     selectTrack: (trackId) => set({ selectedTrackId: trackId }),
 
+    reorderTracks: (fromId, toId) =>
+      record(s => {
+        const tracks  = [...s.tracks]
+        const fromIdx = tracks.findIndex(t => t.id === fromId)
+        const toIdx   = tracks.findIndex(t => t.id === toId)
+        if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return {}
+        const [moved] = tracks.splice(fromIdx, 1)
+        tracks.splice(toIdx, 0, moved)
+        return { tracks }
+      }),
+
     // ── Audio clips ───────────────────────────────────────────────────────────
 
     addClip: (trackId, clip) => {
@@ -232,7 +264,8 @@ export const useDAWStore = create<DAWState>((set, get) => {
             ? { ...t, clips: t.clips.filter(c => c.id !== clipId) }
             : t
         ),
-        selectedClipId: get().selectedClipId === clipId ? null : get().selectedClipId,
+        selectedClipId:  s.selectedClipId  === clipId ? null : s.selectedClipId,
+        selectedClipIds: s.selectedClipIds.filter(id => id !== clipId),
       })),
 
     updateClip: (trackId, clipId, patch) =>
@@ -270,7 +303,190 @@ export const useDAWStore = create<DAWState>((set, get) => {
         }),
       })),
 
-    selectClip: (clipId) => set({ selectedClipId: clipId }),
+    // ── Multi-clip drag (live, no undo record — call commitSelectedClipsMove on mouseup) ──
+    moveSelectedClips: (anchorClipId, newAnchorStart) => {
+      const { tracks, selectedClipIds, transport } = get()
+
+      // Find anchor's current start
+      let anchorCurrent = 0
+      for (const t of tracks) {
+        if (t.type === 'audio') {
+          const c = t.clips.find(c => c.id === anchorClipId)
+          if (c) { anchorCurrent = c.startTime; break }
+        }
+      }
+
+      const snapped = transport.snapEnabled
+        ? snapTime(newAnchorStart, transport.bpm, transport.snapBeats)
+        : newAnchorStart
+      const delta = snapped - anchorCurrent
+      if (Math.abs(delta) < 0.0001) return
+
+      // Clamp so nothing goes below t=0
+      let minStart = Infinity
+      for (const t of tracks) {
+        for (const c of (t.type === 'audio' ? t.clips : [])) {
+          if (selectedClipIds.includes(c.id) && c.startTime < minStart) minStart = c.startTime
+        }
+      }
+      const d = Math.max(delta, -minStart)
+
+      set(s => ({
+        tracks: s.tracks.map(t =>
+          t.type !== 'audio' ? t : {
+            ...t,
+            clips: t.clips.map(c =>
+              selectedClipIds.includes(c.id) ? { ...c, startTime: c.startTime + d } : c
+            ),
+          }
+        ),
+      }))
+    },
+
+    // Call on mouseup to push final positions into undo history
+    commitSelectedClipsMove: () => {
+      record(s => ({ tracks: s.tracks }))
+    },
+
+    // Marquee result: select exactly these clip ids
+    selectClipsInRect: (ids) => set({
+      selectedClipIds: ids,
+      selectedClipId:  ids[ids.length - 1] ?? null,
+    }),
+
+    selectClip: (clipId) => set({
+      selectedClipId:  clipId,
+      selectedClipIds: clipId ? [clipId] : [],
+    }),
+
+    // Shift+click — add/remove from multi-selection without clearing others
+    toggleClipSelection: (clipId) => set(s => {
+      const already = s.selectedClipIds.includes(clipId)
+      const next    = already
+        ? s.selectedClipIds.filter(id => id !== clipId)
+        : [...s.selectedClipIds, clipId]
+      return {
+        selectedClipIds: next,
+        // Keep primary selectedClipId if it's still in the set; otherwise use last
+        selectedClipId: next.includes(s.selectedClipId ?? '') ? s.selectedClipId : (next[next.length - 1] ?? null),
+      }
+    }),
+
+    // Ctrl+A — select all clips on a track
+    selectAllClipsOnTrack: (trackId) => set(s => {
+      const track = s.tracks.find(t => t.id === trackId)
+      if (!track) return {}
+      const ids = track.type === 'audio'
+        ? track.clips.map(c => c.id)
+        : track.type === 'midi' ? track.clips.map(c => c.id) : []
+      return {
+        selectedClipIds: ids,
+        selectedClipId:  ids[ids.length - 1] ?? null,
+      }
+    }),
+
+    // Ctrl+C — snapshot selected clips into clipboard
+    copySelectedClips: () => {
+      const { tracks, selectedClipIds } = get()
+      if (selectedClipIds.length === 0) return
+
+      const items: ClipboardItem[] = []
+      let minStart = Infinity
+
+      for (const track of tracks) {
+        const clips = track.type === 'audio'
+          ? track.clips.filter(c => selectedClipIds.includes(c.id))
+          : track.type === 'midi'
+            ? track.clips.filter(c => selectedClipIds.includes(c.id))
+            : []
+        for (const clip of clips) {
+          if (clip.startTime < minStart) minStart = clip.startTime
+        }
+      }
+
+      for (const track of tracks) {
+        const clips = track.type === 'audio'
+          ? track.clips.filter(c => selectedClipIds.includes(c.id))
+          : track.type === 'midi'
+            ? track.clips.filter(c => selectedClipIds.includes(c.id))
+            : []
+        for (const clip of clips) {
+          const { id: _id, ...rest } = clip as AudioClip & { id: string }
+          items.push({
+            type:             track.type as 'audio' | 'midi',
+            trackId:          track.id,
+            clipSnapshot:     rest,
+            offsetFromAnchor: clip.startTime - minStart,
+          })
+        }
+      }
+
+      set({ clipboard: items })
+    },
+
+    // Ctrl+V — paste clipboard clips right after the last selected clip
+    pasteClips: () => {
+      const { tracks, selectedClipIds, clipboard } = get()
+      if (!clipboard || clipboard.length === 0) return
+
+      // Find the end of the current selection to use as paste anchor
+      let anchorEnd = 0
+      for (const track of tracks) {
+        const clips = track.type === 'audio'
+          ? track.clips.filter(c => selectedClipIds.includes(c.id))
+          : track.type === 'midi'
+            ? track.clips.filter(c => selectedClipIds.includes(c.id))
+            : []
+        for (const clip of clips) {
+          const end = clip.startTime + (
+            (clip as AudioClip).trimEnd !== undefined
+              ? (clip as AudioClip).duration - (clip as AudioClip).trimStart - (clip as AudioClip).trimEnd
+              : (clip as MidiClip).durationBeats ?? clip.startTime
+          )
+          if (end > anchorEnd) anchorEnd = end
+        }
+      }
+      // Fallback: if nothing selected, paste after the last clip on any track
+      if (anchorEnd === 0) {
+        for (const track of tracks) {
+          const clips = track.type === 'audio' ? track.clips : track.type === 'midi' ? track.clips : []
+          for (const clip of clips) {
+            const end = clip.startTime + ((clip as AudioClip).duration ?? 0)
+            if (end > anchorEnd) anchorEnd = end
+          }
+        }
+      }
+
+      const newIds: string[] = []
+      record(s => {
+        const nextTracks = s.tracks.map(track => {
+          const trackItems = clipboard.filter(item => item.trackId === track.id)
+          if (trackItems.length === 0) return track
+
+          if (track.type === 'audio') {
+            const newClips = trackItems.map(item => {
+              const id  = uuid()
+              newIds.push(id)
+              return { ...(item.clipSnapshot as Omit<AudioClip, 'id'>), id, startTime: anchorEnd + item.offsetFromAnchor }
+            })
+            return { ...track, clips: [...track.clips, ...newClips] }
+          }
+          if (track.type === 'midi') {
+            const newClips = trackItems.map(item => {
+              const id  = uuid()
+              newIds.push(id)
+              return { ...(item.clipSnapshot as Omit<MidiClip, 'id'>), id, startTime: anchorEnd + item.offsetFromAnchor }
+            })
+            return { ...track, clips: [...track.clips, ...newClips] }
+          }
+          return track
+        })
+        return { tracks: nextTracks }
+      })
+
+      // Select the newly pasted clips
+      set({ selectedClipIds: newIds, selectedClipId: newIds[newIds.length - 1] ?? null })
+    },
 
     // ── MIDI clips ────────────────────────────────────────────────────────────
 
@@ -441,10 +657,13 @@ export const useDAWStore = create<DAWState>((set, get) => {
     reset: () => {
       _past.length = 0
       _future.length = 0
-      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null })
+      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null, selectedClipIds: [], clipboard: null })
     },
 
     loadTracks: (tracks) => set({ tracks }),
+
+    loadTransport: (patch) =>
+      set(s => ({ transport: { ...s.transport, ...patch } })),
 
     getSaveable: () => get().tracks,
   }

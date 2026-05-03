@@ -10,7 +10,10 @@ import { useAudioEngine } from '../store/useAudioEngine'
  * Shift+Space    — Stop
  * L              — Toggle loop
  * S              — Toggle snap
- * Delete/Back    — Remove selected clip
+ * Delete/Back    — Remove selected clip(s)
+ * Ctrl+A         — Select all clips on selected track
+ * Ctrl+C         — Copy selected clip(s)
+ * Ctrl+V         — Paste clipboard clips after selection
  * Ctrl+D         — Duplicate selected clip
  * Ctrl+Z         — Undo
  * Ctrl+Shift+Z   — Redo
@@ -68,19 +71,51 @@ export function useDAWKeyboard() {
           if (!ctrl) { e.preventDefault(); store.getState().toggleSnap() }
           break
 
-        // ── Selected clip actions ─────────────────────────────────────────
+        // ── Select all clips on selected track ────────────────────────────
+        case 'a':
+        case 'A':
+          if (ctrl) {
+            e.preventDefault()
+            const { selectedTrackId } = store.getState()
+            if (selectedTrackId) store.getState().selectAllClipsOnTrack(selectedTrackId)
+          }
+          break
+
+        // ── Copy ─────────────────────────────────────────────────────────
+        case 'c':
+        case 'C':
+          if (ctrl) {
+            e.preventDefault()
+            store.getState().copySelectedClips()
+          }
+          break
+
+        // ── Paste ─────────────────────────────────────────────────────────
+        case 'v':
+        case 'V':
+          if (ctrl) {
+            e.preventDefault()
+            store.getState().pasteClips()
+          }
+          break
+
+        // ── Delete selected clip(s) ───────────────────────────────────────
         case 'Delete':
         case 'Backspace': {
-          const { selectedClipId, tracks } = store.getState()
-          if (!selectedClipId) break
+          const { selectedClipIds, tracks } = store.getState()
+          if (selectedClipIds.length === 0) break
+          e.preventDefault()
+          const idSet = new Set(selectedClipIds)
           for (const t of tracks) {
             if (t.type === 'audio') {
-              const clip = t.clips.find(c => c.id === selectedClipId)
-              if (clip) { store.getState().removeClip(t.id, selectedClipId); break }
+              for (const clip of t.clips) {
+                if (idSet.has(clip.id)) store.getState().removeClip(t.id, clip.id)
+              }
             }
             if (t.type === 'midi') {
-              const clip = t.clips.find(c => c.id === selectedClipId)
-              if (clip) { store.getState().removeMidiClip(t.id, selectedClipId); break }
+              for (const clip of t.clips) {
+                if (idSet.has(clip.id)) store.getState().removeMidiClip(t.id, clip.id)
+              }
             }
           }
           store.getState().selectClip(null)

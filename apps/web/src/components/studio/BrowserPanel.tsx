@@ -1,8 +1,12 @@
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { api } from '../../lib/api'
 import { useDAWStore } from '@sonaralabs/daw-studio'
 import { formatDuration } from '../../lib/format'
 import { C } from '../../theme'
+import { toast } from '../../lib/toast'
+
+// Must match the type string in TrackRow.tsx
+const DND_ITEM_TYPE = 'application/x-daw-item'
 
 // ── Design tokens (DAW tema ile uyumlu) ─────────────────────────────────────
 
@@ -20,6 +24,15 @@ interface LibraryItem {
 
 type Filter = 'all' | 'generations' | 'uploads'
 
+// Existing DB records may have internal Docker hostname (http://minio:PORT/...).
+// The bucket has anonymous-download policy and port 9000 is mapped to localhost,
+// so we can simply swap the hostname to make them browser-accessible.
+const MINIO_PUBLIC = import.meta.env.VITE_MINIO_PUBLIC_URL ?? 'http://localhost:9000'
+function fixUrl(url: string | undefined): string | undefined {
+  if (!url) return url
+  return url.replace(/^https?:\/\/minio:\d+/, MINIO_PUBLIC)
+}
+
 export function BrowserPanel() {
   const addAudioTrack = useDAWStore(s => s.addAudioTrack)
   const addClip       = useDAWStore(s => s.addClip)
@@ -35,7 +48,9 @@ export function BrowserPanel() {
     setLoading(true)
     try {
       const { data } = await api.get('/api/library', { params: { page: 1, limit: 100 } })
-      const all: LibraryItem[] = data.items ?? data.data?.items ?? []
+      const raw: LibraryItem[] = data.items ?? data.data?.items ?? []
+      // Normalise stored MinIO internal URLs → browser-accessible localhost URLs
+      const all = raw.map(i => ({ ...i, audioUrl: fixUrl(i.audioUrl) }))
       setItems(all.filter(i => i.audioUrl && (!i.status || i.status === 'done')))
     } catch {}
     finally { setLoading(false) }
@@ -66,6 +81,7 @@ export function BrowserPanel() {
       setAddedIds(prev => new Set(prev).add(item._id))
     } catch (err) {
       console.error('BrowserPanel: addToDAW failed', err)
+      toast(`Could not add "${name}" to DAW.`, 'error')
     } finally {
       setDecodingIds(prev => { const s = new Set(prev); s.delete(item._id); return s })
     }
@@ -162,19 +178,53 @@ function BrowserItem({
   item: LibraryItem; added: boolean; decoding: boolean
   onAdd: (item: LibraryItem) => void
 }) {
-  const [hovered, setHovered] = useState(false)
+  const [hovered,  setHovered]  = useState(false)
+  const [dragging, setDragging] = useState(false)
+
   const label = item.originalName
     ?? (item.prompt ? item.prompt.slice(0, 34) + (item.prompt.length > 34 ? '…' : '') : 'Untitled')
 
+  function onDragStart(e: React.DragEvent) {
+    setDragging(true)
+    e.dataTransfer.effectAllowed = 'copy'
+    e.dataTransfer.setData(DND_ITEM_TYPE, JSON.stringify({
+      audioUrl: item.audioUrl,
+      name:     label,
+      duration: item.duration ?? 0,
+    }))
+    // Ghost image — small pill with the track name
+    const accentColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--accent').trim() || '#ffdc73'
+    const ghost = document.createElement('div')
+    ghost.textContent = label
+    Object.assign(ghost.style, {
+      position: 'fixed', top: '-200px',
+      background: accentColor, color: '#000',
+      padding: '4px 10px', borderRadius: '20px',
+      fontSize: '11px', fontWeight: '700',
+      whiteSpace: 'nowrap', maxWidth: '220px',
+      overflow: 'hidden', textOverflow: 'ellipsis',
+      fontFamily: 'inherit',
+    })
+    document.body.appendChild(ghost)
+    e.dataTransfer.setDragImage(ghost, 60, 16)
+    setTimeout(() => ghost.remove(), 0)
+  }
+
   return (
     <div
+      draggable={!!item.audioUrl}
+      onDragStart={onDragStart}
+      onDragEnd={() => setDragging(false)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'flex', alignItems: 'center', gap: 7,
         padding: '6px 10px',
-        background: hovered ? C.bgHover : 'transparent',
-        cursor: 'default', transition: 'background 0.1s',
+        background: dragging ? `${C.accent}18` : hovered ? C.bgHover : 'transparent',
+        cursor: item.audioUrl ? 'grab' : 'default',
+        transition: 'background 0.1s',
+        opacity: dragging ? 0.6 : 1,
       }}
     >
       {/* Tip renk noktası */}

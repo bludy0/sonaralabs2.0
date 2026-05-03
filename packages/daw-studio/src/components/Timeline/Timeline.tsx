@@ -1,12 +1,13 @@
-import { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useDAWStore }    from '../../store/useDAWStore'
 import { useAudioEngine } from '../../store/useAudioEngine'
-import { C, alpha } from '../../constants'
+import { C, alpha, TRACK_COLORS } from '../../constants'
 import { getCSSVar, useThemeVersion } from '../../lib/cssVars'
 import { AUTOMATION_PARAM_LABELS } from '../../types'
-import { TrackRow } from './TrackRow'
+import { TrackRow, DND_ITEM_TYPE } from './TrackRow'
 import { AutomationLaneView } from '../AutomationLane/AutomationLaneView'
 import { AutomationLaneHeader } from '../AutomationLane/AutomationLaneHeader'
+import { getAudioContext } from '../../engine/context'
 
 const HEADER_W = 240
 const RULER_H  = 28
@@ -17,11 +18,21 @@ export function Timeline() {
   const zoom            = useDAWStore(s => s.zoom)
   const setZoom         = useDAWStore(s => s.setZoom)
   const transport       = useDAWStore(s => s.transport)
+  const addAudioTrack   = useDAWStore(s => s.addAudioTrack)
+  const addClip         = useDAWStore(s => s.addClip)
   const { currentTime, seek } = useAudioEngine()
+  const setLoop = useDAWStore(s => s.setLoop)
 
   const rulerRef    = useRef<HTMLCanvasElement>(null)
   const scrollRef   = useRef<HTMLDivElement>(null)
+  const loopDragRef = useRef<{ which: 'start' | 'end' } | null>(null)
   const themeVersion = useThemeVersion()
+
+  // ── Marquee (rubber-band) selection ───────────────────────────────────────
+  // All coords are in "content space" (px relative to scrollable content origin)
+  const marqueeStartRef = useRef<{ cx: number; cy: number } | null>(null)
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const selectClipsInRect = useDAWStore(s => s.selectClipsInRect)
 
   // Ruler canvas draw — CSS değişkenleri canvas 2D API tarafından çözülemediğinden
   // getCSSVar() ile hesaplanan değerleri kullanıyoruz; themeVersion tema değişimini tetikler
@@ -66,7 +77,148 @@ export function Timeline() {
         ctx.fillText(formatTime(t), x + 2, 9)
       }
     }
-  }, [zoom, themeVersion])
+
+    // Draw loop markers when loop is enabled
+    if (transport.loopEnabled) {
+      const accentHex = getCSSVar('--daw-accent') || '#ffdc73'
+      ctx.fillStyle = accentHex
+
+      const startX = Math.round(transport.loopStart * zoom)
+      const endX   = Math.round(transport.loopEnd   * zoom)
+
+      // Start triangle (pointing down)
+      ctx.beginPath()
+      ctx.moveTo(startX - 5, 0)
+      ctx.lineTo(startX + 5, 0)
+      ctx.lineTo(startX, 9)
+      ctx.closePath()
+      ctx.fill()
+      // Start line
+      ctx.fillRect(startX, 0, 1, RULER_H)
+
+      // End triangle
+      ctx.beginPath()
+      ctx.moveTo(endX - 5, 0)
+      ctx.lineTo(endX + 5, 0)
+      ctx.lineTo(endX, 9)
+      ctx.closePath()
+      ctx.fill()
+      // End line
+      ctx.fillRect(endX - 1, 0, 1, RULER_H)
+    }
+  }, [zoom, themeVersion, transport.loopEnabled, transport.loopStart, transport.loopEnd])
+
+  // ── Marquee handlers ──────────────────────────────────────────────────────
+  const TRACK_H_PX  = 72
+  const LANE_H_PX   = 56
+  const PAD_PX      = 4
+
+  const onScrollAreaMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Only fire on the scroll container itself or empty track row areas,
+    // not on clips (they have data-clip) or the ruler.
+    if ((e.target as HTMLElement).closest('[data-clip]')) return
+    if ((e.target as HTMLElement).closest('[data-automation]')) return
+    const container = scrollRef.current
+    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+
+    // Position within the scrollable content
+    const cx = e.clientX - containerRect.left + container.scrollLeft
+    const cy = e.clientY - containerRect.top  + container.scrollTop
+
+    // Don't start marquee in the ruler row (use viewport Y, not scrolled content Y)
+    if (e.clientY - containerRect.top < RULER_H_PX) return
+
+    // Only start on empty left-button press
+    if (e.button !== 0) return
+
+    e.preventDefault()
+    marqueeStartRef.current = { cx, cy }
+    setMarqueeRect({ x: cx, y: cy, w: 0, h: 0 })
+
+    function onMove(mv: MouseEvent) {
+      if (!marqueeStartRef.current || !container) return
+      const { cx: sx, cy: sy } = marqueeStartRef.current
+      const curX = mv.clientX - containerRect.left + container.scrollLeft
+      const curY = mv.clientY - containerRect.top  + container.scrollTop
+      setMarqueeRect({
+        x: Math.min(sx, curX),
+        y: Math.min(sy, curY),
+        w: Math.abs(curX - sx),
+        h: Math.abs(curY - sy),
+      })
+    }
+
+    function onUp(uv: MouseEvent) {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+
+      if (!marqueeStartRef.current || !container) { setMarqueeRect(null); return }
+      const { cx: sx, cy: sy } = marqueeStartRef.current
+      const endX = uv.clientX - containerRect.left + container.scrollLeft
+      const endY = uv.clientY - containerRect.top  + container.scrollTop
+      marqueeStartRef.current = null
+
+      // Build final selection rect in content space
+      const selX1 = Math.min(sx, endX)
+      const selX2 = Math.max(sx, endX)
+      const selY1 = Math.min(sy, endY)
+      const selY2 = Math.max(sy, endY)
+
+      // If too small (just a click) — deselect all
+      if (selX2 - selX1 < 4 && selY2 - selY1 < 4) {
+        setMarqueeRect(null)
+        useDAWStore.getState().selectClip(null)
+        return
+      }
+
+      // Compute which clips overlap the rect
+      const state = useDAWStore.getState()
+      const { tracks: ts, automationLanes: lanes, transport: tp, zoom: z } = state
+      const secPerBeat = 60 / tp.bpm
+
+      const hitIds: string[] = []
+      let yOff = RULER_H_PX
+
+      for (const track of ts) {
+        const clipY1 = yOff + PAD_PX
+        const clipY2 = yOff + TRACK_H_PX - PAD_PX
+
+        if (track.type === 'audio') {
+          for (const clip of track.clips) {
+            const effDur = (clip.trimEnd || clip.duration) - clip.trimStart
+            const clipX1 = clip.startTime * z
+            const clipX2 = clipX1 + effDur * z
+            if (clipX2 > selX1 && clipX1 < selX2 && clipY2 > selY1 && clipY1 < selY2) {
+              hitIds.push(clip.id)
+            }
+          }
+        }
+        if (track.type === 'midi') {
+          for (const clip of track.clips) {
+            const totalBeats = clip.loopBeats ?? clip.durationBeats
+            const clipX1 = clip.startTime * z
+            const clipX2 = clipX1 + totalBeats * secPerBeat * z
+            if (clipX2 > selX1 && clipX1 < selX2 && clipY2 > selY1 && clipY1 < selY2) {
+              hitIds.push(clip.id)
+            }
+          }
+        }
+
+        const trackLanes = lanes.filter(l => l.trackId === track.id)
+        yOff += TRACK_H_PX + trackLanes.length * LANE_H_PX
+      }
+
+      selectClipsInRect(hitIds)
+      setMarqueeRect(null)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+  }, [zoom, selectClipsInRect])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep RULER_H accessible as local const for onScrollAreaMouseDown closure
+  const RULER_H_PX = RULER_H
 
   // Scroll with wheel (horizontal zoom on Ctrl+wheel)
   function onWheel(e: React.WheelEvent) {
@@ -76,11 +228,115 @@ export function Timeline() {
     }
   }
 
-  // Click ruler to seek
-  function onRulerClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    const rect  = e.currentTarget.getBoundingClientRect()
-    const x     = e.clientX - rect.left + (scrollRef.current?.scrollLeft ?? 0)
-    seek(x / zoom)
+  // Click ruler to seek (or drag loop handles)
+  function onRulerMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const rect     = e.currentTarget.getBoundingClientRect()
+    const scrollX  = scrollRef.current?.scrollLeft ?? 0
+    const x        = e.clientX - rect.left + scrollX
+    const t        = Math.max(0, x / zoom)
+    const threshold = 10 / zoom   // 10px grab radius in seconds
+
+    if (transport.loopEnabled) {
+      const startDist = Math.abs(t - transport.loopStart)
+      const endDist   = Math.abs(t - transport.loopEnd)
+
+      if (startDist < threshold || endDist < threshold) {
+        const which: 'start' | 'end' = startDist < endDist ? 'start' : 'end'
+        loopDragRef.current = { which }
+        e.preventDefault()
+
+        // Snapshot at drag start so setLoop calls are stable
+        let ls = transport.loopStart
+        let le = transport.loopEnd
+
+        const onMove = (mv: MouseEvent) => {
+          const r  = rulerRef.current!.getBoundingClientRect()
+          const sx = scrollRef.current?.scrollLeft ?? 0
+          const tx = Math.max(0, (mv.clientX - r.left + sx) / zoom)
+          if (which === 'start') {
+            ls = Math.min(tx, le - 0.25)
+          } else {
+            le = Math.max(tx, ls + 0.25)
+          }
+          setLoop(ls, le)
+        }
+        const onUp = () => {
+          loopDragRef.current = null
+          window.removeEventListener('mousemove', onMove)
+          window.removeEventListener('mouseup', onUp)
+        }
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
+        return
+      }
+    }
+
+    // Not near a loop handle → seek
+    if (!loopDragRef.current) seek(t)
+  }
+
+  // ── Timeline-level drop: catches drops on empty lanes or when no tracks exist ──
+  async function handleTimelineDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const itemJson = e.dataTransfer.getData(DND_ITEM_TYPE)
+    if (!itemJson) return   // not a library item — ignore
+
+    try {
+      const payload = JSON.parse(itemJson) as {
+        audioUrl?: string; sampleId?: string; name: string; duration?: number
+      }
+
+      // Find (or create) the target audio track
+      const state = useDAWStore.getState()
+      let audioTracks = state.tracks.filter(t => t.type === 'audio')
+
+      if (audioTracks.length === 0) {
+        addAudioTrack()
+        const newState = useDAWStore.getState()
+        audioTracks = newState.tracks.filter(t => t.type === 'audio')
+        useDAWStore.getState().updateTrack(audioTracks[0].id, { name: payload.name })
+      }
+
+      // Pick which audio track based on Y position (each track is 72px tall)
+      const TRACK_H_PX = 72
+      const containerRect = e.currentTarget.getBoundingClientRect()
+      const relY = e.clientY - containerRect.top + (scrollRef.current?.scrollTop ?? 0) - RULER_H
+      const all = useDAWStore.getState().tracks
+      const trackIdx = Math.max(0, Math.floor(relY / TRACK_H_PX))
+      const hitTrack  = all[Math.min(trackIdx, all.length - 1)]
+      const targetTrack = hitTrack?.type === 'audio'
+        ? hitTrack
+        : audioTracks[audioTracks.length - 1]
+
+      // Calculate startTime from X position (accounting for scroll)
+      const scrollLeft = scrollRef.current?.scrollLeft ?? 0
+      const startTime = Math.max(0, (e.clientX - containerRect.left + scrollLeft) / zoom)
+
+      const ctx = getAudioContext()
+      let buf: AudioBuffer
+
+      if (payload.sampleId) {
+        // Synthesized / imported sample — buffer is already in memory
+        const { lookupBuffer } = await import('../../lib/sampleRegistry')
+        const cached = lookupBuffer(payload.sampleId)
+        if (!cached) { console.error('Timeline: sampleId not found in registry', payload.sampleId); return }
+        buf = cached
+      } else if (payload.audioUrl) {
+        const resp = await fetch(payload.audioUrl, { credentials: 'include' })
+        const ab   = await resp.arrayBuffer()
+        buf = await ctx.decodeAudioData(ab)
+      } else {
+        return
+      }
+
+      addClip(targetTrack.id, {
+        name: payload.name, startTime, duration: buf.duration,
+        trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0,
+        buffer: buf, url: payload.audioUrl ?? '',
+      })
+    } catch (err) {
+      console.error('Timeline: handleTimelineDrop failed', err)
+    }
   }
 
   // Timeline width
@@ -155,6 +411,14 @@ export function Timeline() {
       <div
         ref={scrollRef}
         style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', position: 'relative', background: C.bgDeep }}
+        onMouseDown={onScrollAreaMouseDown}
+        onDragOver={e => {
+          if (Array.from(e.dataTransfer.types).includes(DND_ITEM_TYPE)) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+          }
+        }}
+        onDrop={handleTimelineDrop}
       >
         <div style={{ width: timelineW, position: 'relative' }}>
           {/* Ruler */}
@@ -162,7 +426,7 @@ export function Timeline() {
             ref={rulerRef}
             width={timelineW}
             height={RULER_H}
-            onClick={onRulerClick}
+            onMouseDown={onRulerMouseDown}
             style={{
               display: 'block', cursor: 'pointer',
               position: 'sticky', top: 0, zIndex: 10,
@@ -197,6 +461,24 @@ export function Timeline() {
             boxShadow: `0 0 4px ${alpha(C.accent, 50)}`,
           }}/>
 
+          {/* Marquee selection rectangle */}
+          {marqueeRect && marqueeRect.w > 2 && marqueeRect.h > 2 && (
+            <div
+              style={{
+                position: 'absolute',
+                left:   marqueeRect.x,
+                top:    marqueeRect.y,
+                width:  marqueeRect.w,
+                height: marqueeRect.h,
+                border: `1px solid ${C.accent}`,
+                background: alpha(C.accent, 12),
+                pointerEvents: 'none',
+                zIndex: 30,
+                borderRadius: 2,
+              }}
+            />
+          )}
+
           {/* Track lanes + automation lane views */}
           {tracks.map(t => {
             const lanes = automationLanes.filter(l => l.trackId === t.id)
@@ -220,10 +502,13 @@ export function Timeline() {
   )
 }
 
+const TRACK_DRAG_TYPE = 'application/x-daw-track'
+
 function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
   const updateTrack     = useDAWStore(s => s.updateTrack)
   const removeTrack     = useDAWStore(s => s.removeTrack)
   const selectTrack     = useDAWStore(s => s.selectTrack)
+  const reorderTracks   = useDAWStore(s => s.reorderTracks)
   const selectedId      = useDAWStore(s => s.selectedTrackId)
   const addLane         = useDAWStore(s => s.addAutomationLane)
   const automationLanes = useDAWStore(s => s.automationLanes)
@@ -233,10 +518,40 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
   const ALL_PARAMS      = Object.keys(AUTOMATION_PARAM_LABELS) as import('../../types').AutomationParam[]
   const availableParams = ALL_PARAMS.filter(p => !existingParams.includes(p))
 
-  const isMidi = track.type === 'midi'
+  const isMidi  = track.type === 'midi'
+  const [dropPos,    setDropPos]    = React.useState<'top' | 'bottom' | null>(null)
+  const [isRenaming, setIsRenaming] = React.useState(false)
+  const [renameVal,  setRenameVal]  = React.useState('')
+  const [showColors, setShowColors] = React.useState(false)
+
+  function onDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes(TRACK_DRAG_TYPE)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    setDropPos(e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom')
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDropPos(null)
+    const fromId = e.dataTransfer.getData(TRACK_DRAG_TYPE)
+    if (fromId && fromId !== track.id) reorderTracks(fromId, track.id)
+  }
 
   return (
     <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData(TRACK_DRAG_TYPE, track.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragEnd={() => setDropPos(null)}
+      onDragOver={onDragOver}
+      onDragLeave={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropPos(null)
+      }}
+      onDrop={onDrop}
       onClick={() => selectTrack(track.id)}
       style={{
         height:      80,
@@ -245,18 +560,57 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
         alignItems:  'stretch',
         borderBottom:`1px solid ${C.border}`,
         background:  isSelected ? C.bgHover : C.bgBase,
-        cursor:      'pointer',
+        cursor:      'grab',
         userSelect:  'none',
         position:    'relative',
         transition:  'background 0.1s',
+        // Drop indicator lines
+        borderTop:    dropPos === 'top'    ? `2px solid ${C.accent}` : undefined,
+        boxShadow:    dropPos === 'bottom' ? `0 2px 0 ${C.accent}`  : undefined,
       }}
     >
       {/* Color tab */}
-      <div style={{
-        width:      3,
-        flexShrink: 0,
-        background: track.color,
-      }}/>
+      <div
+        onClick={e => { e.stopPropagation(); setShowColors(v => !v) }}
+        title="Click to change track color"
+        style={{
+          width: 8, flexShrink: 0, background: track.color,
+          cursor: 'pointer', position: 'relative',
+          transition: 'width 0.1s',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.width = '12px' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.width = showColors ? '12px' : '8px' }}
+      >
+        {showColors && (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', left: 14, top: 0,
+              zIndex: 200,
+              background: C.bgSubtle, border: `1px solid ${C.border}`,
+              borderRadius: 5, padding: 5,
+              display: 'flex', flexWrap: 'wrap', gap: 4,
+              width: 82, boxShadow: `0 4px 16px rgba(0,0,0,0.4)`,
+            }}
+          >
+            {TRACK_COLORS.map(col => (
+              <div
+                key={col}
+                onClick={e => { e.stopPropagation(); updateTrack(track.id, { color: col }); setShowColors(false) }}
+                style={{
+                  width: 16, height: 16, borderRadius: 3,
+                  background: col, cursor: 'pointer',
+                  outline: track.color === col ? `2px solid ${C.text1}` : 'none',
+                  outlineOffset: 1,
+                  transition: 'transform 0.1s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.2)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '6px 8px 4px 6px' }}>
@@ -265,13 +619,39 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
           <span style={{ fontSize: 12, color: C.text3, flexShrink: 0 }}>
             {isMidi ? '🎹' : '≈'}
           </span>
-          <span style={{
-            fontSize: 11, fontWeight: 600, color: isSelected ? C.accentBright : C.text1,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-            letterSpacing: '0.01em',
-          }}>
-            {track.name}
-          </span>
+          {isRenaming ? (
+            <input
+              autoFocus
+              value={renameVal}
+              onChange={e => setRenameVal(e.target.value)}
+              onKeyDown={e => {
+                e.stopPropagation()
+                if (e.key === 'Enter')  { if (renameVal.trim()) updateTrack(track.id, { name: renameVal.trim() }); setIsRenaming(false) }
+                if (e.key === 'Escape') { setIsRenaming(false) }
+              }}
+              onBlur={() => { if (renameVal.trim()) updateTrack(track.id, { name: renameVal.trim() }); setIsRenaming(false) }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                flex: 1, minWidth: 0,
+                background: C.bgDeep, border: `1px solid ${C.accent}`,
+                borderRadius: 3, color: C.text1,
+                fontSize: 11, fontWeight: 600,
+                padding: '1px 5px', outline: 'none',
+              }}
+            />
+          ) : (
+            <span
+              onDoubleClick={e => { e.stopPropagation(); setRenameVal(track.name); setIsRenaming(true) }}
+              title="Double-click to rename"
+              style={{
+                fontSize: 11, fontWeight: 600, color: isSelected ? C.accentBright : C.text1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                letterSpacing: '0.01em', cursor: 'text',
+              }}
+            >
+              {track.name}
+            </span>
+          )}
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
             <TrackBtn
               active={track.muted}

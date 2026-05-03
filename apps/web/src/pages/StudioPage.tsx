@@ -1,53 +1,127 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
+import { toast } from '../lib/toast'
 import { DAWLayout, useDAWStore } from '@sonaralabs/daw-studio'
 import '@sonaralabs/daw-studio/src/index.css'
-import { BrowserPanel } from '../components/studio/BrowserPanel'
-import { ProjectPanel } from '../components/studio/ProjectPanel'
+import { BrowserPanel }  from '../components/studio/BrowserPanel'
+import { ProjectPanel }  from '../components/studio/ProjectPanel'
+import { SamplesPanel }  from '../components/studio/SamplesPanel'
+import { PluginsPanel }  from '../components/studio/PluginsPanel'
 import { C } from '../theme'
 
-interface SavedProjectMeta {
-  _id:       string
-  name:      string
-  updatedAt: string
-  isPublic:  boolean
+export interface SavedProjectMeta {
+  _id:        string
+  name:       string
+  updatedAt:  string
+  isPublic:   boolean
+  shareToken?: string
+  trackCount: number
+  bpm:        number
 }
 
 export default function StudioPage() {
-  const navigate       = useNavigate()
-  const { token: shareToken_ } = useParams<{ token?: string }>()
-  const isReadOnly     = Boolean(shareToken_)
+  const navigate                        = useNavigate()
+  const { token: shareToken_ }          = useParams<{ token?: string }>()
+  const isReadOnly                      = Boolean(shareToken_)
 
-  const getSaveable = useDAWStore(s => s.getSaveable)
-  const loadTracks  = useDAWStore(s => s.loadTracks)
+  // ── Store subscriptions ───────────────────────────────────────────────────
+  const tracks        = useDAWStore(s => s.tracks)
+  const transport     = useDAWStore(s => s.transport)
+  const getSaveable   = useDAWStore(s => s.getSaveable)
+  const loadTracks    = useDAWStore(s => s.loadTracks)
+  const loadTransport = useDAWStore(s => s.loadTransport)
   const addAudioTrack = useDAWStore(s => s.addAudioTrack)
   const addClip       = useDAWStore(s => s.addClip)
-  const setBPM        = useDAWStore(s => s.setBPM)
-  const setLoop       = useDAWStore(s => s.setLoop)
   const reset         = useDAWStore(s => s.reset)
 
-  const [projectName,       setProjectName]       = useState('Untitled Project')
-  const [projectId,         setProjectId]         = useState<string | null>(null)
-  const [saving,            setSaving]            = useState(false)
-  const [saveLabel,         setSaveLabel]         = useState<string | null>(null)
-  const [shareToken,        setShareToken]        = useState<string | null>(null)
-  const [sharing,           setSharing]           = useState(false)
-  const [copied,            setCopied]            = useState(false)
+  // ── Project state ────────────────────────────────────────────────────────
+  const [projectName,  setProjectName]  = useState('Untitled Project')
+  const [projectId,    setProjectId]    = useState<string | null>(null)
+  const [saving,       setSaving]       = useState(false)
+  const [saveLabel,    setSaveLabel]    = useState<string | null>(null)
+  const [shareToken,   setShareToken]   = useState<string | null>(null)
+  const [sharing,      setSharing]      = useState(false)
+  const [copied,       setCopied]       = useState(false)
+  const [isDirty,      setIsDirty]      = useState(false)
 
-  // ── Mount ─────────────────────────────────────────────────────────────────
+  // ── Dirty tracking ────────────────────────────────────────────────────────
+  // suppressUntilRef: after save/load, ignore change events for 500ms
+  const suppressUntilRef = useRef(0)
+  const firstRenderRef   = useRef(true)
+
+  function suppressDirty(ms = 600) {
+    suppressUntilRef.current = Date.now() + ms
+  }
+
+  useEffect(() => {
+    if (firstRenderRef.current) { firstRenderRef.current = false; return }
+    if (Date.now() < suppressUntilRef.current) return
+    setIsDirty(true)
+  }, [tracks, transport])
+
+  // ── Tab title ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    document.title = `${projectName} — Sonaralabs`
+    return () => { document.title = 'Sonaralabs' }
+  }, [projectName])
+
+  // ── Beforeunload — warn on unsaved changes ────────────────────────────────
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (!isDirty || isReadOnly) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isDirty, isReadOnly])
+
+  // ── Back button ───────────────────────────────────────────────────────────
+  function handleBack() {
+    if (isDirty && !isReadOnly) {
+      const ok = window.confirm('You have unsaved changes. Leave without saving?')
+      if (!ok) return
+    }
+    if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate('/library')
+    }
+  }
+
+  // ── Keyboard shortcut: Ctrl/Cmd+S ────────────────────────────────────────
+  const handleSaveRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 's') {
+        e.preventDefault()
+        handleSaveRef.current()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  // ── Mount: shared project or preload ─────────────────────────────────────
   useEffect(() => {
     reset()
+    suppressDirty(1000)
+    setIsDirty(false)
+
     if (shareToken_) {
       api.get(`/api/projects/share/${shareToken_}`)
         .then(({ data }) => {
           const p = data.data
-          if (p) {
-            if (p.bpm)              setBPM(p.bpm)
-            if (p.loopStart != null) setLoop(p.loopStart, p.loopEnd)
-            if (p.tracks?.length)   loadTracks(p.tracks)
-            setProjectName(p.name)
-          }
+          if (!p) return
+          loadTransport({
+            bpm:         p.bpm        ?? 120,
+            loopStart:   p.loopStart  ?? 0,
+            loopEnd:     p.loopEnd    ?? 8,
+            loopEnabled: p.loopEnabled ?? false,
+          })
+          if (p.tracks?.length) loadTracks(p.tracks)
+          setProjectName(p.name)
         }).catch(() => {})
       return
     }
@@ -57,12 +131,13 @@ export default function StudioPage() {
     if (raw) {
       try {
         const preload = JSON.parse(raw) as { name: string; audioUrl: string }[]
-        preload.forEach(t => addFromUrl({ name: t.name, audioUrl: t.audioUrl }))
+        preload.forEach(t => addFromUrl(t))
       } catch {}
       sessionStorage.removeItem('studio:preload')
     }
   }, [shareToken_])
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   async function addFromUrl({ name, audioUrl }: { name: string; audioUrl: string }) {
     try {
       const ctx  = new AudioContext()
@@ -80,18 +155,22 @@ export default function StudioPage() {
           buffer: buf, url: audioUrl,
         })
       }
-    } catch {}
+    } catch {
+      toast(`Could not load audio: ${name}`, 'error')
+    }
   }
 
   // ── Kaydet ───────────────────────────────────────────────────────────────
   async function handleSave() {
+    if (saving) return
     setSaving(true); setSaveLabel(null)
     try {
       const rawTracks  = getSaveable()
       const saveTracks = rawTracks.map(t =>
         t.type === 'audio' ? { ...t, clips: t.clips.map(c => ({ ...c, buffer: null })) } : t
       )
-      const payload = { name: projectName, tracks: saveTracks }
+      const { bpm, loopStart, loopEnd, loopEnabled } = transport
+      const payload = { name: projectName, tracks: saveTracks, bpm, loopStart, loopEnd, loopEnabled }
       let res
       if (projectId) {
         res = await api.put(`/api/projects/${projectId}`, payload)
@@ -100,6 +179,8 @@ export default function StudioPage() {
         setProjectId(res.data.data._id)
         setShareToken(res.data.data.shareToken ?? null)
       }
+      suppressDirty()
+      setIsDirty(false)
       setSaveLabel('Saved ✓')
       setTimeout(() => setSaveLabel(null), 2000)
     } catch {
@@ -108,28 +189,48 @@ export default function StudioPage() {
     } finally { setSaving(false) }
   }
 
+  // Keep the ref up-to-date so the keyboard shortcut always calls the latest version
+  handleSaveRef.current = handleSave
+
   // ── Proje yükle ─────────────────────────────────────────────────────────
   async function handleLoadProject(meta: SavedProjectMeta) {
     try {
       const { data } = await api.get(`/api/projects/${meta._id}`)
       const p = data.data
+      suppressDirty()
       reset()
-      if (p.bpm)              setBPM(p.bpm)
-      if (p.loopStart != null) setLoop(p.loopStart, p.loopEnd)
-      if (p.tracks?.length)   loadTracks(p.tracks)
+      loadTransport({
+        bpm:         p.bpm         ?? 120,
+        loopStart:   p.loopStart   ?? 0,
+        loopEnd:     p.loopEnd     ?? 8,
+        loopEnabled: p.loopEnabled ?? false,
+      })
+      if (p.tracks?.length) loadTracks(p.tracks)
       setProjectName(p.name)
       setProjectId(p._id)
       setShareToken(p.shareToken ?? null)
+      setIsDirty(false)
     } catch {}
   }
 
   // ── Yeni proje ──────────────────────────────────────────────────────────
-  function handleNewProject() {
+  function handleNewProject(confirmed = false) {
+    if (isDirty && tracks.length > 0 && !confirmed) {
+      if (!window.confirm('Kaydedilmemiş değişiklikler var. Yine de yeni proje açılsın mı?')) return
+    }
+    suppressDirty()
     reset()
     setProjectName('Untitled Project')
     setProjectId(null)
     setShareToken(null)
     setSaveLabel(null)
+    setIsDirty(false)
+  }
+
+  // ── Proje sil ───────────────────────────────────────────────────────────
+  async function handleDeleteProject(id: string) {
+    await api.delete(`/api/projects/${id}`)
+    if (id === projectId) handleNewProject(true)
   }
 
   // ── Paylaş ───────────────────────────────────────────────────────────────
@@ -163,14 +264,12 @@ export default function StudioPage() {
         borderBottom: `1px solid ${C.border}`,
         zIndex: 50,
       }}>
-        {/* Geri */}
-        <button onClick={() => navigate(-1)} style={iconBtnStyle} title="Back">←</button>
+        <button onClick={handleBack} style={iconBtnStyle} title="Back">←</button>
         <div style={{ width: 1, height: 16, background: C.border }} />
 
-        {/* Logo */}
         <span style={{
           fontSize: 10, fontWeight: 800, letterSpacing: '0.2em',
-          textTransform: 'uppercase', color: C.accentBright,
+          textTransform: 'uppercase', color: C.accentBright, flexShrink: 0,
         }}>SONARALABS</span>
         <div style={{ width: 1, height: 16, background: C.border }} />
 
@@ -191,18 +290,29 @@ export default function StudioPage() {
           />
         )}
 
+        {/* Read-only badge */}
         {isReadOnly && (
           <span style={{
             fontSize: 9, padding: '2px 7px', borderRadius: 10,
             background: `${C.accent}20`, color: C.accent,
-            border: `1px solid ${C.accent}40`,
+            border: `1px solid ${C.accent}40`, flexShrink: 0,
           }}>Read-only</span>
         )}
 
-        {/* Kaydet etiketi */}
+        {/* Unsaved indicator */}
+        {!isReadOnly && isDirty && !saving && (
+          <span style={{
+            fontSize: 10, color: C.warning, flexShrink: 0,
+            display: 'flex', alignItems: 'center', gap: 3,
+          }}>
+            <span style={{ fontSize: 7 }}>●</span> Unsaved
+          </span>
+        )}
+
+        {/* Save feedback */}
         {saveLabel && (
           <span style={{
-            fontSize: 11,
+            fontSize: 11, flexShrink: 0,
             color: saveLabel.includes('✓') ? C.success : C.error,
           }}>{saveLabel}</span>
         )}
@@ -214,13 +324,16 @@ export default function StudioPage() {
           <button
             onClick={handleSave}
             disabled={saving}
+            title="Save (Ctrl+S)"
             style={{
               ...smallBtnStyle,
-              background: C.accent, color: C.accentOn,
-              border: `1px solid ${C.accent}`,
-              fontWeight: 700,
-              boxShadow: `0 0 10px ${C.accent}30`,
+              background: isDirty ? C.accent : C.midBg,
+              color:      isDirty ? C.accentOn : C.text2,
+              border:     `1px solid ${isDirty ? C.accent : C.border}`,
+              fontWeight: isDirty ? 700 : 500,
+              boxShadow:  isDirty ? `0 0 10px ${C.accent}40` : 'none',
               opacity: saving ? 0.5 : 1,
+              transition: 'all 0.2s',
             }}
           >
             {saving ? 'Saving…' : projectId ? 'Save' : 'Save Project'}
@@ -244,10 +357,12 @@ export default function StudioPage() {
         )}
       </header>
 
-      {/* ── DAW (tam yükseklik) ───────────────────────────────────────── */}
+      {/* ── DAW ──────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <DAWLayout
           browserPanel={!isReadOnly ? <BrowserPanel /> : undefined}
+          samplesPanel={!isReadOnly ? <SamplesPanel /> : undefined}
+          pluginsPanel={!isReadOnly ? <PluginsPanel /> : undefined}
           projectPanel={!isReadOnly ? (
             <ProjectPanel
               projectName={projectName}
@@ -257,11 +372,13 @@ export default function StudioPage() {
               shareToken={shareToken}
               sharing={sharing}
               copied={copied}
+              isDirty={isDirty}
               onNameChange={setProjectName}
               onSave={handleSave}
               onLoad={handleLoadProject}
               onShare={handleShare}
-              onNew={handleNewProject}
+              onNew={() => handleNewProject()}
+              onDelete={handleDeleteProject}
             />
           ) : undefined}
         />
@@ -270,7 +387,6 @@ export default function StudioPage() {
   )
 }
 
-// ── Paylaşılan buton stilleri ─────────────────────────────────────────────────
 const iconBtnStyle: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
   color: C.text2, fontSize: 14, padding: '4px 6px', borderRadius: 5,

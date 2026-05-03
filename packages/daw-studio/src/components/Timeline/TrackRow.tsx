@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, memo } from 'react'
+import { useRef, useEffect, useCallback, memo, useState } from 'react'
 import { useDAWStore }     from '../../store/useDAWStore'
 import { getAudioContext } from '../../engine/context'
 import { C, alpha } from '../../constants'
@@ -8,24 +8,33 @@ const TRACK_H    = 72
 const PAD        = 3
 const HANDLE_W   = 6
 
+// MIME type used for BrowserPanel → TrackLane drag
+export const DND_ITEM_TYPE = 'application/x-daw-item'
+
 interface Props { track: DAWTrack; zoom: number }
 
 export function TrackRow({ track, zoom }: Props) {
-  const selectedClipId = useDAWStore(s => s.selectedClipId)
-  const addClip        = useDAWStore(s => s.addClip)
-  const removeClip     = useDAWStore(s => s.removeClip)
-  const moveClip       = useDAWStore(s => s.moveClip)
-  const updateClip     = useDAWStore(s => s.updateClip)
-  const selectClip     = useDAWStore(s => s.selectClip)
-  const addMidiClip    = useDAWStore(s => s.addMidiClip)
-  const removeMidiClip = useDAWStore(s => s.removeMidiClip)
-  const transport      = useDAWStore(s => s.transport)
+  const selectedClipId  = useDAWStore(s => s.selectedClipId)
+  const selectedClipIds = useDAWStore(s => s.selectedClipIds)
+  const addClip         = useDAWStore(s => s.addClip)
+  const removeClip      = useDAWStore(s => s.removeClip)
+  const moveClip        = useDAWStore(s => s.moveClip)
+  const updateClip      = useDAWStore(s => s.updateClip)
+  const selectClip      = useDAWStore(s => s.selectClip)
+  const selectTrack     = useDAWStore(s => s.selectTrack)
+  const toggleClipSel   = useDAWStore(s => s.toggleClipSelection)
+  const addMidiClip     = useDAWStore(s => s.addMidiClip)
+  const removeMidiClip  = useDAWStore(s => s.removeMidiClip)
+  const transport       = useDAWStore(s => s.transport)
+  const [dragOver,     setDragOver] = useState(false)
 
   // ── Click empty MIDI track area → create new clip ────────────────────────
   function onMidiTrackClick(e: React.MouseEvent<HTMLDivElement>) {
     if (track.type !== 'midi') return
     // Ignore if clicking an existing clip (they handle their own events)
     if ((e.target as HTMLElement).closest('[data-midi-clip]')) return
+    // Prevent click from bubbling to the scroll container (which would start marquee)
+    e.stopPropagation()
     const rect      = e.currentTarget.getBoundingClientRect()
     const startTime = Math.max(0, (e.clientX - rect.left) / zoom)
     const snapEnabled = transport.snapEnabled
@@ -42,24 +51,68 @@ export function TrackRow({ track, zoom }: Props) {
     selectClip(clipId)
   }
 
-  // ── Drop audio file ───────────────────────────────────────────────────────
+  // ── Drop handler — accepts library items AND raw audio files ─────────────
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
+    e.stopPropagation()   // prevent Timeline-level fallback handler from double-adding
+    setDragOver(false)
     if (track.type !== 'audio') return
+
+    const rect      = e.currentTarget.getBoundingClientRect()
+    const startTime = Math.max(0, (e.clientX - rect.left) / zoom)
+    const ctx       = getAudioContext()
+
+    // ── Case 1: dragged from BrowserPanel or SamplesPanel ────────────────
+    const itemJson = e.dataTransfer.getData(DND_ITEM_TYPE)
+    if (itemJson) {
+      try {
+        const payload = JSON.parse(itemJson) as {
+          audioUrl?: string; sampleId?: string; name: string; duration?: number
+        }
+
+        let buf: AudioBuffer
+
+        if (payload.sampleId) {
+          // Synthesized / imported sample from SamplesPanel — buffer already in registry
+          const { lookupBuffer } = await import('../../lib/sampleRegistry')
+          const cached = lookupBuffer(payload.sampleId)
+          if (!cached) { console.error('TrackRow: sampleId not found in registry', payload.sampleId); return }
+          buf = cached
+        } else if (payload.audioUrl) {
+          // Library item — fetch & decode
+          const resp = await fetch(payload.audioUrl, { credentials: 'include' })
+          const ab   = await resp.arrayBuffer()
+          buf = await ctx.decodeAudioData(ab)
+        } else {
+          return
+        }
+
+        addClip(track.id, {
+          name: payload.name, startTime, duration: buf.duration,
+          trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0,
+          buffer: buf, url: payload.audioUrl ?? '',
+        })
+      } catch (err) {
+        console.error('TrackRow: failed to decode dropped item', err)
+      }
+      return
+    }
+
+    // ── Case 2: raw file from OS / external ───────────────────────────────
     const file = e.dataTransfer.files[0]
     if (!file) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const startTime = Math.max(0, (e.clientX - rect.left) / zoom)
-    const ctx = getAudioContext()
-    const ab  = await file.arrayBuffer()
-    const buf = await ctx.decodeAudioData(ab)
-    addClip(track.id, {
-      name: file.name.replace(/\.[^.]+$/, ''),
-      startTime, duration: buf.duration,
-      trimStart: 0, trimEnd: 0,
-      fadeIn: 0, fadeOut: 0,
-      buffer: buf, url: '',
-    })
+    try {
+      const ab  = await file.arrayBuffer()
+      const buf = await ctx.decodeAudioData(ab)
+      addClip(track.id, {
+        name: file.name.replace(/\.[^.]+$/, ''),
+        startTime, duration: buf.duration,
+        trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0,
+        buffer: buf, url: '',
+      })
+    } catch (err) {
+      console.error('TrackRow: failed to decode dropped file', err)
+    }
   }
 
   return (
@@ -69,6 +122,21 @@ export function TrackRow({ track, zoom }: Props) {
         borderBottom: `1px solid ${C.borderDim}`,
         cursor: track.type === 'midi' ? 'crosshair' : 'default',
         overflow: 'visible',   // allow MIDI handles to poke outside
+        // Drop highlight — amber glow when dragging a library item over this lane
+        boxShadow: dragOver && track.type === 'audio'
+          ? `inset 0 0 0 2px ${C.accent}, inset 0 0 20px ${alpha(C.accent, 15)}`
+          : 'none',
+        transition: 'box-shadow 0.1s',
+      }}
+      onDragEnter={e => {
+        if (track.type !== 'audio') return
+        const types = Array.from(e.dataTransfer.types)
+        if (types.includes(DND_ITEM_TYPE) || types.includes('Files'))
+          setDragOver(true)
+      }}
+      onDragLeave={e => {
+        // only clear if actually leaving the row (not entering a child)
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false)
       }}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
       onDrop={onDrop}
@@ -82,14 +150,15 @@ export function TrackRow({ track, zoom }: Props) {
           clip={clip}
           zoom={zoom}
           color={track.color}
-          selected={selectedClipId === clip.id}
-          onSelect={() => selectClip(clip.id)}
+          selected={selectedClipIds.includes(clip.id)}
+          onSelect={(e) => { if (e?.shiftKey) { toggleClipSel(clip.id) } else { selectClip(clip.id); selectTrack(track.id) } }}
           onMove={(newStart) => moveClip(track.id, clip.id, newStart)}
           onTrimStart={(t) => updateClip(track.id, clip.id, { trimStart: t })}
           onTrimEnd={(t)   => updateClip(track.id, clip.id, { trimEnd:   t })}
           onFadeIn={(t)    => updateClip(track.id, clip.id, { fadeIn:    t })}
           onFadeOut={(t)   => updateClip(track.id, clip.id, { fadeOut:   t })}
           onRemove={() => { removeClip(track.id, clip.id); selectClip(null) }}
+          onRename={(name) => updateClip(track.id, clip.id, { name })}
         />
       ))}
 
@@ -99,8 +168,8 @@ export function TrackRow({ track, zoom }: Props) {
           clip={clip}
           zoom={zoom}
           color={track.color}
-          selected={selectedClipId === clip.id}
-          onSelect={() => selectClip(clip.id)}
+          selected={selectedClipIds.includes(clip.id)}
+          onSelect={(e) => { if (e?.shiftKey) { toggleClipSel(clip.id) } else { selectClip(clip.id); selectTrack(track.id) } }}
           onRemove={() => { removeMidiClip(track.id, clip.id); selectClip(null) }}
           onMove={(newStart) => {
             useDAWStore.getState().updateMidiClip(track.id, clip.id, { startTime: Math.max(0, newStart) })
@@ -118,6 +187,7 @@ export function TrackRow({ track, zoom }: Props) {
               loopBeats: loopBeats <= clip.durationBeats + 0.1 ? undefined : loopBeats,
             })
           }}
+          onRename={(name) => useDAWStore.getState().updateMidiClip(track.id, clip.id, { name })}
         />
       ))}
     </div>
@@ -189,30 +259,40 @@ const WaveformCanvas = memo(function WaveformCanvas({
 // ── Audio clip block ──────────────────────────────────────────────────────────
 function AudioClipBlock({
   clip, zoom, color, selected,
-  onSelect, onMove, onTrimStart, onTrimEnd, onFadeIn, onFadeOut, onRemove,
+  onSelect, onMove, onTrimStart, onTrimEnd, onFadeIn, onFadeOut, onRemove, onRename,
 }: {
   clip:        TAudioClip
   zoom:        number
   color:       string
   selected:    boolean
-  onSelect:    () => void
+  onSelect:    (e?: React.MouseEvent) => void
   onMove:      (newStart: number) => void
   onTrimStart: (trimStart: number) => void
   onTrimEnd:   (trimEnd: number) => void
   onFadeIn:    (fadeIn: number) => void
   onFadeOut:   (fadeOut: number) => void
   onRemove:    () => void
+  onRename:    (name: string) => void
 }) {
-  const bpm          = useDAWStore(s => s.transport.bpm)
+  const bpm               = useDAWStore(s => s.transport.bpm)
+  const selectedClipIds   = useDAWStore(s => s.selectedClipIds)
+  const moveSelectedClips = useDAWStore(s => s.moveSelectedClips)
+  const commitSelMove     = useDAWStore(s => s.commitSelectedClipsMove)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameVal,  setRenameVal]  = useState('')
   const effectiveDur = (clip.trimEnd || clip.duration) - clip.trimStart
   const w = Math.max(8, effectiveDur * zoom)
   const x = clip.startTime * zoom
+
+  const isMultiSelected = selected && selectedClipIds.length > 1
 
   const dragRef = useRef<{ type: 'move' | 'trimL' | 'trimR' | 'fadeIn' | 'fadeOut'; startX: number; startVal: number } | null>(null)
 
   function startDrag(type: 'move' | 'trimL' | 'trimR' | 'fadeIn' | 'fadeOut', e: React.MouseEvent) {
     e.stopPropagation()
-    onSelect()
+    // Zaten seçili bir clip'i Shift'siz sürüklüyorsak multi-seçimi koruyoruz.
+    // Seçili değilse veya Shift basılıysa onSelect çalışsın.
+    if (!selected || e.shiftKey) onSelect(e)
     const startVal =
       type === 'move'    ? clip.startTime :
       type === 'trimL'   ? clip.trimStart :
@@ -228,7 +308,12 @@ function AudioClipBlock({
       const raw  = dragRef.current.startVal + dx
 
       if (type === 'move') {
-        onMove(Math.max(0, snapSeconds(raw, zoom, bpm)))
+        const newStart = Math.max(0, snapSeconds(raw, zoom, bpm))
+        if (isMultiSelected) {
+          moveSelectedClips(clip.id, newStart)
+        } else {
+          onMove(newStart)
+        }
       } else if (type === 'trimL') {
         const clamped = Math.max(0, Math.min(raw, (clip.trimEnd || clip.duration) - 0.05))
         onTrimStart(clamped)
@@ -245,6 +330,8 @@ function AudioClipBlock({
       dragRef.current = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup',   onMouseUp)
+      // Commit multi-clip drag into undo history
+      if (isMultiSelected) commitSelMove()
     }
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup',   onMouseUp)
@@ -252,6 +339,7 @@ function AudioClipBlock({
 
   return (
     <div
+      data-clip="true"
       onContextMenu={e => { e.preventDefault(); onRemove() }}
       style={{
         position: 'absolute',
@@ -275,17 +363,45 @@ function AudioClipBlock({
         />
       )}
 
-      {/* Clip name */}
-      <div style={{
-        position: 'absolute', top: 3, left: HANDLE_W + 2,
-        fontSize: 10, fontWeight: 600, color,
-        pointerEvents: 'none', textOverflow: 'ellipsis',
-        overflow: 'hidden', whiteSpace: 'nowrap',
-        maxWidth: `calc(100% - ${HANDLE_W * 2 + 8}px)`,
-        textShadow: `0 1px 3px ${C.bgDeep}`,
-      }}>
-        {clip.name}
-      </div>
+      {/* Clip name — double-click to rename */}
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={renameVal}
+          onChange={e => setRenameVal(e.target.value)}
+          onKeyDown={e => {
+            e.stopPropagation()
+            if (e.key === 'Enter')  { if (renameVal.trim()) onRename(renameVal.trim()); setIsRenaming(false) }
+            if (e.key === 'Escape') { setIsRenaming(false) }
+          }}
+          onBlur={() => { if (renameVal.trim()) onRename(renameVal.trim()); setIsRenaming(false) }}
+          onMouseDown={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: 2, left: HANDLE_W + 2,
+            maxWidth: `calc(100% - ${HANDLE_W * 2 + 10}px)`,
+            background: C.bgDeep, border: `1px solid ${color}`,
+            borderRadius: 2, color, fontSize: 10, fontWeight: 600,
+            padding: '0 3px', outline: 'none', zIndex: 5,
+          }}
+        />
+      ) : (
+        <div
+          onDoubleClick={e => { e.stopPropagation(); setRenameVal(clip.name); setIsRenaming(true) }}
+          title="Double-click to rename"
+          style={{
+            position: 'absolute', top: 3, left: HANDLE_W + 2,
+            fontSize: 10, fontWeight: 600, color,
+            pointerEvents: selected ? 'auto' : 'none',
+            textOverflow: 'ellipsis',
+            overflow: 'hidden', whiteSpace: 'nowrap',
+            maxWidth: `calc(100% - ${HANDLE_W * 2 + 8}px)`,
+            textShadow: `0 1px 3px ${C.bgDeep}`,
+            cursor: 'text',
+          }}
+        >
+          {clip.name}
+        </div>
+      )}
 
       {/* Fade-in overlay (triangle shape via clip-path) */}
       {clip.fadeIn > 0 && (
@@ -417,19 +533,22 @@ function snapSeconds(secs: number, zoom: number, bpm: number): number {
 // ── MIDI clip block ───────────────────────────────────────────────────────────
 function MidiClipBlock({
   clip, zoom, color, selected,
-  onSelect, onRemove, onMove, onExtend, onLoop,
+  onSelect, onRemove, onMove, onExtend, onLoop, onRename,
 }: {
   clip:     TMidiClip
   zoom:     number
   color:    string
   selected: boolean
-  onSelect:  () => void
+  onSelect:  (e?: React.MouseEvent) => void
   onRemove:  () => void
   onMove:    (newStart: number) => void
   onExtend:  (beats: number) => void
   onLoop:    (loopBeats: number) => void
+  onRename:  (name: string) => void
 }) {
   const bpm        = useDAWStore(s => s.transport.bpm)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameVal,  setRenameVal]  = useState('')
   const secPerBeat = 60 / bpm
 
   const totalBeats = clip.loopBeats ?? clip.durationBeats
@@ -447,7 +566,7 @@ function MidiClipBlock({
 
   function startDrag(type: 'move' | 'extend' | 'loop', e: React.MouseEvent) {
     e.stopPropagation()
-    onSelect()
+    if (!selected || e.shiftKey) onSelect(e)
     const startVal =
       type === 'move'   ? clip.startTime :
       type === 'extend' ? clip.durationBeats :
@@ -493,6 +612,7 @@ function MidiClipBlock({
 
   return (
     <div
+      data-clip="true"
       data-midi-clip="true"
       onContextMenu={e => { e.preventDefault(); onRemove() }}
       style={{
@@ -502,6 +622,28 @@ function MidiClipBlock({
         overflow:  'visible',
       }}
     >
+      {/* Rename input — shown above everything when renaming */}
+      {isRenaming && (
+        <input
+          autoFocus
+          value={renameVal}
+          onChange={e => setRenameVal(e.target.value)}
+          onKeyDown={e => {
+            e.stopPropagation()
+            if (e.key === 'Enter')  { if (renameVal.trim()) onRename(renameVal.trim()); setIsRenaming(false) }
+            if (e.key === 'Escape') { setIsRenaming(false) }
+          }}
+          onBlur={() => { if (renameVal.trim()) onRename(renameVal.trim()); setIsRenaming(false) }}
+          onMouseDown={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: 2, left: 5, zIndex: 20,
+            background: C.bgDeep, border: `1px solid ${color}`,
+            borderRadius: 2, color, fontSize: 10, fontWeight: 600,
+            padding: '0 3px', outline: 'none', maxWidth: '80%',
+          }}
+        />
+      )}
+
       {/* ── Invisible move-drag overlay (full width) ── */}
       <div
         onMouseDown={e => startDrag('move', e)}
@@ -530,15 +672,21 @@ function MidiClipBlock({
             }}
           >
             {/* Label — only on original */}
-            {isOriginal && (
-              <div style={{
-                position:     'absolute', top: 3, left: 5,
-                fontSize:     10, fontWeight: 600, color,
-                textShadow:   `0 1px 3px ${C.bgDeep}`,
-                overflow:     'hidden', whiteSpace: 'nowrap',
-                maxWidth:     Math.max(0, blockW - 14),
-                pointerEvents:'none', zIndex: 1,
-              }}>
+            {isOriginal && !isRenaming && (
+              <div
+                onDoubleClick={e => { e.stopPropagation(); setRenameVal(clip.name); setIsRenaming(true) }}
+                title="Double-click to rename"
+                style={{
+                  position:     'absolute', top: 3, left: 5,
+                  fontSize:     10, fontWeight: 600, color,
+                  textShadow:   `0 1px 3px ${C.bgDeep}`,
+                  overflow:     'hidden', whiteSpace: 'nowrap',
+                  maxWidth:     Math.max(0, blockW - 14),
+                  pointerEvents: selected ? 'auto' : 'none',
+                  cursor:       'text',
+                  zIndex:       1,
+                }}
+              >
                 {clip.name}
               </div>
             )}
