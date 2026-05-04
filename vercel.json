@@ -1,6 +1,6 @@
 {
-  "installCommand": "npm install -g pnpm@9.15.4 && pnpm install --no-frozen-lockfile",
-  "buildCommand": "pnpm --filter @sonaralabs/web build",
+  "buildCommand": "echo 'Using pre-built dist'",
+  "installCommand": "echo 'No install needed'",
   "outputDirectory": "apps/web/dist",
   "framework": null
 }
