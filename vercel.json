@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm --filter @sonaralabs/web build",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "npm install -g pnpm@10.33.0",
+  "framework": null
+}
