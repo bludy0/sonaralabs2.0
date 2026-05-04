@@ -418,6 +418,7 @@ export default function WelcomePage() {
             <div className="wu-fadeUp inline-flex items-center gap-2 sm:gap-3 mb-6 sm:mb-8">
               <span className="w-1.5 h-1.5 rounded-full shrink-0 hidden sm:block" style={{ background: "var(--accent)" }} />
               <span
+                lang="en"
                 className="px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black tracking-[0.18em] sm:tracking-[0.22em] uppercase"
                 style={{
                   background: "color-mix(in srgb, var(--accent) 10%, transparent)",
@@ -432,6 +433,7 @@ export default function WelcomePage() {
 
             {/* Headline */}
             <h1
+              lang="en"
               className="wu-fadeUp-2 font-black uppercase leading-[0.88] mb-5 sm:mb-6"
               style={{ fontSize: "clamp(2.6rem, 9.5vw, 7.5rem)", letterSpacing: "-0.035em" }}
             >
@@ -606,6 +608,7 @@ export default function WelcomePage() {
           <div className="relative max-w-4xl mx-auto">
             <div className="text-center mb-8 sm:mb-12">
               <p
+                lang="en"
                 className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
                 style={{ color: "var(--accent)" }}
               >
@@ -807,12 +810,14 @@ export default function WelcomePage() {
         <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-24">
           <div className="text-center mb-10 sm:mb-16">
             <p
+              lang="en"
               className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
               style={{ color: "var(--accent)" }}
             >
               Capabilities
             </p>
             <h2
+              lang="en"
               className="font-black uppercase"
               style={{ fontSize: "clamp(2rem, 4.5vw, 3.5rem)", letterSpacing: "-0.025em", color: "var(--text-1)" }}
             >

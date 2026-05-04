@@ -40,7 +40,10 @@ if (!MONGO_URI || !ACCESS_JWT_SECRET || !REFRESH_JWT_SECRET || !INTERNAL_JWT_SEC
 
 const REFRESH_TTL_MS        = parseInt(REFRESH_TOKEN_TTL_DAYS) * 24 * 60 * 60 * 1000;
 const VERIFY_TOKEN_TTL_MS   = 24 * 60 * 60 * 1000; // 24 saat
+const RESET_TOKEN_TTL_MS    = 60 * 60 * 1000;       // 1 saat
 const EMAIL_ENABLED         = Boolean(SMTP_HOST && SMTP_PASS);
+const MAX_LOGIN_ATTEMPTS    = 5;
+const LOCKOUT_DURATION_MS   = 15 * 60 * 1000; // 15 dakika
 
 // ── NODEMAILER ────────────────────────────────────────────────────────────────
 const transporter = EMAIL_ENABLED
@@ -157,6 +160,27 @@ async function sendLoginNotificationEmail(
   );
 }
 
+async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
+  const link = `${APP_URL}/reset-password?token=${token}`;
+  await sendMail(
+    email,
+    "Sonaralabs — Şifre sıfırlama talebi",
+    emailWrapper(`
+      <h2 style="margin:0 0 8px;color:#fff;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:-.01em">
+        Şifre Sıfırlama
+      </h2>
+      <p style="margin:0 0 24px;color:#888;font-size:14px;line-height:1.6">
+        Şifrenizi sıfırlamak için aşağıdaki butona tıklayın.<br>
+        Link <strong style="color:#ccc">1 saat</strong> geçerlidir.
+      </p>
+      <a href="${link}" style="${BTN}">Şifremi Sıfırla →</a>
+      <p style="margin:28px 0 0;font-size:12px;color:#555">
+        Bu talebi siz yapmadıysanız bu emaili görmezden gelebilirsiniz — şifreniz değişmeyecek.
+      </p>`),
+    `Şifre sıfırlama linkiniz: ${link}`,
+  );
+}
+
 async function sendPasswordChangedEmail(email: string, ip: string): Promise<void> {
   const now = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
   await sendMail(
@@ -195,6 +219,12 @@ const userSchema = new mongoose.Schema({
   isEmailVerified:     { type: Boolean, default: false },
   emailVerifyToken:    { type: String, select: false },
   emailVerifyExpires:  { type: Date,   select: false },
+  // ── Şifre sıfırlama ──────────────────────────────────────────────────────
+  passwordResetToken:  { type: String, select: false },
+  passwordResetExpires:{ type: Date,   select: false },
+  // ── Brute-force koruması ─────────────────────────────────────────────────
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockoutUntil:        { type: Date,   select: false },
 }, { timestamps: true });
 
 const User = mongoose.model("User", userSchema);
@@ -404,11 +434,31 @@ app.post("/resend-verification", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select("+passwordHash");
+    const user = await User.findOne({ email }).select("+passwordHash +lockoutUntil");
     if (!user) return res.status(401).json({ success: false, error: "Invalid credentials" });
 
+    // Brute-force: hesap kilitli mi?
+    if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+      const remaining = Math.ceil((user.lockoutUntil.getTime() - Date.now()) / 60_000);
+      return res.status(429).json({
+        success: false,
+        error: `account_locked`,
+        message: `Çok fazla başarısız giriş. Hesabınız ${remaining} dakika kilitli.`,
+      });
+    }
+
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ success: false, error: "Invalid credentials" });
+    if (!valid) {
+      // Başarısız deneme sayacını artır
+      const attempts = (user.failedLoginAttempts ?? 0) + 1;
+      const update: Record<string, unknown> = { failedLoginAttempts: attempts };
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        update.lockoutUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        update.failedLoginAttempts = 0;
+      }
+      await User.findByIdAndUpdate(user._id, update);
+      return res.status(401).json({ success: false, error: "Invalid credentials" });
+    }
 
     // Email onayı kontrolü (SMTP yapılandırılmışsa zorunlu)
     if (EMAIL_ENABLED && !user.isEmailVerified) {
@@ -417,6 +467,11 @@ app.post("/login", async (req, res) => {
         error:   "email_not_verified",
         message: "Email adresinizi onaylamanız gerekiyor. Onay emaili için giriş sayfasındaki linki kullanın.",
       });
+    }
+
+    // Başarılı giriş — sayacı sıfırla
+    if (user.failedLoginAttempts > 0) {
+      await User.findByIdAndUpdate(user._id, { failedLoginAttempts: 0, lockoutUntil: null });
     }
 
     const accessToken  = makeAccessToken(String(user._id), user.role);
@@ -450,6 +505,85 @@ app.post("/login", async (req, res) => {
     } as ApiResponse);
   } catch (err) {
     console.error("login error", err);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// POST /forgot-password  (public)
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: "Email required" });
+
+    // Enumeration önleme: kullanıcı yoksa bile aynı yanıtı dön
+    const genericOk = { success: true, message: "Şifre sıfırlama emaili gönderildi (hesap kayıtlıysa)." };
+
+    const user = await User.findOne({ email });
+    if (!user) return res.json(genericOk);
+
+    // Throttle: son 60 saniyede gönderilmişse beklet
+    if (user.passwordResetExpires &&
+        user.passwordResetExpires.getTime() > Date.now() + RESET_TOKEN_TTL_MS - 60_000) {
+      return res.status(429).json({ success: false, error: "Lütfen 60 saniye bekleyin." });
+    }
+
+    const resetToken     = crypto.randomBytes(32).toString("hex");
+    const resetTokenHash = hashToken(resetToken);
+    await User.findByIdAndUpdate(user._id, {
+      passwordResetToken:   resetTokenHash,
+      passwordResetExpires: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+    });
+
+    await sendPasswordResetEmail(email, resetToken).catch(err =>
+      console.error("[auth] Reset email gönderilemedi:", err.message)
+    );
+
+    res.json(genericOk);
+  } catch (err) {
+    console.error("forgot-password error", err);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// POST /reset-password  (public)
+app.post("/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword)
+      return res.status(400).json({ success: false, error: "token and newPassword required" });
+
+    const strongPassword = /^(?=.*[A-Z])(?=.*[0-9]).{8,}$/;
+    if (!strongPassword.test(newPassword))
+      return res.status(400).json({
+        success: false,
+        error: "Password must be at least 8 characters with an uppercase letter and a number",
+      });
+
+    const tokenHash = hashToken(token);
+    const user = await User.findOne({
+      passwordResetToken:   tokenHash,
+      passwordResetExpires: { $gt: new Date() },
+    }).select("+passwordResetToken +passwordResetExpires");
+
+    if (!user) {
+      return res.status(400).json({ success: false, error: "Geçersiz veya süresi dolmuş link." });
+    }
+
+    user.passwordHash         = await bcrypt.hash(newPassword, 12);
+    user.passwordResetToken   = undefined as any;
+    user.passwordResetExpires = undefined as any;
+    user.failedLoginAttempts  = 0;
+    user.lockoutUntil         = undefined as any;
+    await user.save();
+
+    // Tüm oturumları sonlandır
+    await RefreshToken.deleteMany({ userId: user._id });
+
+    sendPasswordChangedEmail(user.email, req.ip ?? "").catch(() => {});
+
+    res.json({ success: true, message: "Şifreniz başarıyla sıfırlandı. Lütfen tekrar giriş yapın." });
+  } catch (err) {
+    console.error("reset-password error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useDAWStore, registerBuffer, unregisterBuffer } from '@sonaralabs/daw-studio'
 import { C } from '../../theme'
 import { toast } from '../../lib/toast'
+import { useT } from '../../store/useI18nStore'
 
 const DND_ITEM_TYPE = 'application/x-daw-item'
 const SR = 44100
@@ -169,6 +170,8 @@ function previewBuffer(buf: AudioBuffer) {
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function SamplesPanel() {
+  const t = useT()
+  const s = t.studio
   const addAudioTrack = useDAWStore(s => s.addAudioTrack)
   const addClip       = useDAWStore(s => s.addClip)
 
@@ -341,7 +344,7 @@ export function SamplesPanel() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search samples…"
+          placeholder={s.sampleSearch}
           style={{
             width: '100%', boxSizing: 'border-box',
             background: C.bgSubtle, border: `1px solid ${C.border}`,
@@ -351,6 +354,7 @@ export function SamplesPanel() {
           }}
         />
         <button
+          lang="en"
           onClick={() => fileInput.current?.click()}
           disabled={importing}
           style={{
@@ -364,7 +368,7 @@ export function SamplesPanel() {
             opacity: importing ? 0.5 : 1,
           }}
         >
-          {importing ? 'Importing…' : '+ Import Sample'}
+          {importing ? s.importing : s.importSample}
         </button>
         <input
           ref={fileInput} type="file" multiple
@@ -384,8 +388,8 @@ export function SamplesPanel() {
         }}>
           <span style={{ fontSize: 9, color: C.accent }}>
             <strong>{getSampleName(selectedId)}</strong> —
-            sürükle veya <kbd style={{ background: C.bgSubtle, borderRadius: 3, padding: '0 3px', fontFamily: 'monospace' }}>Enter</kbd> /
-            <kbd style={{ background: C.bgSubtle, borderRadius: 3, padding: '0 3px', fontFamily: 'monospace' }}>Ctrl+V</kbd> ile aynı kanala ekle
+            {s.sampleHintDrag} <kbd style={{ background: C.bgSubtle, borderRadius: 3, padding: '0 3px', fontFamily: 'monospace' }}>Enter</kbd> /
+            <kbd style={{ background: C.bgSubtle, borderRadius: 3, padding: '0 3px', fontFamily: 'monospace' }}>Ctrl+V</kbd> {s.sampleHintAdd}
           </span>
         </div>
       )}
@@ -396,7 +400,7 @@ export function SamplesPanel() {
         {/* User-imported samples */}
         {filteredUser.length > 0 && (
           <>
-            <CategoryHeader label="MY SAMPLES" />
+            <CategoryHeader label={s.mySamples} />
             {filteredUser.map(s => (
               <SampleRow
                 key={s.id}
@@ -436,7 +440,7 @@ export function SamplesPanel() {
 
         {filteredBuiltIn.length === 0 && filteredUser.length === 0 && (
           <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '24px 12px' }}>
-            No matches
+            {s.noMatches}
           </p>
         )}
       </div>
@@ -444,7 +448,7 @@ export function SamplesPanel() {
       {/* ── Footer ──────────────────────────────────────────────────────── */}
       <div style={{ padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
         <span style={{ fontSize: 9, color: C.text3 }}>
-          {totalCount} samples · aynı kanala sınırsız yerleştir
+          {totalCount} {s.sampleCount}
         </span>
       </div>
     </div>

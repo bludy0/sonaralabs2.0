@@ -39,6 +39,11 @@ const {
 
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
+if (process.env.NODE_ENV === "production" && !process.env.MINIO_PUBLIC_URL) {
+  console.error("[generation] FATAL: MINIO_PUBLIC_URL is not set in production. Audio URLs will point to localhost and be inaccessible.");
+  process.exit(1);
+}
+
 // ── MODELS ────────────────────────────────────────────────────────────────────
 const generationSchema = new mongoose.Schema({
   userId:            { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
@@ -634,6 +639,21 @@ Return ONLY valid JSON array, no markdown, no explanation:
     res.status(500).json({ error: "MIDI generation failed" });
   }
 });
+
+// GET /capabilities — public, frontend uses to disable unavailable providers
+app.get("/capabilities", (_, res) => res.json({
+  music: {
+    beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
+    sonauto:   Boolean(process.env.SONAUTO_API_KEY),
+    lyria:     false,
+  },
+  sfx: {
+    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
+  },
+  vision: {
+    gemini: Boolean(process.env.GEMINI_API_KEY),
+  },
+}));
 
 app.get("/health", (_, res) => res.json({
   status: "ok", service: "generation",

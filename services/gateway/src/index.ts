@@ -37,12 +37,15 @@ if (!ACCESS_JWT_SECRET || !INTERNAL_JWT_SECRET) {
 }
 
 // ── REDIS CLIENT ──────────────────────────────────────────────────────────────
-// disableOfflineQueue: true — Redis kapalıyken komutlar kuyruklanmaz, anında hata döner
-const redis = createClient({ url: REDIS_URL, socket: { reconnectStrategy: false } });
+// Redis bağlantısı — yeniden bağlanma stratejisi ile (Docker başlangıç gecikmesi için)
+const redis = createClient({
+  url: REDIS_URL,
+  socket: { reconnectStrategy: (retries) => Math.min(retries * 200, 3000) },
+});
 let redisReady = false;
-redis.on("ready",       () => { redisReady = true;  console.log("[gateway] Redis connected"); });
-redis.on("error",       ()  => { redisReady = false; });
-redis.on("end",         ()  => { redisReady = false; });
+redis.on("ready", () => { redisReady = true;  console.log("[gateway] Redis connected"); });
+redis.on("error", () => { redisReady = false; }); // crash önle, rate limit devre dışı kalır
+redis.on("end",   () => { redisReady = false; });
 redis.connect().catch(err => console.warn("[gateway] Redis unavailable:", err.message));
 
 // ── RATE LIMITER ──────────────────────────────────────────────────────────────
@@ -203,6 +206,8 @@ app.post("/api/auth/login",                 authLimiter, (c) => proxyTo(c, AUTH_
 app.post("/api/auth/refresh",               authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/refresh"));
 app.get ("/api/auth/verify-email",          authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/verify-email"));
 app.post("/api/auth/resend-verification",   authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/resend-verification"));
+app.post("/api/auth/forgot-password",       authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/forgot-password"));
+app.post("/api/auth/reset-password",        authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/reset-password"));
 
 // ── KORUNAN ROUTE'LAR ─────────────────────────────────────────────────────────
 // requireAuth + generalLimiter her korunan route'a uygulanır
@@ -212,7 +217,8 @@ app.all("/api/auth/*", requireAuth, generalLimiter, (c) =>
   proxyTo(c, AUTH_SERVICE_URL, c.req.path.replace("/api/auth", "") || "/")
 );
 
-// Generation
+// Generation — capabilities: public (no auth), frontend uses on mount
+app.get ("/api/generate/capabilities",              generalLimiter,    (c) => proxyTo(c, GENERATION_SERVICE_URL, "/capabilities"));
 app.post("/api/generate",               requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/"));
 app.post("/api/generate/sfx",           requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/sfx"));
 app.post("/api/generate/analyze-image", requireAuth, generationLimiter, (c) => proxyTo(c, GENERATION_SERVICE_URL, "/analyze-image"));

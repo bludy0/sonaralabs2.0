@@ -144,6 +144,7 @@ export default function AdminPage() {
           SONARALABS / ADMIN
         </p>
         <h1
+          lang="en"
           className="text-2xl font-bold uppercase"
           style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
         >
@@ -175,6 +176,7 @@ export default function AdminPage() {
       {/* Daily stats */}
       <section className="mb-8">
         <p
+          lang="en"
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
           style={{ color: "var(--text-3)" }}
         >
@@ -186,9 +188,9 @@ export default function AdminPage() {
           <div className="space-y-1.5">
             {/* Header row */}
             <div className="flex items-center gap-4 px-4 py-2">
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Date</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Generations</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits Spent</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Date</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Generations</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits Spent</span>
             </div>
             {daily.map(row => (
               <div
@@ -238,12 +240,12 @@ export default function AdminPage() {
           <div className="space-y-1.5">
             {/* Header row */}
             <div className="flex items-center gap-4 px-4 py-2">
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Email</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "var(--text-3)" }}>Role</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "var(--text-3)" }}>Storage</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 shrink-0" style={{ color: "var(--text-3)" }}>Registered</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 shrink-0" style={{ color: "var(--text-3)" }}>Change Role</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Email</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "var(--text-3)" }}>Role</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "var(--text-3)" }}>Storage</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 shrink-0" style={{ color: "var(--text-3)" }}>Registered</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 shrink-0" style={{ color: "var(--text-3)" }}>Change Role</span>
             </div>
             {users.map(u => (
               <div

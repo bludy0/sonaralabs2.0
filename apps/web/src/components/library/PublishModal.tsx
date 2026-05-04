@@ -46,6 +46,15 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
     const cleanTitle = stripTags(form.title.trim())
     if (!cleanTitle) { setError("Title is required"); return; }
     if (!item.audioUrl) { setError("No audio URL"); return; }
+    let bpmValue: number | undefined;
+    if (form.bpm !== "") {
+      const parsed = parseInt(form.bpm, 10);
+      if (isNaN(parsed) || parsed < 40 || parsed > 300) {
+        setError("BPM must be a number between 40 and 300.");
+        return;
+      }
+      bpmValue = parsed;
+    }
     setPublishing(true);
     setError(null);
     try {
@@ -53,7 +62,7 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
         title: cleanTitle,
         audioUrl: item.audioUrl,
         durationSec: item.duration ? Math.round(item.duration) : 0,
-        bpm: form.bpm ? parseInt(form.bpm) : undefined,
+        bpm: bpmValue,
         genreTags: form.genreTags,
         moodTags: form.moodTags,
         gameTypeTags: form.gameTypeTags,
@@ -83,6 +92,7 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
       >
         <div className="flex items-center justify-between">
           <h2
+            lang="en"
             className="text-2xl font-bold uppercase"
             style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
           >
@@ -100,7 +110,7 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2" style={{ color: "var(--text-3)" }}>
+          <label lang="en" className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2" style={{ color: "var(--text-3)" }}>
             Title
           </label>
           <input
@@ -144,7 +154,7 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
 
         <div className="flex items-center gap-4">
           <div>
-            <label className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2" style={{ color: "var(--text-3)" }}>
+            <label lang="en" className="block text-[10px] font-bold tracking-[0.25em] uppercase mb-2" style={{ color: "var(--text-3)" }}>
               BPM (optional)
             </label>
             <input

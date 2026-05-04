@@ -232,13 +232,13 @@ export default function ExplorePage() {
       <div className="flex-1 px-8 pb-28">
         {loading && tracks.length === 0 ? (
           <div className="flex items-center justify-center h-48">
-            <p className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
+            <p lang="en" className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
               Loading stream…
             </p>
           </div>
         ) : tracks.length === 0 ? (
           <div className="flex items-center justify-center h-48">
-            <p className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
+            <p lang="en" className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
               No tracks found.
             </p>
           </div>

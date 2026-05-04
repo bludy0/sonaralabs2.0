@@ -3,8 +3,10 @@ import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { AxiosError } from "axios";
 import { useAuthStore } from "../store/useAuthStore";
 import { api } from "../lib/api";
+import { useT } from "../store/useI18nStore";
 
 export default function LoginPage() {
+  const t = useT();
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState<string | null>(null);
@@ -29,8 +31,10 @@ export default function LoginPage() {
       const errCode  = axiosErr.response?.data?.error;
       if (errCode === "email_not_verified") {
         setEmailNotVerified(true);
+      } else if (errCode === "account_locked") {
+        setError(axiosErr.response?.data?.message ?? t.auth.accountLocked);
       } else {
-        setError(axiosErr.response?.data?.message ?? axiosErr.response?.data?.error ?? "Login failed. Please try again.");
+        setError(axiosErr.response?.data?.message ?? axiosErr.response?.data?.error ?? t.common.error);
       }
     }
   }
@@ -46,11 +50,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      className="flex min-h-screen items-center justify-center px-4"
-      style={{ background: "var(--bg-page)" }}
-    >
-      {/* Decorative grid lines */}
+    <div className="flex min-h-screen items-center justify-center px-4" style={{ background: "var(--bg-page)" }}>
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.04]"
         style={{
@@ -60,30 +60,19 @@ export default function LoginPage() {
         }}
       />
 
-      <div
-        className="relative w-full max-w-sm rounded-lg p-8 space-y-7"
-        style={{ background: "var(--bg-card)" }}
-      >
-        {/* Brand */}
+      <div className="relative w-full max-w-sm rounded-lg p-8 space-y-7" style={{ background: "var(--bg-card)" }}>
         <div>
-          <p
-            className="text-[9px] font-semibold tracking-[0.25em] uppercase mb-1"
-            style={{ color: "var(--text-2)" }}
-          >
+          <p className="text-[9px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
             AI_CORE_v2.0
           </p>
-          <h1
-            className="text-2xl font-bold uppercase leading-none"
-            style={{ letterSpacing: "-0.01em", color: "var(--text-1)" }}
-          >
-            Sign in
+          <h1 className="text-2xl font-bold uppercase leading-none" style={{ letterSpacing: "-0.01em", color: "var(--text-1)" }}>
+            {t.auth.login}
           </h1>
           <p className="text-[12px] mt-1" style={{ color: "var(--text-3)" }}>
-            Welcome back to Sonaralabs
+            {t.auth.welcomeBack}
           </p>
         </div>
 
-        {/* Session-expired banner */}
         {sessionExpired && (
           <div
             className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
@@ -93,100 +82,75 @@ export default function LoginPage() {
               color:      "var(--warning)",
             }}
           >
-            Your session has expired. Please sign in again.
+            {t.auth.sessionExpired}
           </div>
         )}
 
-        {/* Divider */}
         <div className="h-px" style={{ background: "var(--bg-input)" }} />
 
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-          {/* Email */}
           <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="email"
-              className="text-[9px] font-bold tracking-[0.2em] uppercase"
-              style={{ color: "var(--text-3)" }}
-            >
-              Email
+            <label htmlFor="email" className="text-[9px] font-bold tracking-[0.2em] uppercase" style={{ color: "var(--text-3)" }}>
+              {t.auth.email}
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
+              id="email" name="email" type="email" autoComplete="email" required
               value={email}
               onChange={e => { setEmail(e.target.value); setEmailNotVerified(false); setResendState("idle"); }}
               className="rounded-lg px-3 py-3 text-sm outline-none transition-all duration-100"
-              style={{
-                background: "var(--bg-input)",
-                color: "var(--text-1)",
-                border: "1px solid var(--bg-border)",
-              }}
+              style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "1px solid var(--bg-border)" }}
               placeholder="you@example.com"
               onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
-              onBlur={e => (e.currentTarget.style.borderColor = "var(--bg-input)")}
+              onBlur={e =>  (e.currentTarget.style.borderColor = "var(--bg-input)")}
             />
           </div>
 
-          {/* Password */}
           <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="password"
-              className="text-[9px] font-bold tracking-[0.2em] uppercase"
-              style={{ color: "var(--text-3)" }}
-            >
-              Password
+            <label htmlFor="password" className="text-[9px] font-bold tracking-[0.2em] uppercase" style={{ color: "var(--text-3)" }}>
+              {t.auth.password}
             </label>
             <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
+              id="password" name="password" type="password" autoComplete="current-password" required
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="rounded-lg px-3 py-3 text-sm outline-none transition-all duration-100"
-              style={{
-                background: "var(--bg-input)",
-                color: "var(--text-1)",
-                border: "1px solid var(--bg-border)",
-              }}
+              style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "1px solid var(--bg-border)" }}
               placeholder="••••••••"
               onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
-              onBlur={e => (e.currentTarget.style.borderColor = "var(--bg-input)")}
+              onBlur={e =>  (e.currentTarget.style.borderColor = "var(--bg-input)")}
             />
           </div>
 
-          {/* Generic error */}
-          {error && (
-            <p
-              className="rounded-lg px-3 py-2 text-[11px]"
-              style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
+          <div className="flex justify-end -mt-2">
+            <Link
+              to="/forgot-password"
+              className="text-[11px] transition-colors"
+              style={{ color: "var(--text-3)" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--accent)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
             >
+              {t.auth.forgotPassword}
+            </Link>
+          </div>
+
+          {error && (
+            <p className="rounded-lg px-3 py-2 text-[11px]" style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
               {error}
             </p>
           )}
 
-          {/* Email not verified banner */}
           {emailNotVerified && (
             <div
               className="rounded-lg px-3 py-3 flex flex-col gap-2"
               style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}
             >
               <p className="text-[11px]" style={{ color: "var(--text-1)" }}>
-                Your email address isn't verified yet. Check your inbox for the activation link.
+                {t.auth.emailNotVerified}
               </p>
-
               {resendState === "sent" ? (
-                <p className="text-[11px]" style={{ color: "var(--accent)" }}>
-                  ✓ New verification email sent — check your inbox.
-                </p>
+                <p className="text-[11px]" style={{ color: "var(--accent)" }}>{t.auth.resendSent}</p>
               ) : resendState === "error" ? (
-                <p className="text-[11px]" style={{ color: "var(--error)" }}>
-                  Failed to resend. Try again in a moment.
-                </p>
+                <p className="text-[11px]" style={{ color: "var(--error)" }}>{t.auth.resendFailed}</p>
               ) : (
                 <button
                   type="button"
@@ -195,7 +159,7 @@ export default function LoginPage() {
                   className="self-start text-[11px] font-semibold underline underline-offset-2 disabled:opacity-50"
                   style={{ color: "var(--accent)" }}
                 >
-                  {resendState === "sending" ? "Sending…" : "Resend verification email"}
+                  {resendState === "sending" ? t.common.loading : t.auth.resendVerification}
                 </button>
               )}
             </div>
@@ -205,27 +169,17 @@ export default function LoginPage() {
             type="submit"
             disabled={isLoading}
             className="mt-1 rounded-lg py-3 text-sm font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              background: "var(--accent)",
-              color: "var(--accent-on)",
-              boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
-            }}
-            onMouseEnter={e =>
-              !isLoading && ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 28px color-mix(in srgb, var(--accent) 50%, transparent)")
-            }
-            onMouseLeave={e =>
-              ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)")
-            }
+            style={{ background: "var(--accent)", color: "var(--accent-on)", boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)" }}
+            onMouseEnter={e => !isLoading && ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 28px color-mix(in srgb, var(--accent) 50%, transparent)")}
+            onMouseLeave={e =>               ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)")}
           >
-            {isLoading ? "Signing in…" : "Sign in"}
+            {isLoading ? t.auth.loggingIn : t.auth.loginBtn}
           </button>
         </form>
 
         <p className="text-center text-[11px]" style={{ color: "var(--text-3)" }}>
-          Don&apos;t have an account?{" "}
-          <Link to="/register" style={{ color: "var(--accent)" }}>
-            Register
-          </Link>
+          {t.auth.noAccount}{" "}
+          <Link to="/register" style={{ color: "var(--accent)" }}>{t.auth.registerLink}</Link>
         </p>
       </div>
     </div>

@@ -1,4 +1,5 @@
 export { DAWLayout }      from './components/DAWLayout'
+export { setDAWLang }     from './i18n'
 export { audioBufferToDataUrlSync, dataUrlToAudioBuffer } from './lib/audioUtils'
 export type { DAWLayoutProps } from './components/DAWLayout'
 export { useDAWStore }    from './store/useDAWStore'

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { C } from '../../theme'
+import { useT } from '../../store/useI18nStore'
 import type { SavedProjectMeta } from '../../pages/StudioPage'
 
 export interface ProjectPanelProps {
@@ -24,6 +25,8 @@ export function ProjectPanel({
   projectName, projectId, saving, saveLabel, shareToken, sharing, copied, isDirty,
   onNameChange, onSave, onLoad, onShare, onNew, onDelete,
 }: ProjectPanelProps) {
+  const t = useT()
+  const s = t.studio
   const [projects,      setProjects]      = useState<SavedProjectMeta[]>([])
   const [loading,       setLoading]       = useState(false)
   const [search,        setSearch]        = useState('')
@@ -62,13 +65,13 @@ export function ProjectPanel({
 
       {/* ── Aktif Proje ─────────────────────────────────────────────────── */}
       <section style={{ padding: '12px 10px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <Label>Current Project</Label>
+        <Label>{s.current}</Label>
 
         {/* Proje adı */}
         <input
           value={projectName}
           onChange={e => onNameChange(e.target.value)}
-          onBlur={() => { if (!projectName.trim()) onNameChange('Untitled Project') }}
+          onBlur={() => { if (!projectName.trim()) onNameChange(s.untitled) }}
           style={{
             width: '100%', boxSizing: 'border-box',
             background: C.bgSubtle, border: `1px solid ${C.border}`,
@@ -77,11 +80,12 @@ export function ProjectPanel({
             outline: 'none', marginBottom: 8,
           }}
           maxLength={120}
-          placeholder="Untitled Project"
+          placeholder={s.untitled}
         />
 
         {/* Kaydet */}
         <button
+          lang="en"
           onClick={onSave}
           disabled={saving}
           title="Save (Ctrl+S)"
@@ -98,12 +102,12 @@ export function ProjectPanel({
             transition: 'all 0.2s',
           }}
         >
-          {saving ? 'Saving…'
-            : saveLabel?.includes('✓') ? '✓ Saved'
-            : saveLabel?.includes('✗') ? '✗ Failed'
+          {saving ? s.saving
+            : saveLabel?.includes('✓') ? `✓ ${s.saved}`
+            : saveLabel?.includes('✗') ? `✗ ${s.failed}`
             : isDirty
-              ? (projectId ? '● Save Changes' : '● Save Project')
-              : (projectId ? 'Saved' : 'Save Project')}
+              ? (projectId ? `● ${s.saveChanges}` : `● ${s.saveProject}`)
+              : (projectId ? s.saved : s.saveProject)}
         </button>
 
         {/* Paylaş */}
@@ -121,7 +125,7 @@ export function ProjectPanel({
               opacity: sharing ? 0.6 : 1,
             }}
           >
-            {copied ? '🔗 Link copied!' : shareToken ? '🔗 Share link' : 'Share'}
+            {copied ? s.linkCopied : shareToken ? s.shareLink : s.share}
           </button>
         )}
       </section>
@@ -140,7 +144,7 @@ export function ProjectPanel({
           onMouseEnter={e => (e.currentTarget.style.background = C.bgHover)}
           onMouseLeave={e => (e.currentTarget.style.background = C.bgSubtle)}
         >
-          + New Project
+          {s.newProject}
         </button>
       </div>
 
@@ -152,7 +156,7 @@ export function ProjectPanel({
           display: 'flex', alignItems: 'center', gap: 4,
         }}>
           <Label style={{ flex: 1, marginBottom: 0 }}>
-            Saved Projects
+            {s.saved_projects}
             {projects.length > 0 && (
               <span style={{ marginLeft: 5, fontWeight: 500, opacity: 0.6 }}>
                 ({projects.length})
@@ -175,7 +179,7 @@ export function ProjectPanel({
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search projects…"
+            placeholder={s.searchProjects}
             style={{
               width: '100%', boxSizing: 'border-box',
               background: C.bgSubtle, border: `1px solid ${C.border}`,
@@ -189,11 +193,11 @@ export function ProjectPanel({
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
             <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '20px 0' }}>
-              Loading…
+              {s.loading}
             </p>
           ) : filtered.length === 0 ? (
             <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '20px 12px' }}>
-              {projects.length === 0 ? 'No saved projects yet' : 'No matches'}
+              {projects.length === 0 ? s.noSavedYet : s.noMatches}
             </p>
           ) : filtered.map(p => (
             <ProjectItem
@@ -206,6 +210,9 @@ export function ProjectPanel({
               onDeleteRequest={() => setDeletePending(p._id)}
               onDeleteCancel={() => setDeletePending(null)}
               onDeleteConfirm={() => handleDelete(p._id)}
+              deleteLabel={s.deleteProject}
+              cancelLabel={t.common.cancel}
+              deleteConfirmLabel={t.common.delete}
             />
           ))}
         </div>
@@ -218,15 +225,19 @@ export function ProjectPanel({
 function ProjectItem({
   project, isActive, isDeletePending, isDeleting,
   onLoad, onDeleteRequest, onDeleteCancel, onDeleteConfirm,
+  deleteLabel, cancelLabel, deleteConfirmLabel,
 }: {
-  project:         SavedProjectMeta
-  isActive:        boolean
-  isDeletePending: boolean
-  isDeleting:      boolean
-  onLoad:          () => void
-  onDeleteRequest: () => void
-  onDeleteCancel:  () => void
-  onDeleteConfirm: () => void
+  project:            SavedProjectMeta
+  isActive:           boolean
+  isDeletePending:    boolean
+  isDeleting:         boolean
+  onLoad:             () => void
+  onDeleteRequest:    () => void
+  onDeleteCancel:     () => void
+  onDeleteConfirm:    () => void
+  deleteLabel:        string
+  cancelLabel:        string
+  deleteConfirmLabel: string
 }) {
   const [hovered, setHovered] = useState(false)
 
@@ -298,18 +309,18 @@ function ProjectItem({
           borderTop: `1px solid ${C.error}30`,
         }}>
           <span style={{ fontSize: 10, color: C.error, flex: 1 }}>
-            Delete this project?
+            {deleteLabel}
           </span>
           <button
             onClick={onDeleteCancel}
             style={smallConfirmBtn(C.border, C.text2)}
-          >Cancel</button>
+          >{cancelLabel}</button>
           <button
             onClick={onDeleteConfirm}
             disabled={isDeleting}
             style={smallConfirmBtn(C.error, C.error)}
           >
-            {isDeleting ? '…' : 'Delete'}
+            {isDeleting ? '…' : deleteConfirmLabel}
           </button>
         </div>
       )}

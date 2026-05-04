@@ -397,8 +397,7 @@ export default function SettingsPage() {
   const [passMsg,       setPassMsg]       = useState<string | null>(null);
   const [passSaving,    setPassSaving]    = useState(false);
 
-  const darkPresets  = PRESET_THEMES.filter(t => !t.isLight);
-  const lightPresets = PRESET_THEMES.filter(t =>  t.isLight);
+  const darkPresets = PRESET_THEMES.filter(t => !t.isLight);
 
   // Düzenlenecek temayı güncel store'dan al
   const editingThemeLive = editingTheme
@@ -454,7 +453,7 @@ export default function SettingsPage() {
 
         {/* Açık temalar */}
         <div style={{ marginBottom: 18 }}>
-          <p style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
+          <p lang="en" style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
             Light
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

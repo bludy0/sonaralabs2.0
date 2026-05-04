@@ -6,10 +6,12 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { ToastContainer } from "./components/ToastContainer";
 
 // Pages
-import WelcomePage     from "./pages/WelcomePage";
-import LoginPage       from "./pages/LoginPage";
-import RegisterPage    from "./pages/RegisterPage";
-import VerifyEmailPage from "./pages/VerifyEmailPage";
+import WelcomePage          from "./pages/WelcomePage";
+import LoginPage             from "./pages/LoginPage";
+import RegisterPage          from "./pages/RegisterPage";
+import VerifyEmailPage       from "./pages/VerifyEmailPage";
+import ForgotPasswordPage    from "./pages/ForgotPasswordPage";
+import ResetPasswordPage     from "./pages/ResetPasswordPage";
 import GeneratePage from "./pages/GeneratePage";
 import LibraryPage  from "./pages/LibraryPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -49,9 +51,11 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           {/* Auth sayfaları */}
-          <Route path="/login"         element={<LoginPage />} />
-          <Route path="/register"      element={<RegisterPage />} />
-          <Route path="/verify-email"  element={<VerifyEmailPage />} />
+          <Route path="/login"            element={<LoginPage />} />
+          <Route path="/register"         element={<RegisterPage />} />
+          <Route path="/verify-email"     element={<VerifyEmailPage />} />
+          <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
+          <Route path="/reset-password"   element={<ResetPasswordPage />} />
 
           {/* Public (auth gerekmez, Layout var) */}
           <Route element={<Layout />}>

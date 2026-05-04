@@ -4,6 +4,7 @@ import { useDAWStore } from '@sonaralabs/daw-studio'
 import { formatDuration } from '../../lib/format'
 import { C } from '../../theme'
 import { toast } from '../../lib/toast'
+import { useT } from '../../store/useI18nStore'
 
 // Must match the type string in TrackRow.tsx
 const DND_ITEM_TYPE = 'application/x-daw-item'
@@ -34,6 +35,8 @@ function fixUrl(url: string | undefined): string | undefined {
 }
 
 export function BrowserPanel() {
+  const t = useT()
+  const s = t.studio
   const addAudioTrack = useDAWStore(s => s.addAudioTrack)
   const addClip       = useDAWStore(s => s.addClip)
 
@@ -105,7 +108,7 @@ export function BrowserPanel() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search…"
+          placeholder={s.browserSearch}
           style={{
             width: '100%', boxSizing: 'border-box',
             background: C.bgSubtle, border: `1px solid ${C.border}`,
@@ -147,10 +150,10 @@ export function BrowserPanel() {
       {/* ── Liste ───────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading ? (
-          <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '24px 0' }}>Loading…</p>
+          <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '24px 0' }}>{s.loading}</p>
         ) : filtered.length === 0 ? (
           <p style={{ fontSize: 11, color: C.text3, textAlign: 'center', padding: '24px 12px' }}>
-            {items.length === 0 ? 'Library is empty' : 'No matches'}
+            {items.length === 0 ? s.libraryEmpty : s.noMatches}
           </p>
         ) : filtered.map(item => (
           <BrowserItem

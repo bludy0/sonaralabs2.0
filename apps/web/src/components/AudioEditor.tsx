@@ -300,7 +300,7 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
           {/* BPM / Pitch (playbackRate) */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+              <span lang="en" className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
                 Tempo / Pitch
               </span>
               <span className="text-xs tabular-nums font-mono" style={{ color: "var(--accent)" }}>
@@ -355,7 +355,7 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
 
           {/* Trim */}
           <section>
-            <span className="text-xs font-medium uppercase tracking-wider block mb-3" style={{ color: "var(--text-2)" }}>
+            <span lang="en" className="text-xs font-medium uppercase tracking-wider block mb-3" style={{ color: "var(--text-2)" }}>
               Trim
             </span>
             <div className="grid grid-cols-2 gap-4">

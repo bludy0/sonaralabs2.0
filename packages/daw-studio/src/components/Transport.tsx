@@ -3,6 +3,7 @@ import { useDAWStore, undo, redo } from '../store/useDAWStore'
 import { useAudioEngine } from '../store/useAudioEngine'
 import { exportMix, exportMixMp3 } from '../lib/exportMix'
 import { C, alpha } from '../constants'
+import { useDAWT } from '../i18n'
 
 type MainTab = 'ARRANGER' | 'MIXER' | 'EDITOR'
 
@@ -20,11 +21,12 @@ function fmtTimecode(s: number): string {
 }
 
 export function Transport({ activeTab, onTabChange }: TransportProps) {
-  const transport    = useDAWStore(s => s.transport)
-  const setBPM       = useDAWStore(s => s.setBPM)
-  const addAudio     = useDAWStore(s => s.addAudioTrack)
-  const addMidi      = useDAWStore(s => s.addMidiTrack)
-  const toggleLoop   = useDAWStore(s => s.toggleLoop)
+  const transport         = useDAWStore(s => s.transport)
+  const setBPM            = useDAWStore(s => s.setBPM)
+  const setTimeSignature  = useDAWStore(s => s.setTimeSignature)
+  const addAudio          = useDAWStore(s => s.addAudioTrack)
+  const addMidi           = useDAWStore(s => s.addMidiTrack)
+  const toggleLoop        = useDAWStore(s => s.toggleLoop)
 
   const { isPlaying, currentTime, play, pause, stop } = useAudioEngine()
   const masterVolume  = useAudioEngine(s => s.masterVolume)
@@ -59,8 +61,21 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
     }
   }
 
+  const dt = useDAWT()
   const bpm    = transport.bpm.toFixed(2)
-  const [timeSig] = transport.timeSignature
+  const [timeSigNum, timeSigDen] = transport.timeSignature
+
+  const TIME_SIGNATURES: { label: string; value: [number, number] }[] = [
+    { label: '4/4', value: [4, 4] },
+    { label: '3/4', value: [3, 4] },
+    { label: '2/4', value: [2, 4] },
+    { label: '2/2', value: [2, 2] },
+    { label: '6/8', value: [6, 8] },
+    { label: '7/8', value: [7, 8] },
+    { label: '5/4', value: [5, 4] },
+    { label: '12/8', value: [12, 8] },
+  ]
+  const currentTimeSigLabel = `${timeSigNum}/${timeSigDen}`
 
   return (
     <header style={{
@@ -134,10 +149,20 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         {/* BPM — editable */}
         <input
           ref={bpmInputRef}
-          type="number" min={20} max={300}
+          type="number" min={40} max={300}
           defaultValue={transport.bpm}
-          onKeyDown={e => { if (e.key === 'Enter') setBPM(Number((e.target as HTMLInputElement).value)) }}
-          onBlur={e => setBPM(Number(e.target.value))}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              const v = Math.max(40, Math.min(300, Number((e.target as HTMLInputElement).value)))
+              setBPM(v);
+              (e.target as HTMLInputElement).value = v.toFixed(2)
+            }
+          }}
+          onBlur={e => {
+            const v = Math.max(40, Math.min(300, Number(e.target.value)))
+            setBPM(v)
+            e.target.value = v.toFixed(2)
+          }}
           style={{
             width:       72,
             background:  'none',
@@ -154,10 +179,31 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
             textAlign:   'right',
           }}
         />
-        {/* Time sig */}
-        <span style={{ fontSize: 11, fontWeight: 600, color: C.text2, letterSpacing: '0.04em' }}>
-          {timeSig}/{timeSig}
-        </span>
+        {/* Time sig — dropdown */}
+        <select
+          value={currentTimeSigLabel}
+          onChange={e => {
+            const found = TIME_SIGNATURES.find(t => t.label === e.target.value)
+            if (found) setTimeSignature(found.value)
+          }}
+          title="Time Signature"
+          style={{
+            background:    C.bgSelected,
+            border:        `1px solid ${C.border}`,
+            borderRadius:  3,
+            color:         C.text2,
+            fontSize:      11,
+            fontWeight:    600,
+            letterSpacing: '0.04em',
+            padding:       '2px 4px',
+            cursor:        'pointer',
+            outline:       'none',
+          }}
+        >
+          {TIME_SIGNATURES.map(t => (
+            <option key={t.label} value={t.label}>{t.label}</option>
+          ))}
+        </select>
         {/* Timecode */}
         <span style={{
           fontFamily: "'Inter', monospace",
@@ -217,8 +263,8 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
 
       {/* ── Add tracks ──────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, padding: '0 12px', borderLeft: `1px solid ${C.border}`, height: '100%', alignItems: 'center' }}>
-        <SmallTextBtn onClick={addAudio}>+Audio</SmallTextBtn>
-        <SmallTextBtn onClick={addMidi}>+MIDI</SmallTextBtn>
+        <SmallTextBtn onClick={addAudio}>{dt.addAudio}</SmallTextBtn>
+        <SmallTextBtn onClick={addMidi}>{dt.addMidi}</SmallTextBtn>
       </div>
 
       {/* ── Master Volume ───────────────────────────────────────────────── */}
@@ -346,6 +392,7 @@ function SmallTextBtn({ children, onClick, accent, title }: {
 }) {
   return (
     <button
+      lang="en"
       onClick={onClick}
       title={title}
       style={{

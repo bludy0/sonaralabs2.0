@@ -18,9 +18,9 @@ import type { GenerationItem } from "../store/useGenerationStore";
 const STYLES: MusicStyle[]            = ["ambient", "action", "puzzle", "horror", "platformer"];
 const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
-// Lyria provider UI'da gösterilmiyor — backend provider map'e henüz eklenmedi.
-// Hazır olduğunda bu listeye { value: "lyria", label: "Lyria" } ekle.
-const PROVIDERS: { value: MusicProvider; label: string }[] = [
+
+interface Capabilities { music: { beatoven: boolean; sonauto: boolean }; }
+const ALL_PROVIDERS: { value: MusicProvider; label: string }[] = [
   { value: "beatoven", label: "Beatoven" },
   { value: "sonauto",  label: "Sonauto" },
 ];
@@ -58,14 +58,32 @@ export default function GeneratePage() {
   const [imageError, setImageError]         = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [editorUrl, setEditorUrl] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [editorUrl,     setEditorUrl]     = useState<string | null>(null);
+  const [formError,     setFormError]     = useState<string | null>(null);
+  const [capabilities,  setCapabilities]  = useState<Capabilities | null>(null);
+
+  const availableProviders = capabilities
+    ? ALL_PROVIDERS.filter(p => capabilities.music[p.value as keyof typeof capabilities.music])
+    : ALL_PROVIDERS;
 
   const creditCost = CREDIT_COST[provider]?.[duration] ?? 0;
 
   const onSSEStatus = useCallback((event: SseStatusEvent) => handleSSEEvent(event), [handleSSEEvent]);
   useGenerationSSE({ onStatus: onSSEStatus });
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+  useEffect(() => {
+    api.get("/api/generate/capabilities")
+      .then(r => setCapabilities(r.data))
+      .catch(() => {}); // hata olursa tüm provider'lar gösterilir
+  }, []);
+
+  // Eğer seçili provider artık mevcut değilse birinciye geç
+  useEffect(() => {
+    if (availableProviders.length && !availableProviders.find(p => p.value === provider)) {
+      setProvider(availableProviders[0].value);
+    }
+  }, [availableProviders, provider]);
 
   // ── Image handling ─────────────────────────────────────────────────────────
 
@@ -176,12 +194,13 @@ export default function GeneratePage() {
       >
         {/* Panel header */}
         <div className="px-7 pt-8 pb-6">
-          <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
+          <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }} lang="en">
             SONARALABS / STUDIO
           </p>
           <h1
             className="text-2xl font-bold uppercase leading-none"
             style={{ letterSpacing: "-0.01em", color: "var(--text-1)" }}
+            lang="en"
           >
             Initialize<br />Generation_
           </h1>
@@ -191,7 +210,7 @@ export default function GeneratePage() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ background: "var(--accent)" }}
               />
-              <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-2)" }}>
+              <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-2)" }} lang="en">
                 {user.creditBalance} credits available
               </span>
             </div>
@@ -366,9 +385,18 @@ export default function GeneratePage() {
                     label="AI Provider"
                     value={provider}
                     onChange={v => setProvider(v as MusicProvider)}
-                    options={PROVIDERS.map(p => ({ value: p.value, label: p.label }))}
+                    options={availableProviders.map(p => ({ value: p.value, label: p.label }))}
                   />
                 </div>
+
+                {provider === "sonauto" && (
+                  <p
+                    className="text-[10px] rounded px-3 py-2 leading-relaxed"
+                    style={{ background: "color-mix(in srgb, var(--accent) 6%, transparent)", color: "var(--text-3)" }}
+                  >
+                    Sonauto always generates ~95s of audio. The selected duration is stored as metadata only.
+                  </p>
+                )}
 
                 {formError && (
                   <p className="text-[11px] rounded px-3 py-2" style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
@@ -417,85 +445,35 @@ export default function GeneratePage() {
 
           {/* ── SFX FORM ── */}
           {mode === "sfx" && (
-            <form onSubmit={handleGenerateSFX} className="space-y-5">
-              <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-3)" }}>
-                Powered by ElevenLabs Sound Effects · 1 credit per generation
-              </p>
-
-              <div className="space-y-1.5">
-                <label
-                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
-                  style={{ color: "var(--text-3)" }}
-                  htmlFor="sfx-prompt"
-                >
-                  Describe the sound effect
-                </label>
-                <textarea
-                  id="sfx-prompt"
-                  value={sfxPrompt}
-                  onChange={e => setSfxPrompt(e.target.value)}
-                  placeholder="e.g. A wooden door creaking open, footsteps on gravel, sword clash…"
-                  rows={4}
-                  className="w-full rounded-lg px-4 py-3 text-sm resize-none outline-none transition-all duration-100"
-                  style={{ background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--bg-border)" }}
-                  onFocus={e => (e.currentTarget.style.borderColor = "var(--teal)")}
-                  onBlur={e => (e.currentTarget.style.borderColor = "var(--bg-input)")}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
-                  style={{ color: "var(--text-3)" }}
-                  htmlFor="sfx-duration"
-                >
-                  Duration (sec) — optional
-                </label>
-                <input
-                  id="sfx-duration"
-                  type="number"
-                  min="0.5"
-                  max="22"
-                  step="0.5"
-                  value={sfxDuration}
-                  onChange={e => setSfxDuration(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="auto"
-                  className="w-32 rounded-lg px-3 py-2.5 text-sm outline-none"
-                  style={{ background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--bg-border)" }}
-                />
-              </div>
-
-              {formError && (
-                <p className="text-[11px] rounded px-3 py-2" style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
-                  {formError}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={isGenerating}
-                className="w-full rounded-lg py-3.5 text-sm font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-                style={{ background: "var(--teal)", color: "var(--accent-on)" }}
+            <div className="space-y-5">
+              {/* Coming Soon banner */}
+              <div
+                className="rounded-lg px-4 py-5 flex flex-col items-center gap-3 text-center"
+                style={{ background: "var(--bg-card)", border: "1px dashed var(--bg-border)" }}
               >
-                {isGenerating ? (
-                  <>
-                    <span
-                      className="h-4 w-4 rounded-full border-2 animate-spin"
-                      style={{ borderColor: "color-mix(in srgb, var(--teal) 30%, transparent)", borderTopColor: "var(--teal)" }}
-                    />
-                    Generating SFX…
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>surround_sound</span>
-                    Generate SFX
-                    <span className="rounded px-2 py-0.5 text-[10px] font-bold" style={{ background: "color-mix(in srgb, var(--teal) 15%, transparent)" }}>
-                      1 cr
-                    </span>
-                  </>
-                )}
-              </button>
-            </form>
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: 32, color: "var(--text-3)" }}
+                >
+                  surround_sound
+                </span>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--text-2)" }} lang="en">
+                    SFX Generation — Coming Soon
+                  </p>
+                  <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+                    Sound effects via ElevenLabs will be available in a future update.
+                  </p>
+                </div>
+                <span
+                  className="px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest"
+                  style={{ background: "var(--bg-input)", color: "var(--text-3)" }}
+                  lang="en"
+                >
+                  Not Available
+                </span>
+              </div>
+            </div>
           )}
         </div>
 
@@ -510,12 +488,13 @@ export default function GeneratePage() {
         <div className="px-7 pt-8 pb-6 shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
+              <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }} lang="en">
                 REALTIME
               </p>
               <h2
                 className="text-xl font-bold uppercase"
                 style={{ letterSpacing: "-0.01em", color: "var(--text-1)" }}
+                lang="en"
               >
                 Active Stream_Queue
               </h2>
@@ -529,7 +508,7 @@ export default function GeneratePage() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ background: items.some(i => i.status === "processing") ? "var(--accent)" : "var(--text-3)" }}
               />
-              <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-2)" }}>
+              <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-2)" }} lang="en">
                 {items.length} jobs
               </span>
             </div>
@@ -546,7 +525,7 @@ export default function GeneratePage() {
               <span className="material-symbols-outlined" style={{ fontSize: 40, color: "var(--bg-border)" }}>
                 graphic_eq
               </span>
-              <p className="text-[11px] uppercase tracking-widest text-center" style={{ color: "var(--text-3)" }}>
+              <p className="text-[11px] uppercase tracking-widest text-center" style={{ color: "var(--text-3)" }} lang="en">
                 No generations yet.<br />Create your first music loop or SFX.
               </p>
             </div>

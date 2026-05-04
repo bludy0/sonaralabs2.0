@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/useAuthStore";
 import { formatBytes, formatDate } from "../lib/format";
+import { useT } from "../store/useI18nStore";
 
 interface GenerationItem {
   _id: string;
@@ -68,6 +69,7 @@ function MetricCard({ label, value, sub, accentValue }: MetricCardProps) {
 }
 
 export default function DashboardPage() {
+  const t = useT();
   const user = useAuthStore(s => s.user);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -199,23 +201,23 @@ export default function DashboardPage() {
       {/* Metric cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <MetricCard
-          label="Credit Balance"
+          label={t.dashboard.creditBalance}
           value={creditBalance ?? user?.creditBalance ?? 0}
-          sub="credits available"
+          sub={t.dashboard.credits}
           accentValue
         />
         <MetricCard
-          label="Total Generations"
+          label={t.dashboard.totalGen}
           value={historyTotal}
           sub="all time"
         />
         <MetricCard
-          label="Completed"
+          label={t.dashboard.completed}
           value={doneCount}
           sub={`of last ${historyItems.length} loaded`}
         />
         <MetricCard
-          label="Storage Used"
+          label={t.dashboard.storage}
           value={formatBytes(user?.storageUsed ?? 0)}
           sub="of 500 MB quota"
         />
@@ -224,6 +226,7 @@ export default function DashboardPage() {
       {/* Recent activity */}
       <section className="mb-8">
         <p
+          lang="en"
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
           style={{ color: "var(--text-3)" }}
         >
@@ -266,6 +269,7 @@ export default function DashboardPage() {
       {/* Credit history */}
       <section className="mb-8">
         <p
+          lang="en"
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
           style={{ color: "var(--text-3)" }}
         >
@@ -277,11 +281,11 @@ export default function DashboardPage() {
           <div className="space-y-1.5">
             {/* Header row */}
             <div className="flex items-center gap-4 px-4 py-2">
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "var(--text-3)" }}>Type</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Reason</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "var(--text-3)" }}>Amount</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "var(--text-3)" }}>Balance After</span>
-              <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 text-right shrink-0" style={{ color: "var(--text-3)" }}>Date</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 shrink-0" style={{ color: "var(--text-3)" }}>Type</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Reason</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-16 text-right shrink-0" style={{ color: "var(--text-3)" }}>Amount</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-20 text-right shrink-0" style={{ color: "var(--text-3)" }}>Balance After</span>
+              <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-24 text-right shrink-0" style={{ color: "var(--text-3)" }}>Date</span>
             </div>
             {creditLogs.map(log => (
               <div
@@ -323,6 +327,7 @@ export default function DashboardPage() {
       {/* Buy Credits */}
       <section className="mb-8">
         <p
+          lang="en"
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
           style={{ color: "var(--text-3)" }}
         >
@@ -372,6 +377,7 @@ export default function DashboardPage() {
       {isAdmin && (
         <section>
           <p
+            lang="en"
             className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
             style={{ color: "var(--text-3)" }}
           >
@@ -383,9 +389,9 @@ export default function DashboardPage() {
             <div className="space-y-1.5">
               {/* Header row */}
               <div className="flex items-center gap-4 px-4 py-2">
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Date</span>
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Generations</span>
-                <span className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits Spent</span>
+                <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Date</span>
+                <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Generations</span>
+                <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase w-28 text-right shrink-0" style={{ color: "var(--text-3)" }}>Credits Spent</span>
               </div>
               {dailyStats.map(row => (
                 <div

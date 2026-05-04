@@ -5,6 +5,7 @@ import { SamplerEngine }      from '../../engine/SamplerEngine'
 import { getAudioContext }    from '../../engine/context'
 import { INSTRUMENTS, getInstrumentsByCategory } from '../../engine/instruments'
 import { C, alpha }           from '../../constants'
+import { useDAWT }            from '../../i18n'
 import type { MidiTrack, MidiNote } from '../../types'
 
 // C2 (36) → B6 (83), 48 pitches
@@ -36,6 +37,7 @@ export function PianoRoll() {
   const setInstrument   = useDAWStore(s => s.setInstrument)
   const replaceMidiNotes= useDAWStore(s => s.replaceMidiNotes)
 
+  const dt = useDAWT()
   const [snap, setSnap] = useState(0.25)   // beats
   const [showInstPicker, setShowInstPicker] = useState(false)
   const [aiModal, setAiModal]   = useState(false)
@@ -139,7 +141,7 @@ export function PianoRoll() {
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: C.bgDeep, color: C.text3, fontSize: 12,
       }}>
-        Select a MIDI clip to open the Piano Roll
+        {dt.selectMidiClip}
       </div>
     )
   }
@@ -344,14 +346,14 @@ export function PianoRoll() {
             display: 'flex', alignItems: 'center', gap: 4,
           }}
         >
-          ✨ AI Generate
+          {dt.aiGenerate}
         </button>
 
         {/* Divider */}
         <div style={{ width: 1, height: 14, background: C.border }} />
 
         {/* Snap */}
-        <span style={{ fontSize: 9, color: C.text3 }}>Snap</span>
+        <span style={{ fontSize: 9, color: C.text3 }}>{dt.snap}</span>
         {[0.25, 0.5, 1].map(s => (
           <button
             key={s}
@@ -389,12 +391,12 @@ export function PianoRoll() {
             boxShadow: `0 8px 32px ${C.shadowLg}`,
           }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: C.text1, marginBottom: 16 }}>
-              ✨ AI Melody Generator
+              {dt.aiMelodyGenerator}
             </div>
 
             {/* Prompt */}
             <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>
-              Describe the melody
+              {dt.describeMelody}
             </label>
             <input
               value={aiPrompt}
@@ -412,7 +414,7 @@ export function PianoRoll() {
             {/* Row: Key + Scale + Bars */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>Key</label>
+                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>{dt.keyLabel}</label>
                 <select
                   value={aiKey}
                   onChange={e => setAiKey(e.target.value)}
@@ -426,7 +428,7 @@ export function PianoRoll() {
                 </select>
               </div>
               <div style={{ flex: 2 }}>
-                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>Scale</label>
+                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>{dt.scaleLabel}</label>
                 <select
                   value={aiScale}
                   onChange={e => setAiScale(e.target.value)}
@@ -440,7 +442,7 @@ export function PianoRoll() {
                 </select>
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>Bars</label>
+                <label style={{ fontSize: 10, color: C.text3, display: 'block', marginBottom: 4 }}>{dt.barsLabel}</label>
                 <select
                   value={aiBars}
                   onChange={e => setAiBars(Number(e.target.value))}
@@ -456,7 +458,7 @@ export function PianoRoll() {
             </div>
 
             <div style={{ fontSize: 10, color: C.text3, marginBottom: 16 }}>
-              1 credit will be charged. Notes will replace the current clip content.
+              {dt.creditWarning}
             </div>
 
             {aiError && (
@@ -480,7 +482,7 @@ export function PianoRoll() {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {dt.cancel}
               </button>
               <button
                 onClick={handleAiGenerate}
@@ -501,9 +503,9 @@ export function PianoRoll() {
                       border: `2px solid ${C.text3}`, borderTopColor: 'transparent',
                       borderRadius: '50%', animation: 'spin 0.8s linear infinite',
                     }}/>
-                    Generating…
+                    {dt.generating}
                   </>
-                ) : '✨ Generate'}
+                ) : dt.generate}
               </button>
             </div>
           </div>

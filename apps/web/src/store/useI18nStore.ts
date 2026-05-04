@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { en } from "../lib/i18n/en";
 import { tr } from "../lib/i18n/tr";
 import type { Translations } from "../lib/i18n/en";
+import { setDAWLang } from "@sonaralabs/daw-studio";
 
 export type Language = "en" | "tr";
 
@@ -27,8 +28,8 @@ export const useI18nStore = create<I18nState>()(
 
       setLang: (lang) => {
         set({ lang, t: DICT[lang] });
-        // HTML lang attribute
         document.documentElement.lang = lang;
+        setDAWLang(lang);
       },
     }),
     {
@@ -38,6 +39,7 @@ export const useI18nStore = create<I18nState>()(
         if (state) {
           state.t = DICT[state.lang];
           document.documentElement.lang = state.lang;
+          setDAWLang(state.lang);
         }
       },
     }

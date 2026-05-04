@@ -31,6 +31,11 @@ const MINIO_PUBLIC_BASE = MINIO_PUBLIC_URL ?? `http://localhost:${MINIO_PORT}`;
 
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
+if (process.env.NODE_ENV === "production" && !process.env.MINIO_PUBLIC_URL) {
+  console.error("[upload] FATAL: MINIO_PUBLIC_URL is not set in production. Uploaded file URLs will point to localhost and be inaccessible.");
+  process.exit(1);
+}
+
 const QUOTA  = parseInt(STORAGE_QUOTA_BYTES);
 const MAX_SZ = parseInt(MAX_FILE_SIZE_BYTES);
 

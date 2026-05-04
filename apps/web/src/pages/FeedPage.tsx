@@ -120,7 +120,7 @@ export default function FeedPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-page)" }}>
-        <p className="text-[11px] tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
+        <p lang="en" className="text-[11px] tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
           Loading stream…
         </p>
       </div>
@@ -166,7 +166,7 @@ export default function FeedPage() {
             <span className="material-symbols-outlined block" style={{ fontSize: 40, color: "var(--bg-border)" }}>
               dynamic_feed
             </span>
-            <p className="text-[12px] uppercase tracking-widest" style={{ color: "var(--text-3)" }}>
+            <p lang="en" className="text-[12px] uppercase tracking-widest" style={{ color: "var(--text-3)" }}>
               Nothing here yet.
             </p>
             <p className="text-[11px]" style={{ color: "var(--text-3)" }}>

@@ -96,6 +96,7 @@ export function LibraryItemCard({
             }}
           />
           <span
+            lang="en"
             className="text-[9px] font-bold tracking-[0.15em] uppercase"
             style={{ color: STATUS_COLOR[item.status] ?? "var(--text-3)" }}
           >
@@ -165,6 +166,7 @@ export function LibraryItemCard({
               style={{ background: "var(--bg-card)", border: "1px solid var(--bg-border)" }}
             >
               <p
+                lang="en"
                 className="text-[9px] font-bold tracking-[0.2em] uppercase px-3 pt-1.5 pb-1"
                 style={{ color: "var(--text-3)" }}
               >

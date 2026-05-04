@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useDAWStore } from '../../store/useDAWStore'
 import type { EffectChain } from '../../types'
+import { useDAWT } from '../../i18n'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ function formatValue(parameter: string, value: number): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MasteringPanel() {
+  const dt = useDAWT()
   const tracks      = useDAWStore(s => s.tracks)
   const transport   = useDAWStore(s => s.transport)
   const updateEffects = useDAWStore(s => s.updateEffects)
@@ -144,15 +146,15 @@ export function MasteringPanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-zinc-100">AI Mastering</span>
-          <span className="text-xs text-zinc-500 bg-zinc-800 rounded px-1.5 py-0.5">Beta</span>
+          <span className="text-sm font-semibold text-zinc-100">{dt.aiMastering}</span>
+          <span className="text-xs text-zinc-500 bg-zinc-800 rounded px-1.5 py-0.5">{dt.beta}</span>
         </div>
         {analyzed && unappliedCount > 0 && (
           <button
             onClick={applyAll}
             className="text-xs px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium"
           >
-            Apply All
+            {dt.applyAll}
           </button>
         )}
       </div>
@@ -177,9 +179,9 @@ export function MasteringPanel() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
               </svg>
-              Analyzing…
+              {dt.analyzing}
             </span>
-          ) : analyzed ? 'Re-analyze Mix' : 'Analyze Mix'}
+          ) : analyzed ? dt.reanalyzeMix : dt.analyzeMix}
         </button>
 
         {/* Error */}
@@ -192,7 +194,7 @@ export function MasteringPanel() {
         {/* Empty state */}
         {analyzed && suggestions.length === 0 && !error && (
           <div className="text-center text-xs text-zinc-500 py-6">
-            Your mix looks great — no suggestions!
+            {dt.mixLooksGreat}
           </div>
         )}
 
@@ -222,14 +224,14 @@ export function MasteringPanel() {
                 </div>
                 {sug.applied ? (
                   <span className="shrink-0 text-[10px] font-semibold text-indigo-400 bg-indigo-900/50 rounded px-1.5 py-0.5">
-                    Applied
+                    {dt.applied}
                   </span>
                 ) : (
                   <button
                     onClick={() => applySuggestion(idx)}
                     className="shrink-0 text-[11px] px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200 transition-colors font-medium"
                   >
-                    Apply
+                    {dt.apply}
                   </button>
                 )}
               </div>
@@ -255,7 +257,7 @@ export function MasteringPanel() {
         {!analyzed && !loading && !error && (
           <div className="text-center text-xs text-zinc-500 py-6 space-y-1">
             <div className="text-2xl">🎛️</div>
-            <p>Click <strong className="text-zinc-400">Analyze Mix</strong> to get AI suggestions for your track effects, levels, and dynamics.</p>
+            <p>{dt.analyzeMixHint}</p>
           </div>
         )}
       </div>

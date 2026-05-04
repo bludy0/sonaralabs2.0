@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "../lib/toast";
+import { useT } from "../store/useI18nStore";
 import { PublishModal } from "../components/library/PublishModal";
 import { LibraryItemCard } from "../components/library/LibraryItemCard";
 import type { LibraryItem, Collection, TypeFilter, SortBy, StatusFilter } from "../components/library/LibraryTypes";
 
 export default function LibraryPage() {
+  const t = useT();
   const navigate = useNavigate();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -73,7 +75,7 @@ export default function LibraryPage() {
       setItems(prev => (append ? [...prev, ...incoming] : incoming));
       setTotal(totalCount);
     } catch {
-      setError("Liste yüklenirken hata oluştu.");
+      setError(t.library.loadError);
     } finally {
       setLoading(false);
     }
@@ -115,13 +117,13 @@ export default function LibraryPage() {
   }
 
   async function handleDelete(item: LibraryItem) {
-    if (!confirm("Bu öğeyi silmek istediğinizden emin misiniz?")) return;
+    if (!confirm(t.library.confirmDelete)) return;
     try {
       await api.delete(`/api/library/${item._type}/${item._id}`);
       setItems(prev => prev.filter(i => i._id !== item._id));
       setTotal(prev => prev - 1);
     } catch {
-      toast("Could not delete item.", "error");
+      toast(t.common.error, "error");
     }
   }
 
@@ -140,7 +142,7 @@ export default function LibraryPage() {
       setCollections(prev => [...prev, data.data ?? data]);
       setNewColName("");
     } catch {
-      toast("Could not create collection.", "error");
+      toast(t.library.collectionError, "error");
     } finally {
       setColLoading(false);
     }
@@ -161,7 +163,7 @@ export default function LibraryPage() {
       setActiveColId(colId);
       setActiveColRefs(new Set(col.items.map(i => i.refId)));
     } catch {
-      toast("Could not load collection.", "error");
+      toast(t.library.loadCollectionError, "error");
     } finally {
       setLoadingColId(null);
     }
@@ -175,7 +177,7 @@ export default function LibraryPage() {
       await api.patch(`/api/collections/${colId}`, { name: trimmed });
       setCollections(prev => prev.map(c => c._id === colId ? { ...c, name: trimmed } : c));
     } catch {
-      toast("Could not rename collection.", "error");
+      toast(t.library.renameError, "error");
     } finally {
       setRenamingColId(null);
     }
@@ -189,7 +191,7 @@ export default function LibraryPage() {
       setCollections(prev => prev.filter(c => c._id !== colId));
       if (activeColId === colId) { setActiveColId(null); setActiveColRefs(new Set()); }
     } catch {
-      toast("Could not delete collection.", "error");
+      toast(t.library.deleteCollectionError, "error");
     } finally {
       setDeletingColId(null);
     }
@@ -207,9 +209,9 @@ export default function LibraryPage() {
           : c
       ));
       if (activeColId === colId) setActiveColRefs(prev => new Set(prev).add(item._id));
-      toast("Added to collection.", "success");
+      toast(t.library.addedToCollection, "success");
     } catch {
-      toast("Could not add to collection.", "error");
+      toast(t.library.collectionError, "error");
     } finally {
       setAddingToColId(null);
     }
@@ -228,7 +230,7 @@ export default function LibraryPage() {
         setActiveColRefs(prev => { const s = new Set(prev); s.delete(refId); return s; });
       }
     } catch {
-      toast("Could not remove from collection.", "error");
+      toast(t.library.removeError, "error");
     }
   }
 
@@ -255,11 +257,11 @@ export default function LibraryPage() {
       setUploadFile(null);
       setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      toast("File uploaded successfully.", "success");
+      toast(t.library.uploadSuccess, "success");
       setPage(1);
       await fetchItems(typeFilter, favOnly, searchQ, statusFilter, 1, false);
     } catch (err: any) {
-      const msg = err?.response?.data?.error ?? "Upload failed.";
+      const msg = err?.response?.data?.error ?? t.library.uploadFailed;
       setUploadError(msg);
       setUploadProgress(0);
     } finally {
@@ -301,6 +303,7 @@ export default function LibraryPage() {
           SONARALABS / LIBRARY
         </p>
         <h1
+          lang="en"
           className="text-2xl font-bold uppercase"
           style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
         >
@@ -325,7 +328,7 @@ export default function LibraryPage() {
                 type="text"
                 value={searchInput}
                 onChange={e => handleSearchChange(e.target.value)}
-                placeholder="Search by name or prompt…"
+                placeholder={t.library.search}
                 className="flex-1 text-sm bg-transparent focus:outline-none"
                 style={{ color: "var(--text-1)" }}
               />
@@ -342,7 +345,11 @@ export default function LibraryPage() {
 
             {/* Type chips */}
             <div className="flex gap-1.5">
-              {([ ["all", "All"], ["generation", "Generated"], ["upload", "Uploaded"] ] as [TypeFilter, string][]).map(([key, label]) => (
+              {([
+                ["all",        t.library.filterAll],
+                ["generation", t.library.filterGenerated],
+                ["upload",     t.library.filterUploaded],
+              ] as [TypeFilter, string][]).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setTypeFilter(key)}
@@ -371,7 +378,7 @@ export default function LibraryPage() {
               <span className="material-symbols-outlined text-base">
                 {favOnly ? "favorite" : "favorite"}
               </span>
-              Favorites
+              {t.library.favorites}
             </button>
           </div>
 
@@ -383,10 +390,10 @@ export default function LibraryPage() {
                 Sort
               </span>
               {([
-                ["newest", "Newest"],
-                ["oldest", "Oldest"],
-                ["longest", "Longest"],
-                ["shortest", "Shortest"],
+                ["newest",   t.library.sortNewest],
+                ["oldest",   t.library.sortOldest],
+                ["longest",  t.library.sortLongest],
+                ["shortest", t.library.sortShortest],
               ] as [SortBy, string][]).map(([key, label]) => (
                 <button
                   key={key}
@@ -412,10 +419,10 @@ export default function LibraryPage() {
                 Status
               </span>
               {([
-                ["all", "All"],
-                ["done", "Done"],
-                ["processing", "Processing"],
-                ["failed", "Failed"],
+                ["all",        t.library.filterAll],
+                ["done",       t.library.filterDone],
+                ["processing", t.library.filterProcessing],
+                ["failed",     t.library.filterFailed],
               ] as [StatusFilter, string][]).map(([key, label]) => {
                 const activeColors: Record<string, { bg: string; text: string }> = {
                   done: { bg: "color-mix(in srgb, var(--success) 15%, transparent)", text: "var(--success)" },
@@ -448,6 +455,7 @@ export default function LibraryPage() {
             style={{ background: "var(--bg-card)" }}
           >
             <p
+              lang="en"
               className="text-[10px] font-bold tracking-[0.25em] uppercase mb-3"
               style={{ color: "var(--text-3)" }}
             >
@@ -581,6 +589,7 @@ export default function LibraryPage() {
         <aside className="w-full lg:w-72 shrink-0">
           <div className="rounded-lg p-4" style={{ background: "var(--bg-card)" }}>
             <p
+              lang="en"
               className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
               style={{ color: "var(--text-3)" }}
             >

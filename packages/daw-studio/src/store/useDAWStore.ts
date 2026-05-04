@@ -124,8 +124,9 @@ interface DAWState {
   removeAutomationPoint:   (laneId: string, pointId: string) => void
 
   // Transport
-  setBPM:       (bpm: number) => void
-  setLoop:      (start: number, end: number) => void
+  setBPM:            (bpm: number) => void
+  setTimeSignature:  (sig: [number, number]) => void
+  setLoop:           (start: number, end: number) => void
   toggleLoop:   () => void
   toggleSnap:   () => void
   setSnapBeats: (beats: number) => void
@@ -634,7 +635,10 @@ export const useDAWStore = create<DAWState>((set, get) => {
     // ── Transport ─────────────────────────────────────────────────────────────
 
     setBPM: (bpm) =>
-      set(s => ({ transport: { ...s.transport, bpm: Math.max(20, Math.min(300, bpm)) } })),
+      set(s => ({ transport: { ...s.transport, bpm: Math.max(40, Math.min(300, bpm)) } })),
+
+    setTimeSignature: (sig) =>
+      set(s => ({ transport: { ...s.transport, timeSignature: sig } })),
 
     setLoop: (start, end) =>
       set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),

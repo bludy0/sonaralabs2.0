@@ -4,6 +4,16 @@
   --font-sans: "Space Grotesk", sans-serif;
 }
 
+/*
+ * Turkish locale fix: CSS text-transform:uppercase converts "i"→"İ" when
+ * document lang="tr". Elements marked lang="en" override this behaviour
+ * and use Latin uppercase rules (i→I).
+ * Apply lang="en" to any element with static English text + uppercase class.
+ */
+[lang="en"] {
+  /* Ensure Latin uppercase rules regardless of document language */
+}
+
 /* ── Tema CSS değişkenleri (varsayılan: Cyber Yellow) ────────────────────── */
 :root {
   /* Yüzeyler */

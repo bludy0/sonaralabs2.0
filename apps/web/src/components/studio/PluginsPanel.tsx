@@ -5,6 +5,7 @@ import type {
   CompressorSettings, LimiterSettings, EffectChain,
 } from '@sonaralabs/daw-studio'
 import { C } from '../../theme'
+import { useT } from '../../store/useI18nStore'
 
 // ── Reusable slider component ─────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ function EffectBlock({
           }} />
         </div>
 
-        <span style={{
+        <span lang="en" style={{
           flex: 1,
           fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
           textTransform: 'uppercase',
@@ -182,6 +183,7 @@ function LimiterEditor({ lim, onChange }: { lim: LimiterSettings; onChange: (p: 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function PluginsPanel() {
+  const t = useT()
   const selectedTrackId = useDAWStore(s => s.selectedTrackId)
   const tracks          = useDAWStore(s => s.tracks)
   const updateEffects   = useDAWStore(s => s.updateEffects)
@@ -219,7 +221,7 @@ export function PluginsPanel() {
         {tracks.length > 0 && (
           <div style={{ width: '100%', marginTop: 8 }}>
             <p style={{ fontSize: 9, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, textAlign: 'center' }}>
-              Quick select
+              {t.studio.quickSelect}
             </p>
             {tracks.map(t => (
               <button
