@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sonaralabs-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "sonaralabs-frontend", "dev"],
+      "port": 5174,
+      "autoPort": true
+    },
+    {
+      "name": "daw-studio-standalone",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@sonaralabs/daw-studio", "dev:app"],
+      "port": 5175
+    }
+  ]
+}
