@@ -1,0 +1,244 @@
+##############################################################################
+# SONARALABS 2.0 — Render Blueprint
+# Kullanım: Render Dashboard → New → Blueprint → Bu repo'yu bağla
+##############################################################################
+
+services:
+
+  # ── GATEWAY ────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-gateway
+    runtime: docker
+    dockerfilePath: ./services/gateway/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: ACCESS_JWT_SECRET
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: RATE_LIMIT_GENERAL
+        value: 30
+      - key: RATE_LIMIT_GENERATION
+        value: 3
+      - key: RATE_LIMIT_UPLOAD
+        value: 10
+      - key: RATE_LIMIT_AUTH
+        value: 10
+      - key: AUTH_SERVICE_URL
+        value: https://sonaralabs-auth.onrender.com
+      - key: GENERATION_SERVICE_URL
+        value: https://sonaralabs-generation.onrender.com
+      - key: UPLOAD_SERVICE_URL
+        value: https://sonaralabs-upload.onrender.com
+      - key: LIBRARY_SERVICE_URL
+        value: https://sonaralabs-library.onrender.com
+      - key: CREDIT_SERVICE_URL
+        value: https://sonaralabs-credit.onrender.com
+      - key: ADMIN_SERVICE_URL
+        value: https://sonaralabs-admin.onrender.com
+      - key: NOTIFICATION_SERVICE_URL
+        value: https://sonaralabs-notification.onrender.com
+      - key: PROFILE_SERVICE_URL
+        value: https://sonaralabs-profile.onrender.com
+      - key: SOCIAL_SERVICE_URL
+        value: https://sonaralabs-social.onrender.com
+      - key: REDIS_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false   # Vercel URL'ini buraya yaz
+
+  # ── AUTH ───────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-auth
+    runtime: docker
+    dockerfilePath: ./services/auth/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: ACCESS_JWT_SECRET
+        sync: false
+      - key: REFRESH_JWT_SECRET
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: 7
+      - key: INTERNAL_TOKEN_TTL
+        value: 5m
+      - key: SMTP_HOST
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        value: 465
+      - key: SMTP_SECURE
+        value: true
+      - key: SMTP_USER
+        value: resend
+      - key: SMTP_PASS
+        sync: false   # Resend API key
+      - key: EMAIL_FROM
+        sync: false   # örn: Sonaralabs <noreply@yourdomain.com>
+      - key: APP_URL
+        sync: false   # Vercel URL'in
+
+  # ── GENERATION ─────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-generation
+    runtime: docker
+    dockerfilePath: ./services/generation/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3002
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: BEATOVEN_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: JOB_TIMEOUT_MS
+        value: 300000
+      - key: MINIO_ENDPOINT
+        sync: false   # B2: s3.us-east-005.backblazeb2.com  ya da  R2: <account>.r2.cloudflarestorage.com
+      - key: MINIO_PORT
+        value: 443
+      - key: MINIO_USE_SSL
+        value: true
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_BUCKET
+        value: sonaralabs-audio
+      - key: MINIO_PUBLIC_URL
+        sync: false   # B2 public URL: https://f005.backblazeb2.com/file/sonaralabs-audio
+      - key: CREDIT_SERVICE_URL
+        value: https://sonaralabs-credit.onrender.com
+      - key: NOTIFICATION_SERVICE_URL
+        value: https://sonaralabs-notification.onrender.com
+
+  # ── UPLOAD ─────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-upload
+    runtime: docker
+    dockerfilePath: ./services/upload/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3003
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_PORT
+        value: 443
+      - key: MINIO_USE_SSL
+        value: true
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_BUCKET
+        value: sonaralabs-audio
+      - key: STORAGE_QUOTA_BYTES
+        value: 524288000
+      - key: MAX_FILE_SIZE_BYTES
+        value: 52428800
+      - key: AUTH_SERVICE_URL
+        value: https://sonaralabs-auth.onrender.com
+
+  # ── LIBRARY ────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-library
+    runtime: docker
+    dockerfilePath: ./services/library/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3004
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+
+  # ── CREDIT ─────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-credit
+    runtime: docker
+    dockerfilePath: ./services/credit/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3005
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: INITIAL_CREDIT_BALANCE
+        value: 100
+
+  # ── ADMIN ──────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-admin
+    runtime: docker
+    dockerfilePath: ./services/admin/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3006
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+
+  # ── NOTIFICATION ───────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-notification
+    runtime: docker
+    dockerfilePath: ./services/notification/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3007
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
