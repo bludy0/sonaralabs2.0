@@ -1,5 +1,5 @@
 {
-  "installCommand": "npm install -g pnpm@10.33.0 && pnpm install --no-frozen-lockfile",
+  "installCommand": "corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --no-frozen-lockfile",
   "buildCommand": "pnpm --filter @sonaralabs/web build",
   "outputDirectory": "apps/web/dist",
   "framework": null
