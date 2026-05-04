@@ -1,6 +1,6 @@
 {
   "buildCommand": "echo 'Using pre-built dist'",
   "installCommand": "echo 'No install needed'",
-  "outputDirectory": "apps/web/dist",
+  "outputDirectory": "public",
   "framework": null
 }
