@@ -1,225 +1,74 @@
 # Sonaralabs 2.0 — Deploy Kılavuzu
 
-## Gereksinimler
-
-| Servis | Kaynak | Not |
-|--------|--------|-----|
-| MongoDB | MongoDB Atlas (M0 free) | `MONGO_URI` |
-| Redis | Railway Redis plugin | `REDIS_URL` |
-| PostgreSQL | Railway Postgres plugin | `DATABASE_URL` |
-| Dosya depolama | Backblaze B2 (S3-compat) | `MINIO_*` env |
-| AI — Müzik | Beatoven API | `BEATOVEN_API_KEY` |
-| AI — SFX | ElevenLabs | `ELEVENLABS_API_KEY` |
-| AI — Görüntü+Lyria | Google AI Studio | `GEMINI_API_KEY` |
-| AI — StableAudio | Stability AI | `STABILITY_API_KEY` |
-
----
-
-## Railway ile Deploy (önerilen)
-
-### 1. Proje oluştur
-
-```bash
-railway login
-railway init
-```
-
-### 2. Servisleri ekle
-
-Railway dashboard'da her microservis için ayrı service oluştur:
+## Mimari
 
 ```
-gateway      → services/gateway/Dockerfile
-auth         → services/auth/Dockerfile
-generation   → services/generation/Dockerfile
-upload       → services/upload/Dockerfile
-library      → services/library/Dockerfile
-credit       → services/credit/Dockerfile
-admin        → services/admin/Dockerfile
-notification → services/notification/Dockerfile
-profile      → services/profile/Dockerfile
-social       → services/social/Dockerfile
-frontend     → apps/web/Dockerfile
-```
-
-### 3. Zorunlu environment variables
-
-Her servis için ayarlanması gereken değişkenler:
-
-#### Tüm servisler (shared)
-```
-ACCESS_JWT_SECRET=<64-byte-hex>        # openssl rand -hex 64
-REFRESH_JWT_SECRET=<64-byte-hex>       # farklı olmalı
-INTERNAL_JWT_SECRET=<64-byte-hex>      # farklı olmalı
-NODE_ENV=production
-```
-
-#### Auth servisi
-```
-MONGO_URI=mongodb+srv://...
-ACCESS_TOKEN_TTL=15m
-REFRESH_TOKEN_TTL_DAYS=7
-```
-
-#### Generation servisi
-```
-MONGO_URI=mongodb+srv://...
-REDIS_URL=redis://...
-BEATOVEN_API_KEY=...
-GEMINI_API_KEY=...
-ELEVENLABS_API_KEY=...
-STABILITY_API_KEY=...
-JOB_TIMEOUT_MS=300000
-MINIO_ENDPOINT=s3.us-west-004.backblazeb2.com
-MINIO_PORT=443
-MINIO_USE_SSL=true
-MINIO_ACCESS_KEY=<b2-key-id>
-MINIO_SECRET_KEY=<b2-app-key>
-MINIO_BUCKET=sonaralabs-audio
-CREDIT_SERVICE_URL=https://credit.railway.internal
-NOTIFICATION_SERVICE_URL=https://notification.railway.internal
-```
-
-#### Upload servisi
-```
-MONGO_URI=mongodb+srv://...
-MINIO_ENDPOINT=...
-MINIO_PORT=443
-MINIO_USE_SSL=true
-MINIO_ACCESS_KEY=...
-MINIO_SECRET_KEY=...
-MINIO_BUCKET=sonaralabs-audio
-STORAGE_QUOTA_BYTES=524288000
-MAX_FILE_SIZE_BYTES=52428800
-```
-
-#### Library servisi
-```
-MONGO_URI=mongodb+srv://...
-GENERATION_SERVICE_URL=https://generation.railway.internal
-UPLOAD_SERVICE_URL=https://upload.railway.internal
-```
-
-#### Profile & Social servisleri
-```
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
-PROFILE_SERVICE_URL=https://profile.railway.internal   # (social için)
-```
-
-#### Gateway
-```
-REDIS_URL=redis://...
-CLIENT_URL=https://your-frontend.railway.app
-RATE_LIMIT_GENERAL=30
-RATE_LIMIT_GENERATION=3
-RATE_LIMIT_UPLOAD=10
-RATE_LIMIT_AUTH=10
-AUTH_SERVICE_URL=https://auth.railway.internal
-GENERATION_SERVICE_URL=https://generation.railway.internal
-UPLOAD_SERVICE_URL=https://upload.railway.internal
-LIBRARY_SERVICE_URL=https://library.railway.internal
-CREDIT_SERVICE_URL=https://credit.railway.internal
-ADMIN_SERVICE_URL=https://admin.railway.internal
-NOTIFICATION_SERVICE_URL=https://notification.railway.internal
-PROFILE_SERVICE_URL=https://profile.railway.internal
-SOCIAL_SERVICE_URL=https://social.railway.internal
-```
-
-#### Generation & Upload servisleri — MINIO_PUBLIC_URL (kritik!)
-```
-# Backblaze B2 public URL (tarayıcıların sese eriştiği adres)
-MINIO_PUBLIC_URL=https://f005.backblazeb2.com/file/sonaralabs-audio
-# veya CDN domain'iniz varsa:
-# MINIO_PUBLIC_URL=https://cdn.sonaralabs.io
-```
-Bu değer **boş bırakılırsa** ses dosyalarının URL'leri `http://localhost:9000` olarak kaydedilir
-ve production'da ses çalmaz.
-
-#### Frontend
-```
-VITE_API_BASE_URL=https://gateway.railway.app
-# Sentry hata izleme (ücretsiz 5k error/ay — https://sentry.io)
-VITE_SENTRY_DSN=https://xxxx@yyy.ingest.sentry.io/zzz
-VITE_APP_VERSION=1.0.0
-```
-
-### 4. Backblaze B2 bucket ayarları
-
-```bash
-# B2 bucket oluştur
-b2 create-bucket sonaralabs-audio allPublic
-
-# CORS kuralı ekle (ses dosyaları için)
-b2 update-bucket --corsRules '[{
-  "corsRuleName": "allowGet",
-  "allowedOrigins": ["https://your-frontend.railway.app"],
-  "allowedHeaders": ["*"],
-  "allowedOperations": ["b2_download_file_by_name"],
-  "maxAgeSeconds": 3600
-}]' sonaralabs-audio
-```
-
-### 5. PostgreSQL (Railway plugin)
-
-Railway dashboard → "Add Plugin" → PostgreSQL seç.
-`DATABASE_URL` otomatik olarak `profile` ve `social` servislerine enjekte edilir.
-Tablolar ilk çalışmada otomatik oluşturulur (`migrate()` fonksiyonu).
-
-### 6. MongoDB Atlas — Yedek (backup)
-
-M0 (free tier) otomatik backup **içermez**. Seçenekler:
-
-| Yöntem | Maliyet | Açıklama |
-|--------|---------|----------|
-| Atlas M10+ | $57/ay | Continuous backup + point-in-time restore |
-| `mongodump` cron (Railway) | Ücretsiz | Günlük `mongodump \| gzip` → B2'ye yükle |
-| Atlas Scheduled Snapshots | M2/M5'te | Günlük snapshot, 7 gün saklama |
-
-**Minimum önerilen:** Atlas M2 ($9/ay) — snapshot backup dahil.
-
-Backup cron script:
-```bash
-# services/backup/backup.sh (Railway cron service olarak eklenebilir)
-#!/bin/sh
-DATE=$(date +%Y%m%d_%H%M)
-mongodump --uri="$MONGO_URI" --archive | gzip > /tmp/backup_$DATE.gz
-b2 upload-file sonaralabs-backups /tmp/backup_$DATE.gz backup_$DATE.gz
-rm /tmp/backup_$DATE.gz
-```
-
-### 7. Monitoring (Sentry)
-
-1. [sentry.io](https://sentry.io) → New Project → React
-2. DSN'i kopyala
-3. Frontend Railway servisine `VITE_SENTRY_DSN` olarak ekle
-4. (Opsiyonel) Gateway için `@sentry/node` eklenebilir
-
-### 8. Sağlık kontrolü
-
-```bash
-curl https://gateway.railway.app/health
-# → {"status":"ok","service":"gateway"}
+Vercel          → Frontend (React + Vite)
+Render          → Backend microservices (Docker)
+MongoDB Atlas   → Veritabanı
+Redis           → Cache + BullMQ
+MinIO / B2      → Dosya depolama
 ```
 
 ---
 
-## Docker Compose (local geliştirme)
+## Lokal Geliştirme
 
 ```bash
-cp .env.example .env
-# .env dosyasını düzenle (JWT secret'larını generate et)
+cp .env.example .env   # .env'i düzenle
+docker compose up -d   # Tüm servisleri başlat
+```
 
-docker compose up -d
-# Gateway: http://localhost:3000
-# Frontend: http://localhost:5173 (vite dev server)
+Frontend: http://localhost:5174
+API: http://localhost:3000
+
+---
+
+## Production — Render (Backend)
+
+`render.yaml` blueprint ile tüm servisler otomatik deploy edilir.
+
+**Gerekli env vars (Render dashboard → servis → Environment):**
+
+| Değişken | Açıklama |
+|----------|----------|
+| `MONGO_URI` | MongoDB Atlas connection string |
+| `REDIS_URL` | Redis URL |
+| `ACCESS_JWT_SECRET` | Rastgele 64+ byte hex |
+| `REFRESH_JWT_SECRET` | Rastgele 64+ byte hex (farklı) |
+| `INTERNAL_JWT_SECRET` | Rastgele 64+ byte hex (farklı) |
+| `GEMINI_API_KEY` | Google AI Studio |
+| `BEATOVEN_API_KEY` | Beatoven müzik üretimi |
+| `ELEVENLABS_API_KEY` | ElevenLabs SFX |
+| `MINIO_ENDPOINT` | B2: `s3.us-east-005.backblazeb2.com` |
+| `MINIO_ACCESS_KEY` | B2 key ID |
+| `MINIO_SECRET_KEY` | B2 application key |
+| `MINIO_PUBLIC_URL` | B2 public download URL |
+| `SMTP_PASS` | Resend API key |
+| `EMAIL_FROM` | `Sonaralabs <noreply@yourdomain.com>` |
+| `APP_URL` | Vercel frontend URL |
+| `CLIENT_URL` | Vercel frontend URL |
+
+---
+
+## Production — Vercel (Frontend)
+
+`vercel.json` otomatik olarak:
+- `pnpm install` + `pnpm build` çalıştırır
+- `/api/*` → Render gateway'e proxy
+- `/*` → `index.html` (SPA routing)
+
+**Gerekli env var:**
+```
+VITE_API_BASE_URL=https://sonaralabs-gateway.onrender.com
 ```
 
 ---
 
-## Notlar
+## JWT Secret Üretimi
 
-- Üç JWT secret **birbirinden farklı** olmalı (`openssl rand -hex 64` ile üret)
-- `INTERNAL_JWT_SECRET` hiçbir zaman frontend'e expose edilmemeli
-- `/api/credits/purchase` → 503 stub — production'da ödeme entegrasyonu gerekli
-- Lyria 3 provider → API stable olduğunda `LyriaProvider` sınıfı implemente edilmeli
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+3 farklı secret üret — asla aynı değeri kullanma.
