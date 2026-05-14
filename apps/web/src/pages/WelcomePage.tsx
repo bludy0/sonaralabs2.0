@@ -21,37 +21,31 @@ const TICKER = [
 const FEATURES = [
   {
     icon: "✦",
-    code: "TXT",
     title: "Text to Music",
     desc: "Write a prompt like \"tense boss fight, heavy drums\". Get a game-ready loop in under 60 seconds. No music theory needed.",
   },
   {
     icon: "◈",
-    code: "IMG",
     title: "Screenshot to Music",
     desc: "Drop any game screenshot. Gemini Vision reads the atmosphere and color palette, then generates matching music automatically.",
   },
   {
     icon: "◉",
-    code: "SFX",
     title: "Sound Effects",
     desc: "Generate any SFX from one sentence. Footsteps, explosions, UI clicks, ambient noise — powered by ElevenLabs.",
   },
   {
     icon: "⬡",
-    code: "DAW",
     title: "Browser Studio",
     desc: "Fine-tune in your browser. Reverb, EQ, delay, loop points, BPM — everything WaveSurfer, zero installs.",
   },
   {
     icon: "↻",
-    code: "LP",
     title: "Seamless Loops",
     desc: "Every track is engineered for perfect looping. Adjust BPM with pitch-preserving playback. Export for Unity, Unreal, or any engine.",
   },
   {
     icon: "⊞",
-    code: "LIB",
     title: "Cloud Library",
     desc: "All generations and uploads in one organized space. Favorite tracks, create collections, share publicly or keep private.",
   },
@@ -427,23 +421,6 @@ export default function WelcomePage() {
 
           {/* ── Hero content ── */}
           <div className="relative z-10 max-w-4xl mx-auto">
-            {/* Badge */}
-            <div className="wu-fadeUp inline-flex items-center gap-2 sm:gap-3 mb-6 sm:mb-8">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 hidden sm:block" style={{ background: "var(--accent)" }} />
-              <span
-                lang="en"
-                className="px-3 py-1 rounded-full text-[9px] sm:text-[10px] font-black tracking-[0.18em] sm:tracking-[0.22em] uppercase"
-                style={{
-                  background: "color-mix(in srgb, var(--accent) 10%, transparent)",
-                  color: "var(--accent)",
-                  border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
-                }}
-              >
-                AI_CORE v2 · Game Audio Platform
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full shrink-0 hidden sm:block" style={{ background: "var(--accent)" }} />
-            </div>
-
             {/* Headline */}
             <h1
               lang="en"
@@ -620,13 +597,6 @@ export default function WelcomePage() {
         >
           <div className="relative max-w-4xl mx-auto">
             <div className="text-center mb-8 sm:mb-12">
-              <p
-                lang="en"
-                className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
-                style={{ color: "var(--accent)" }}
-              >
-                Live Demo
-              </p>
               <h2
                 className="font-black uppercase"
                 style={{ fontSize: "clamp(1.8rem, 4vw, 3rem)", letterSpacing: "-0.02em", color: "var(--text-1)" }}
@@ -659,24 +629,11 @@ export default function WelcomePage() {
                   <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full" style={{ background: "#ffbd2e" }} />
                   <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full" style={{ background: "#28c840" }} />
                 </div>
-                <div className="flex-1 flex justify-center">
-                  <span
-                    className="hidden sm:block text-[10px] font-bold tracking-[0.2em] uppercase"
-                    style={{ color: "var(--text-3)" }}
-                  >
-                    SONARALABS — GENERATE
-                  </span>
-                </div>
+                <div className="flex-1" />
               </div>
 
               {/* Prompt */}
               <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-2 sm:pb-3">
-                <label
-                  className="block text-[9px] font-black tracking-[0.25em] uppercase mb-2"
-                  style={{ color: "var(--text-3)" }}
-                >
-                  PROMPT
-                </label>
                 <div
                   className="rounded-xl px-4 py-3 min-h-[58px] text-sm font-mono"
                   style={{
@@ -822,13 +779,6 @@ export default function WelcomePage() {
         {/* ════════════════════════════════ FEATURES ════════════════════════ */}
         <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-24">
           <div className="text-center mb-10 sm:mb-16">
-            <p
-              lang="en"
-              className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
-              style={{ color: "var(--accent)" }}
-            >
-              Capabilities
-            </p>
             <h2
               lang="en"
               className="font-black uppercase"
@@ -843,7 +793,7 @@ export default function WelcomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((f, i) => (
               <div
-                key={f.code}
+                key={f.title}
                 className="wu-hover-card cursor-default rounded-2xl p-5 sm:p-7"
                 style={{
                   background: "var(--bg-card)",
@@ -851,7 +801,7 @@ export default function WelcomePage() {
                   transitionDelay: `${i * 30}ms`,
                 }}
               >
-                <div className="flex items-start gap-4 mb-4">
+                <div className="flex items-center gap-4 mb-4">
                   <div
                     className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0"
                     style={{
@@ -862,20 +812,12 @@ export default function WelcomePage() {
                   >
                     {f.icon}
                   </div>
-                  <div>
-                    <div
-                      className="text-[9px] font-black tracking-[0.22em] uppercase mb-0.5"
-                      style={{ color: "var(--text-3)" }}
-                    >
-                      {f.code}
-                    </div>
-                    <h3
-                      className="font-black uppercase text-base"
-                      style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
-                    >
-                      {f.title}
-                    </h3>
-                  </div>
+                  <h3
+                    className="font-black uppercase text-base"
+                    style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}
+                  >
+                    {f.title}
+                  </h3>
                 </div>
                 <p className="text-sm leading-relaxed" style={{ color: "var(--text-3)", lineHeight: 1.65 }}>
                   {f.desc}
@@ -896,12 +838,6 @@ export default function WelcomePage() {
         >
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-14 sm:py-24">
             <div className="text-center mb-10 sm:mb-16">
-              <p
-                className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
-                style={{ color: "var(--accent)" }}
-              >
-                Process
-              </p>
               <h2
                 className="font-black uppercase"
                 style={{ fontSize: "clamp(2rem, 4.5vw, 3.5rem)", letterSpacing: "-0.025em", color: "var(--text-1)" }}
@@ -975,12 +911,6 @@ export default function WelcomePage() {
         {/* ════════════════════════════════ AI STACK ════════════════════════ */}
         <section className="max-w-5xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
           <div className="text-center mb-8 sm:mb-10">
-            <p
-              className="text-[10px] font-black tracking-[0.3em] uppercase mb-3"
-              style={{ color: "var(--text-3)" }}
-            >
-              AI Stack
-            </p>
             <h2
               className="font-black uppercase"
               style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "-0.02em", color: "var(--text-1)" }}
@@ -1038,12 +968,6 @@ export default function WelcomePage() {
             />
 
             <div className="relative z-10">
-              <p
-                className="text-[10px] font-black tracking-[0.3em] uppercase mb-5"
-                style={{ color: "var(--accent)" }}
-              >
-                Ready to ship?
-              </p>
               <h2
                 className="font-black uppercase mb-4 sm:mb-5 leading-[0.9]"
                 style={{
@@ -1118,14 +1042,9 @@ export default function WelcomePage() {
               >
                 SL
               </div>
-              <div>
-                <p className="text-xs font-black tracking-wider uppercase" style={{ color: "var(--text-2)" }}>
-                  SONARALABS
-                </p>
-                <p className="text-[10px]" style={{ color: "var(--text-3)" }}>
-                  AI Game Audio Platform
-                </p>
-              </div>
+              <p className="text-xs font-black tracking-wider uppercase" style={{ color: "var(--text-2)" }}>
+                SONARALABS
+              </p>
             </div>
 
             <p className="text-[11px] text-center" style={{ color: "var(--text-3)" }}>
