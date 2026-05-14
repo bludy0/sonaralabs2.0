@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { timeAgo } from "../lib/format";
 
 interface FeedEvent {
   id: string;
@@ -22,14 +23,6 @@ interface SocialSseEvent {
   createdAt: string;
 }
 
-function timeAgo(iso: string) {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60)    return "just now";
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
 function verbLabel(verb: FeedEvent["verb"]) {
   switch (verb) {
     case "published": return "published a track";
@@ -45,7 +38,6 @@ const VERB_ICON: Record<FeedEvent["verb"], string> = {
 };
 
 export default function FeedPage() {
-  const navigate = useNavigate();
   const [events, setEvents]    = useState<FeedEvent[]>([]);
   const [loading, setLoading]  = useState(true);
   const [empty, setEmpty]      = useState(false);
@@ -185,7 +177,6 @@ export default function FeedPage() {
             <FeedCard
               key={event.id}
               event={event}
-              onOpenTrack={() => navigate("/explore")}
             />
           ))}
         </div>
@@ -198,7 +189,6 @@ export default function FeedPage() {
 
 interface FeedCardProps {
   event: FeedEvent;
-  onOpenTrack: (id: string) => void;
 }
 
 function FeedCard({ event }: FeedCardProps) {

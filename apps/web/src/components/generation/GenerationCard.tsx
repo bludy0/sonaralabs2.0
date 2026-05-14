@@ -1,15 +1,7 @@
 import { useState } from "react";
 import { api } from "../../lib/api";
 import type { GenerationItem } from "../../store/useGenerationStore";
-
-function waveformBars(seed: string, count = 22): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return Array.from({ length: count }, () => {
-    h = (h * 1664525 + 1013904223) >>> 0;
-    return (h % 55) + 20;
-  });
-}
+import { waveformBars } from "../../lib/format";
 
 function StatusBadge({ status }: { status: GenerationItem["status"] }) {
   const configs: Record<GenerationItem["status"], { label: string; bg: string; color: string }> = {

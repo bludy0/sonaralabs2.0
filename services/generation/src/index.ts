@@ -15,7 +15,7 @@ import multer from "multer";
 import {
   GenerationRequest, SFXRequest, GenerationStatus, MusicProvider, SFXProvider,
   InternalJwtPayload, ApiResponse, NotifyJobPayload, GenerationType,
-  MUSIC_CREDIT_COST, SFX_CREDIT_COST, getMusicCreditCost, getSFXCreditCost,
+  getMusicCreditCost, getSFXCreditCost,
 } from "@sonaralabs/types";
 import { BeatovenProvider } from "./providers/beatoven";
 import { SonautoProvider }  from "./providers/sonauto";

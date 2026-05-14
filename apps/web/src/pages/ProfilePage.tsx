@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { stripTags } from "../lib/sanitize";
 import { useAuthStore } from "../store/useAuthStore";
-import { formatDuration, timeAgo } from "../lib/format";
+import { formatDuration, timeAgo, waveformBars } from "../lib/format";
 
 interface UserProfile {
   userId: string;
@@ -34,16 +34,6 @@ interface PublicTrack {
   createdAt: string;
 }
 
-
-/** Deterministic waveform bars from seed string */
-function waveformBars(seed: string, count = 20): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return Array.from({ length: count }, () => {
-    h = (h * 1664525 + 1013904223) >>> 0;
-    return (h % 60) + 20;
-  });
-}
 
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();

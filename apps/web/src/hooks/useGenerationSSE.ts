@@ -41,7 +41,6 @@ export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEO
     stateRef.current.es = es;
 
     es.onopen = () => {
-      console.log("[SSE] Connected");
       recoverPendingJobs(); // Reconnect'te pending job'ları al
     };
 
@@ -57,7 +56,6 @@ export function useGenerationSSE({ onStatus, enabled = true }: UseGenerationSSEO
     es.onerror = () => {
       // EventSource kendi kendine reconnect dener (exponential backoff).
       // Reconnect başarılı olunca onopen tetikler → recoverPendingJobs çalışır.
-      console.warn("[SSE] Connection error — browser will auto-reconnect");
     };
   }, [recoverPendingJobs]); // stable — recoverPendingJobs never changes
 

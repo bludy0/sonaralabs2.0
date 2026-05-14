@@ -26,3 +26,13 @@ export function timeAgo(iso: string): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
+
+/** Seed bazlı deterministik waveform bar yükseklikleri üretir (20–74 px arası). */
+export function waveformBars(seed: string, count = 22): number[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return Array.from({ length: count }, () => {
+    h = (h * 1664525 + 1013904223) >>> 0;
+    return (h % 55) + 20;
+  });
+}

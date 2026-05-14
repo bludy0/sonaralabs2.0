@@ -34,8 +34,6 @@ export interface ApiResponse<T = unknown> {
 
 // ── CREDIT ───────────────────────────────────────────────────────────────────
 
-export type CreditTransactionType = "earn" | "spend" | "refund";
-
 export interface SpendCreditPayload {
   userId: string;
   amount: number;
@@ -49,7 +47,6 @@ export interface SpendCreditPayload {
 export type GenerationStatus   = "pending" | "processing" | "done" | "failed";
 export type MusicProvider      = "beatoven" | "lyria" | "sonauto";
 export type SFXProvider        = "elevenlabs";
-export type AnyProvider        = MusicProvider | SFXProvider;
 export type MusicStyle         = "ambient" | "action" | "puzzle" | "horror" | "platformer";
 export type MusicMood          = "tense" | "calm" | "epic" | "mysterious" | "cheerful";
 export type GenerationDuration = 15 | 30 | 60;
@@ -69,8 +66,6 @@ export interface SFXRequest {
 }
 
 // ── SSE EVENTS ───────────────────────────────────────────────────────────────
-
-export type SseEventType = "status" | "error" | "ping";
 
 export interface SseStatusEvent {
   type: "status";
@@ -164,8 +159,6 @@ export const MUSIC_CREDIT_COST: Record<MusicProvider, Record<number, number>> = 
 export const SFX_CREDIT_COST: Record<SFXProvider, number> = {
   elevenlabs: 1,
 } as const;
-
-export const IMAGE_ANALYSIS_CREDIT_COST = 1 as const;
 
 export function getMusicCreditCost(provider: MusicProvider, duration: number, isRetry = false): number {
   const base = MUSIC_CREDIT_COST[provider]?.[duration] ?? 5;
