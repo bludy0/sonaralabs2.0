@@ -35,6 +35,27 @@ export interface Theme {
 export const PRESET_THEMES: Theme[] = [
   // ── KARANLIK TEMALAR ──────────────────────────────────────────────────────
   {
+    id: "cyber-red", name: "Cyber Red", emoji: "🔥",
+    vars: {
+      "--bg-page":"#0e0e0e","--bg-card":"#131313","--bg-mid":"#191919",
+      "--bg-input":"#1f2020","--bg-border":"#262020","--bg-bright":"#2c2020",
+      "--text-1":"#ffffff","--text-2":"#b8aaaa","--text-3":"#524848",
+      "--accent":"#ff3c3c","--accent-on":"#ffffff","--accent-dim":"#3d0000",
+      "--success":"#6ec96e","--error":"#ff9977","--teal":"#64c8b4",
+      "--daw-deep":"#0e0c0c","--daw-base":"#140f0f","--daw-raised":"#1c1414",
+      "--daw-subtle":"#221818","--daw-hover":"#2a1c1c","--daw-selected":"#332020",
+      "--daw-border":"#3d2a2a","--daw-border-dim":"#1c1414",
+      "--daw-accent":"#e03030","--daw-accent-bright":"#ff5555",
+      "--daw-accent-dim":"#3d0000","--daw-accent-on":"#ffffff",
+      "--daw-success":"#2ae500","--daw-success-dim":"#0f6d00",
+      "--daw-warning":"#ff9a00","--daw-warning-dim":"#7d3d00",
+      "--daw-error":"#ff6666","--daw-error-cont":"#5c0000",
+      "--daw-text1":"#f2e8e8","--daw-text2":"#c09898","--daw-text3":"#806060",
+      "--daw-playhead":"#ff3c3c",
+      "--daw-loop-bg":"rgba(255,60,60,0.06)","--daw-loop-border":"#ff3c3c",
+    },
+  },
+  {
     id: "cyber-yellow", name: "Cyber Yellow", emoji: "⚡",
     vars: {
       "--bg-page":"#0e0e0e","--bg-card":"#131313","--bg-mid":"#191919",
@@ -207,7 +228,7 @@ export const PRESET_THEMES: Theme[] = [
 ];
 
 // ── Yardımcı: boş custom tema varsayılanı ────────────────────────────────────
-export function makeDefaultCustomVars(baseId = "deep-cyan"): ThemeVars {
+export function makeDefaultCustomVars(baseId = "cyber-red"): ThemeVars {
   return { ...(PRESET_THEMES.find(t => t.id === baseId) ?? PRESET_THEMES[1]).vars };
 }
 
@@ -228,7 +249,7 @@ let _idCounter = Date.now();
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      themeId:      "cyber-yellow",
+      themeId:      "cyber-red",
       customThemes: [],
 
       setTheme: (id) => {
@@ -274,7 +295,7 @@ export const useThemeStore = create<ThemeState>()(
         set(s => {
           const next = s.customThemes.filter(t => t.id !== id);
           const nextId = s.themeId === id
-            ? (next[next.length - 1]?.id ?? "cyber-yellow")
+            ? (next[next.length - 1]?.id ?? "cyber-red")
             : s.themeId;
           if (nextId !== s.themeId) {
             const fallback = PRESET_THEMES.find(t => t.id === nextId)

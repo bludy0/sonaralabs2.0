@@ -106,7 +106,7 @@ export default function WelcomePage() {
   // Tanıtım sayfası her zaman varsayılan temada görünür.
   // Unmount'ta kullanıcının kendi teması geri yüklenir.
   useEffect(() => {
-    const welcomeTheme = PRESET_THEMES.find(t => t.id === "cyber-yellow") ?? PRESET_THEMES[0];
+    const welcomeTheme = PRESET_THEMES.find(t => t.id === "cyber-red") ?? PRESET_THEMES[0];
     applyTheme(welcomeTheme.vars);
     return () => { applyTheme(getTheme().vars); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -410,8 +410,8 @@ export default function WelcomePage() {
           {/* Balatro background */}
           <div className="absolute inset-0 pointer-events-none">
             <Balatro
-              color1="#7a5c1a"
-              color2="#3a1800"
+              color1="#7a1a1a"
+              color2="#3a0000"
               color3="#0e0e0e"
               spinRotation={-2.0}
               spinSpeed={5.0}
