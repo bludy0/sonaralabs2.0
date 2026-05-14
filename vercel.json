@@ -1,6 +1,6 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter sonaralabs-frontend build",
+  "buildCommand": "pnpm --filter @sonaralabs/types build && pnpm --filter sonaralabs-frontend build",
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "env": {
