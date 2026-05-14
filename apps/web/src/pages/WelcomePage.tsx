@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
+import { useThemeStore, applyTheme, PRESET_THEMES } from "../store/useThemeStore";
 import Balatro from "../components/Balatro";
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -95,16 +96,20 @@ const MOCK_PROMPTS = [
 export default function WelcomePage() {
   const user     = useAuthStore(s => s.user);
   const navigate = useNavigate();
+  const getTheme = useThemeStore(s => s.getTheme);
 
   const [mockIdx,      setMockIdx]      = useState(0);
   const [mockTyped,    setMockTyped]    = useState("");
   const [mockStatus,   setMockStatus]   = useState<"typing"|"generating"|"done">("typing");
   const [mockProgress, setMockProgress] = useState(0);
 
-  // Auth redirect
+  // Tanıtım sayfası her zaman varsayılan temada görünür.
+  // Unmount'ta kullanıcının kendi teması geri yüklenir.
   useEffect(() => {
-    if (user) navigate("/generate", { replace: true });
-  }, [user, navigate]);
+    const welcomeTheme = PRESET_THEMES.find(t => t.id === "cyber-yellow") ?? PRESET_THEMES[0];
+    applyTheme(welcomeTheme.vars);
+    return () => { applyTheme(getTheme().vars); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // (parallax kaldırıldı)
 
@@ -382,12 +387,20 @@ export default function WelcomePage() {
 
             {/* Auth buttons */}
             <div className="flex items-center gap-2 shrink-0" style={{ position: "relative", zIndex: 1 }}>
-              <Link to="/login" className="wu-signin">
-                Sign in
-              </Link>
-              <Link to="/register" className="wu-cta-btn">
-                Get Started
-              </Link>
+              {user ? (
+                <Link to="/generate" className="wu-cta-btn">
+                  Dashboard →
+                </Link>
+              ) : (
+                <>
+                  <Link to="/login" className="wu-signin">
+                    Sign in
+                  </Link>
+                  <Link to="/register" className="wu-cta-btn">
+                    Get Started
+                  </Link>
+                </>
+              )}
             </div>
           </nav>
         </div>
@@ -462,7 +475,7 @@ export default function WelcomePage() {
             {/* CTAs */}
             <div className="wu-fadeUp-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-6 sm:mb-8">
               <Link
-                to="/register"
+                to={user ? "/generate" : "/register"}
                 className="w-full sm:w-auto px-8 sm:px-10 py-3.5 sm:py-4 rounded-xl text-sm font-black uppercase tracking-widest transition-all"
                 style={{
                   background: "var(--accent)",
@@ -479,7 +492,7 @@ export default function WelcomePage() {
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                Start for free →
+                {user ? "Go to Dashboard →" : "Start for free →"}
               </Link>
               <Link
                 to="/explore"
@@ -1055,7 +1068,7 @@ export default function WelcomePage() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
                 <Link
-                  to="/register"
+                  to={user ? "/generate" : "/register"}
                   className="w-full sm:w-auto px-8 sm:px-12 py-3.5 sm:py-4 rounded-xl text-sm font-black uppercase tracking-widest transition-all"
                   style={{
                     background: "var(--accent)",
@@ -1072,17 +1085,19 @@ export default function WelcomePage() {
                     e.currentTarget.style.transform = "translateY(0) scale(1)";
                   }}
                 >
-                  Create Free Account →
+                  {user ? "Go to Dashboard →" : "Create Free Account →"}
                 </Link>
-                <Link
-                  to="/login"
-                  className="text-sm font-semibold tracking-wider transition-colors"
-                  style={{ color: "var(--text-3)", textDecoration: "none" }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "var(--text-1)")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
-                >
-                  Already have an account? Sign in
-                </Link>
+                {!user && (
+                  <Link
+                    to="/login"
+                    className="text-sm font-semibold tracking-wider transition-colors"
+                    style={{ color: "var(--text-3)", textDecoration: "none" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "var(--text-1)")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
+                  >
+                    Already have an account? Sign in
+                  </Link>
+                )}
               </div>
 
               <p className="mt-8 text-[11px] font-semibold tracking-wider" style={{ color: "var(--text-3)" }}>

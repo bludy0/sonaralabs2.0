@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useT } from "../store/useI18nStore";
 
@@ -34,14 +34,16 @@ export default function Layout() {
       <aside className="w-[220px] flex flex-col shrink-0" style={{ background: "var(--bg-card)" }}>
 
         {/* Brand */}
-        <div className="px-5 pt-7 pb-5">
-          <p className="text-[10px] font-medium tracking-[0.2em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
-            AI_CORE_v2.0
-          </p>
-          <p className="text-[15px] font-bold tracking-tight uppercase" style={{ color: "var(--accent)" }}>
-            Sonaralabs
-          </p>
-        </div>
+        <Link to="/" style={{ textDecoration: "none" }}>
+          <div className="px-5 pt-7 pb-5 transition-opacity hover:opacity-75">
+            <p className="text-[10px] font-medium tracking-[0.2em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
+              AI_CORE_v2.0
+            </p>
+            <p className="text-[15px] font-bold tracking-tight uppercase" style={{ color: "var(--accent)" }}>
+              Sonaralabs
+            </p>
+          </div>
+        </Link>
 
         <div className="mx-5 h-px" style={{ background: "var(--bg-border)" }} />
 
