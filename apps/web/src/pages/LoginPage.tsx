@@ -27,14 +27,22 @@ export default function LoginPage() {
       await login(email, password);
       navigate("/generate");
     } catch (err) {
-      const axiosErr = err as AxiosError<{ error: string; message?: string }>;
-      const errCode  = axiosErr.response?.data?.error;
+      const axiosErr = err as AxiosError<any>;
+      const data     = axiosErr.response?.data;
+      const errCode  = typeof data?.error === "string" ? data.error : undefined;
       if (errCode === "email_not_verified") {
         setEmailNotVerified(true);
       } else if (errCode === "account_locked") {
-        setError(axiosErr.response?.data?.message ?? t.auth.accountLocked);
+        const msg = typeof data?.message === "string" ? data.message : t.auth.accountLocked;
+        setError(msg);
+      } else if (!axiosErr.response) {
+        setError("Sunucuya bağlanılamadı. İnternet bağlantını kontrol et.");
       } else {
-        setError(axiosErr.response?.data?.message ?? axiosErr.response?.data?.error ?? t.common.error);
+        const msg =
+          (typeof data?.message === "string" ? data.message : null) ??
+          (typeof data?.error   === "string" ? data.error   : null) ??
+          t.common.error;
+        setError(msg);
       }
     }
   }

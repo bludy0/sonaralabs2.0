@@ -166,6 +166,8 @@ services:
         sync: false
       - key: MINIO_BUCKET
         value: sonaralabs-audio
+      - key: MINIO_PUBLIC_URL
+        sync: false
       - key: STORAGE_QUOTA_BYTES
         value: 524288000
       - key: MAX_FILE_SIZE_BYTES

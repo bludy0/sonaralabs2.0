@@ -261,11 +261,15 @@ function makeVerifyToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+// Vercel (frontend) → Render (backend) cross-domain deploy için
+// sameSite: "none" + secure: true gerekir. Local'de "strict" + secure: false.
+const IS_PROD = process.env.NODE_ENV === "production";
+
 function setRefreshCookie(res: express.Response, token: string) {
   res.cookie("refresh_token", token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure:   IS_PROD,
+    sameSite: IS_PROD ? "none" : "strict",
     maxAge:   REFRESH_TTL_MS,
     path:     "/api/auth",
   });
@@ -274,8 +278,8 @@ function setRefreshCookie(res: express.Response, token: string) {
 function setAccessCookie(res: express.Response, token: string) {
   res.cookie("access_token", token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure:   IS_PROD,
+    sameSite: IS_PROD ? "none" : "strict",
     maxAge:   15 * 60 * 1000,
   });
 }
@@ -596,7 +600,7 @@ app.post("/refresh", async (req, res) => {
 
     const record = await RefreshToken.findOne({ tokenHash: hashToken(token) });
     if (!record || record.expiresAt < new Date()) {
-      res.clearCookie("refresh_token", { path: "/api/auth" });
+      res.clearCookie("refresh_token", { path: "/api/auth", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
       return res.status(401).json({ success: false, error: "Refresh token invalid or expired" });
     }
 
@@ -629,8 +633,8 @@ app.post("/logout", async (req, res) => {
   try {
     const token = req.cookies?.refresh_token;
     if (token) await RefreshToken.findOneAndDelete({ tokenHash: hashToken(token) });
-    res.clearCookie("access_token");
-    res.clearCookie("refresh_token", { path: "/api/auth" });
+    res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
+    res.clearCookie("refresh_token", { path: "/api/auth", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
     res.json({ success: true, message: "Logged out" } as ApiResponse);
   } catch {
     res.status(500).json({ success: false, error: "Internal server error" });
@@ -644,8 +648,8 @@ app.post("/logout-all", async (req, res) => {
     if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
     const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
     await RefreshToken.deleteMany({ userId: payload.sub });
-    res.clearCookie("access_token");
-    res.clearCookie("refresh_token", { path: "/api/auth" });
+    res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
+    res.clearCookie("refresh_token", { path: "/api/auth", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
     res.json({ success: true, message: "All sessions terminated" } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
@@ -729,8 +733,8 @@ app.delete("/me", async (req, res) => {
     const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
     await RefreshToken.deleteMany({ userId: payload.sub });
     await User.findByIdAndDelete(payload.sub);
-    res.clearCookie("access_token");
-    res.clearCookie("refresh_token", { path: "/api/auth/refresh" });
+    res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
+    res.clearCookie("refresh_token", { path: "/api/auth/refresh", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
     res.json({ success: true, message: "Account deleted" } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });

@@ -24,14 +24,18 @@ import SettingsPage from "./pages/SettingsPage";
 
 // ── PROTECTED ROUTE ───────────────────────────────────────────────────────────
 function ProtectedRoute() {
-  const user = useAuthStore(s => s.user);
+  const user      = useAuthStore(s => s.user);
+  const isLoading = useAuthStore(s => s.isLoading);
+  if (isLoading) return null; // fetchMe() bitmeden karar verme
   if (!user) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
 // ── ADMIN ROUTE ───────────────────────────────────────────────────────────────
 function AdminRoute() {
-  const user = useAuthStore(s => s.user);
+  const user      = useAuthStore(s => s.user);
+  const isLoading = useAuthStore(s => s.isLoading);
+  if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== "admin") return <Navigate to="/dashboard" replace />;
   return <Outlet />;

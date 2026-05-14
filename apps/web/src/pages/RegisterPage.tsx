@@ -21,17 +21,39 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
 
+    // ── İstemci tarafı doğrulamalar ────────────────────────────────────────
     if (username && !/^[a-z0-9_]{3,30}$/.test(username)) {
       setError(t.auth.usernameInvalid);
       return;
     }
 
+    const strongPassword = /^(?=.*[A-Z])(?=.*[0-9]).{8,}$/;
+    if (!strongPassword.test(password)) {
+      setError(t.auth.passwordWeak);
+      return;
+    }
+
+    // ── Kayıt isteği ───────────────────────────────────────────────────────
     let requiresVerification = false;
     try {
       requiresVerification = await register(email, password);
     } catch (err) {
-      const axiosErr = err as AxiosError<{ error: string }>;
-      setError(axiosErr.response?.data?.error ?? t.auth.registrationFailed);
+      const axiosErr = err as AxiosError<any>;
+      if (!axiosErr.response) {
+        setError("Sunucuya bağlanılamadı. İnternet bağlantını kontrol et.");
+        return;
+      }
+      const data   = axiosErr.response.data;
+      const status = axiosErr.response.status;
+      const errStr = typeof data?.error   === "string" ? data.error   : null;
+      const msgStr = typeof data?.message === "string" ? data.message : null;
+      if (status === 409 || errStr?.toLowerCase().includes("already registered")) {
+        setError("Bu e-posta adresi zaten kayıtlı. Giriş yapmayı dene.");
+      } else if (errStr?.toLowerCase().includes("password")) {
+        setError(t.auth.passwordWeak);
+      } else {
+        setError(msgStr ?? errStr ?? t.auth.registrationFailed);
+      }
       return;
     }
 
@@ -44,7 +66,7 @@ export default function RegisterPage() {
       try {
         await api.put("/api/profile/me", { username: username.trim() });
       } catch (err) {
-        const axiosErr = err as AxiosError<{ error: string }>;
+        const axiosErr = err as AxiosError<any>;
         if (axiosErr.response?.status === 409) {
           setError(t.auth.usernameTaken);
         }

@@ -70,6 +70,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchMe: async () => {
+        set({ isLoading: true });
         try {
           const { data } = await api.get("/api/users/me", {
             // interceptor'ın bu isteği refresh döngüsüne sokmaması için
@@ -81,6 +82,8 @@ export const useAuthStore = create<AuthState>()(
           api.get("/api/profile/me", { _skipAuthRedirect: true } as any).catch(() => {});
         } catch {
           set({ user: null });
+        } finally {
+          set({ isLoading: false });
         }
       },
 

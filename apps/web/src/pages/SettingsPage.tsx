@@ -397,7 +397,8 @@ export default function SettingsPage() {
   const [passMsg,       setPassMsg]       = useState<string | null>(null);
   const [passSaving,    setPassSaving]    = useState(false);
 
-  const darkPresets = PRESET_THEMES.filter(t => !t.isLight);
+  const darkPresets  = PRESET_THEMES.filter(t => !t.isLight);
+  const lightPresets = PRESET_THEMES.filter(t => t.isLight);
 
   // Düzenlenecek temayı güncel store'dan al
   const editingThemeLive = editingTheme
