@@ -56,19 +56,16 @@ const STEPS = [
     n: "01",
     title: "Describe or Drop",
     desc: "Type your scene or drag a game screenshot. Our AI understands mood, genre, tempo and context.",
-    tag: "< 5 seconds",
   },
   {
     n: "02",
     title: "AI Composes",
     desc: "Beatoven or Sonauto generates your track while you work. Queue multiple generations at once.",
-    tag: "15 – 95 seconds",
   },
   {
     n: "03",
     title: "Export & Ship",
     desc: "Download WAV or OGG, or open in Studio for final tweaks. Loop points, BPM, effects — all in browser.",
-    tag: "Zero installs",
   },
 ];
 
@@ -865,28 +862,14 @@ export default function WelcomePage() {
                 <div key={s.n} className="text-center">
                   {/* Circle */}
                   <div
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-4 sm:mb-5 flex flex-col items-center justify-center"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-5 sm:mb-6 flex items-center justify-center"
                     style={{
                       background: "var(--bg-page)",
                       border: "2px solid color-mix(in srgb, var(--accent) 30%, transparent)",
                     }}
                   >
-                    <span className="text-[8px] font-black tracking-[0.18em] uppercase" style={{ color: "var(--text-3)" }}>STEP</span>
-                    <span className="font-black text-xl sm:text-2xl leading-none" style={{ color: "var(--accent)", letterSpacing: "-0.03em" }}>
+                    <span className="font-black text-2xl sm:text-3xl leading-none" style={{ color: "var(--accent)", letterSpacing: "-0.03em" }}>
                       {s.n}
-                    </span>
-                  </div>
-
-                  {/* Time tag */}
-                  <div
-                    className="inline-flex items-center px-3 py-1 rounded-full mb-4"
-                    style={{
-                      background: "color-mix(in srgb, var(--accent) 8%, transparent)",
-                      border: "1px solid color-mix(in srgb, var(--accent) 16%, transparent)",
-                    }}
-                  >
-                    <span className="text-[9px] font-black tracking-[0.15em] uppercase" style={{ color: "var(--accent)" }}>
-                      {s.tag}
                     </span>
                   </div>
 
