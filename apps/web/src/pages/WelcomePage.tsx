@@ -499,7 +499,6 @@ export default function WelcomePage() {
           {/* Waveform bars */}
           <div
             className="wu-waveform absolute bottom-0 left-0 right-0 flex items-end justify-center gap-[2px] sm:gap-[3px] px-2 sm:px-4 pointer-events-none"
-            style={{ height: "38%" }}
           >
             {BARS.map((h, i) => (
               <div
