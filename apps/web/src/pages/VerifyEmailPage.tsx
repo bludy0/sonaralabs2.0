@@ -4,10 +4,12 @@ import { AxiosError } from "axios";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/useAuthStore";
 import { useT } from "../store/useI18nStore";
+import { useFixedTheme } from "../hooks/useFixedTheme";
 
 type State = "verifying" | "success" | "error";
 
 export default function VerifyEmailPage() {
+  useFixedTheme();
   const t = useT();
   const [searchParams]        = useSearchParams();
   const [state, setState]     = useState<State>("verifying");

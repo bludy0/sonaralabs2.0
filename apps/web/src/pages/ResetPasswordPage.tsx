@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useT } from "../store/useI18nStore";
+import { useFixedTheme } from "../hooks/useFixedTheme";
 
 export default function ResetPasswordPage() {
+  useFixedTheme();
   const t = useT();
   const [searchParams]          = useSearchParams();
   const token                   = searchParams.get("token") ?? "";

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
-import { useThemeStore, applyTheme, PRESET_THEMES } from "../store/useThemeStore";
+import { useFixedTheme } from "../hooks/useFixedTheme";
 import Balatro from "../components/Balatro";
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -85,22 +85,15 @@ const MOCK_PROMPTS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function WelcomePage() {
+  useFixedTheme("cyber-red");
+
   const user     = useAuthStore(s => s.user);
   const navigate = useNavigate();
-  const getTheme = useThemeStore(s => s.getTheme);
 
   const [mockIdx,      setMockIdx]      = useState(0);
   const [mockTyped,    setMockTyped]    = useState("");
   const [mockStatus,   setMockStatus]   = useState<"typing"|"generating"|"done">("typing");
   const [mockProgress, setMockProgress] = useState(0);
-
-  // Tanıtım sayfası her zaman varsayılan temada görünür.
-  // Unmount'ta kullanıcının kendi teması geri yüklenir.
-  useEffect(() => {
-    const welcomeTheme = PRESET_THEMES.find(t => t.id === "cyber-red") ?? PRESET_THEMES[0];
-    applyTheme(welcomeTheme.vars);
-    return () => { applyTheme(getTheme().vars); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // (parallax kaldırıldı)
 

@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useT } from "../store/useI18nStore";
+import { useFixedTheme } from "../hooks/useFixedTheme";
 
 export default function ForgotPasswordPage() {
+  useFixedTheme();
   const t = useT();
   const [email, setEmail]   = useState("");
   const [state, setState]   = useState<"idle" | "loading" | "sent" | "error">("idle");

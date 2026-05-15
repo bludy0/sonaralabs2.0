@@ -4,8 +4,10 @@ import { AxiosError } from "axios";
 import { useAuthStore } from "../store/useAuthStore";
 import { api } from "../lib/api";
 import { useT } from "../store/useI18nStore";
+import { useFixedTheme } from "../hooks/useFixedTheme";
 
 export default function LoginPage() {
+  useFixedTheme();
   const t = useT();
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
