@@ -204,7 +204,9 @@ app.all("/internal/*", (c) => c.json({ success: false, error: "Forbidden" }, 403
 app.get("/health", (c) => c.json({ status: "ok", service: "gateway" }));
 
 // ── API Docs (Swagger UI) — development only ──────────────────────────────────
-const OPENAPI_SPEC_PATH = join(__dirname, "../../../docs/openapi.yaml");
+// process.cwd() = repo root hem dev'de hem Docker container'da güvenilir
+const OPENAPI_SPEC_PATH = process.env.OPENAPI_SPEC_PATH
+  ?? join(process.cwd(), "docs/openapi.yaml");
 
 app.get("/api/docs", (c) => {
   return c.html(`<!DOCTYPE html>
