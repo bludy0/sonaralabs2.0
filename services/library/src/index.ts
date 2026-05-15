@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/library/src/index.ts
 import express from "express";
 import mongoose from "mongoose";
@@ -107,7 +108,7 @@ app.get("/", async (req, res) => {
 
     res.json({ success: true, data: { items: paginated, total, page, pages: Math.ceil(total / limit) } } as ApiResponse);
   } catch (err) {
-    console.error("library list error", err);
+    logger.error("library list error", err);
     res.status(500).json({ success: false, error: "Failed to fetch library" });
   }
 });
@@ -382,5 +383,5 @@ app.post("/projects/:id/share", async (req, res) => {
 app.get("/health", (_, res) => res.json({ status: "ok", service: "library" }));
 
 mongoose.connect(MONGO_URI!).then(() => {
-  app.listen(PORT, () => console.log(`[library] Listening on :${PORT}`));
-}).catch(err => { console.error("[library] MongoDB failed", err); process.exit(1); });
+  app.listen(PORT, () => logger.info(`[library] Listening on :${PORT}`));
+}).catch(err => { logger.error("[library] MongoDB failed", err); process.exit(1); });

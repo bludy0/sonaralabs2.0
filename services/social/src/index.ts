@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/social/src/index.ts
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -17,7 +18,7 @@ const {
 } = process.env;
 
 if (!DATABASE_URL || !INTERNAL_JWT_SECRET) {
-  console.error("[social] Missing DATABASE_URL or INTERNAL_JWT_SECRET");
+  logger.error("[social] Missing DATABASE_URL or INTERNAL_JWT_SECRET");
   process.exit(1);
 }
 
@@ -76,7 +77,7 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_feed_recipient ON feed_events(recipient_id, created_at DESC);
   `);
-  console.log("[social] Migration OK");
+  logger.info("[social] Migration OK");
 }
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
@@ -253,7 +254,7 @@ app.post("/tracks", async (c) => {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-internal-token": makeInternalToken() },
       body: JSON.stringify({ trackDelta: 1 }),
-    }).catch(err => console.error("[social] track_count sync failed (publish):", err));
+    }).catch(err => logger.error("[social] track_count sync failed (publish):", err));
 
     // Fan-out to followers' feeds
     fanOutFeedEvent(userId, username, "published", "track", track.id, body.title).catch(() => {});
@@ -261,7 +262,7 @@ app.post("/tracks", async (c) => {
     return c.json({ success: true, data: track }, 201);
   } catch (err: any) {
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    console.error("[social] POST /tracks:", err);
+    logger.error("[social] POST /tracks:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -300,7 +301,7 @@ app.get("/tracks", async (c) => {
       },
     });
   } catch (err) {
-    console.error("[social] GET /tracks error:", err);
+    logger.error("[social] GET /tracks error:", err);
     return c.json({ success: false, error: "Failed to fetch tracks" }, 500);
   }
 });
@@ -313,7 +314,7 @@ app.get("/tracks/:id", async (c) => {
     if (!rows.length) return c.json({ success: false, error: "Not found" }, 404);
     return c.json({ success: true, data: rowToTrack(rows[0]) });
   } catch (err) {
-    console.error("[social] GET /tracks/:id error:", err);
+    logger.error("[social] GET /tracks/:id error:", err);
     return c.json({ success: false, error: "Failed to fetch track" }, 500);
   }
 });
@@ -384,7 +385,7 @@ app.post("/tracks/:id/like", async (c) => {
   } catch (err) {
     if ((err as Error).message === "No internal token")
       return c.json({ success: false, error: "Unauthorized" }, 401);
-    console.error("[social] POST /tracks/:id/like:", err);
+    logger.error("[social] POST /tracks/:id/like:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -433,7 +434,7 @@ app.post("/follow/:userId", async (c) => {
         }),
       ]);
       results.filter(r => r.status === "rejected")
-        .forEach(r => console.error("[social] Counter sync failed (unfollow):", (r as PromiseRejectedResult).reason));
+        .forEach(r => logger.error("[social] Counter sync failed (unfollow):", (r as PromiseRejectedResult).reason));
     } else {
       await pool.query(
         "INSERT INTO follows (follower_id, followee_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -452,7 +453,7 @@ app.post("/follow/:userId", async (c) => {
         }),
       ]);
       results.filter(r => r.status === "rejected")
-        .forEach(r => console.error("[social] Counter sync failed (follow):", (r as PromiseRejectedResult).reason));
+        .forEach(r => logger.error("[social] Counter sync failed (follow):", (r as PromiseRejectedResult).reason));
       fanOutFeedEvent(followerId, followerUsername, "followed", "user", followeeId).catch(() => {});
     }
 
@@ -460,7 +461,7 @@ app.post("/follow/:userId", async (c) => {
   } catch (err) {
     if ((err as Error).message === "No internal token")
       return c.json({ success: false, error: "Unauthorized" }, 401);
-    console.error("[social] POST /follow:", err);
+    logger.error("[social] POST /follow:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -561,8 +562,8 @@ async function start() {
   await redis.connect();
   await migrate();
   serve({ fetch: app.fetch, port: parseInt(PORT) }, () =>
-    console.log(`[social] Listening on :${PORT}`)
+    logger.info(`[social] Listening on :${PORT}`)
   );
 }
 
-start().catch(err => { console.error("[social] Startup failed:", err); process.exit(1); });
+start().catch(err => { logger.error("[social] Startup failed:", err); process.exit(1); });

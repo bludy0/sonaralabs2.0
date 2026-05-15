@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/generation/src/index.ts
 import express from "express";
 import mongoose from "mongoose";
@@ -40,7 +41,7 @@ const {
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
 if (process.env.NODE_ENV === "production" && !process.env.MINIO_PUBLIC_URL) {
-  console.error("[generation] FATAL: MINIO_PUBLIC_URL is not set in production. Audio URLs will point to localhost and be inaccessible.");
+  logger.error("[generation] FATAL: MINIO_PUBLIC_URL is not set in production. Audio URLs will point to localhost and be inaccessible.");
   process.exit(1);
 }
 
@@ -111,7 +112,7 @@ async function notifyUser(payload: NotifyJobPayload) {
       headers: { "x-internal-token": makeInternalToken() },
     });
   } catch (err) {
-    console.warn("[generation] Notification failed:", err);
+    logger.warn("[generation] Notification failed:", err);
   }
 }
 
@@ -127,7 +128,7 @@ async function earnCredit(userId: string, amount: number, relatedId: string) {
       userId, amount, reason: "queue_failure_refund", relatedId, relatedModel: "Generation",
     }, { headers: { "x-internal-token": makeInternalToken() } });
   } catch {
-    console.warn("[generation] Credit refund failed for", relatedId);
+    logger.warn("[generation] Credit refund failed for", relatedId);
   }
 }
 
@@ -166,7 +167,7 @@ worker.on("failed", async (job, err) => {
   const { generationId, userId } = job.data;
   await Generation.findByIdAndUpdate(generationId, { status: "failed", failedAt: new Date(), failReason: err.message });
   await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: err.message });
-  console.error(`[generation] Job ${job.id} failed:`, err.message);
+  logger.error(`[generation] Job ${job.id} failed:`, err.message);
 });
 
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
@@ -217,7 +218,7 @@ app.post("/", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue generation job" });
     }
   } catch (err) {
-    console.error("generate error", err);
+    logger.error("generate error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -263,7 +264,7 @@ app.post("/sfx", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue SFX job" });
     }
   } catch (err) {
-    console.error("sfx error", err);
+    logger.error("sfx error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -294,7 +295,7 @@ app.post("/analyze-image", async (req, res) => {
     const promptText = await analyzeImageWithGemini(imageBase64, mimeType);
     res.json({ success: true, data: { prompt: promptText } } as ApiResponse);
   } catch (err) {
-    console.error("analyze-image error", err);
+    logger.error("analyze-image error", err);
     res.status(500).json({ success: false, error: "Analysis failed" });
   }
 });
@@ -366,7 +367,7 @@ app.post("/:id/retry", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue retry job" });
     }
   } catch (err) {
-    console.error("retry error", err);
+    logger.error("retry error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -446,7 +447,7 @@ app.post("/export/ogg", (req, res, next) => {
       res.setHeader("Content-Disposition", 'attachment; filename="export.ogg"');
       res.send(ogg);
     } catch (err) {
-      console.error("[export/ogg]", err);
+      logger.error("[export/ogg]", err);
       if (!res.headersSent) {
         res.status(500).json({ error: "OGG conversion failed. Ensure ffmpeg is installed." });
       }
@@ -540,7 +541,7 @@ Return ONLY a valid JSON array, no other text:
 
     res.json({ data: { suggestions } });
   } catch (err) {
-    console.error("[master]", err);
+    logger.error("[master]", err);
     res.status(500).json({ error: "Mastering analysis failed" });
   }
 });
@@ -635,7 +636,7 @@ Return ONLY valid JSON array, no markdown, no explanation:
 
     res.json({ notes: sanitized, bpm, key, scale, bars, totalBeats });
   } catch (err) {
-    console.error("[generate/midi]", err);
+    logger.error("[generate/midi]", err);
     res.status(500).json({ error: "MIDI generation failed" });
   }
 });
@@ -673,5 +674,5 @@ app.get("/health", (_, res) => res.json({
 }));
 
 mongoose.connect(MONGO_URI!).then(() => {
-  app.listen(PORT, () => console.log(`[generation] Listening on :${PORT}`));
-}).catch(err => { console.error("[generation] MongoDB failed", err); process.exit(1); });
+  app.listen(PORT, () => logger.info(`[generation] Listening on :${PORT}`));
+}).catch(err => { logger.error("[generation] MongoDB failed", err); process.exit(1); });

@@ -1,0 +1,1084 @@
+openapi: "3.0.3"
+info:
+  title: Sonaralabs API
+  description: |
+    AI-powered music generation platform for game developers.
+    All requests go through the API Gateway on port 3000.
+    Protected routes require a valid `access_token` cookie (set on login).
+  version: "2.0.0"
+  contact:
+    name: Sonaralabs Team
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.sonaralabs.io
+    description: Production
+
+tags:
+  - name: Auth
+    description: Registration, login, token management, password reset
+  - name: Generation
+    description: AI music, SFX, MIDI generation and job management
+  - name: Upload
+    description: Audio file upload and storage management
+  - name: Library
+    description: Tracks, favorites, collections, project management
+  - name: Credits
+    description: Credit balance, usage history, packages
+  - name: Notification
+    description: Real-time SSE notifications
+  - name: Admin
+    description: Admin-only user management and analytics
+  - name: Profile
+    description: Public and private user profiles
+  - name: Social
+    description: Follow, likes, public feed, shared tracks
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:   { type: string }
+        message: { type: string }
+
+    Success:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:    { type: object }
+
+    User:
+      type: object
+      properties:
+        _id:           { type: string }
+        email:         { type: string, format: email }
+        role:          { type: string, enum: [user, admin] }
+        creditBalance: { type: integer }
+        storageUsed:   { type: integer }
+        emailVerified: { type: boolean }
+        createdAt:     { type: string, format: date-time }
+
+    Generation:
+      type: object
+      properties:
+        _id:         { type: string }
+        userId:      { type: string }
+        prompt:      { type: string }
+        provider:    { type: string, enum: [beatoven, lyria, elevenlabs] }
+        status:      { type: string, enum: [pending, processing, done, failed] }
+        audioUrl:    { type: string, format: uri }
+        duration:    { type: integer, description: "seconds" }
+        creditCost:  { type: integer }
+        isFavorited: { type: boolean }
+        jobId:       { type: string }
+        createdAt:   { type: string, format: date-time }
+
+    CreditLog:
+      type: object
+      properties:
+        _id:          { type: string }
+        amount:       { type: integer }
+        type:         { type: string, enum: [earn, spend, refund] }
+        reason:       { type: string }
+        balanceAfter: { type: integer }
+        createdAt:    { type: string, format: date-time }
+
+    Collection:
+      type: object
+      properties:
+        _id:       { type: string }
+        name:      { type: string }
+        items:     { type: array, items: { type: object } }
+        createdAt: { type: string, format: date-time }
+
+security: []
+
+paths:
+  # ── HEALTH ──────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Auth]
+      summary: Gateway health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:  { type: string, example: ok }
+                  service: { type: string, example: gateway }
+
+  # ── AUTH ────────────────────────────────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      description: Creates user with 100 starter credits. Sends verification email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Account created, access_token cookie set
+        "409":
+          description: Email already in use
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Login successful, access_token + refresh_token cookies set
+        "401":
+          description: Invalid credentials
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      description: Reads refresh_token cookie, rotates it, returns new access_token.
+      responses:
+        "200":
+          description: New access_token issued
+        "401":
+          description: Refresh token invalid or expired
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout current session
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Logged out, cookies cleared
+
+  /api/auth/logout-all:
+    post:
+      tags: [Auth]
+      summary: Logout all devices
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: All sessions terminated
+
+  /api/auth/verify-email:
+    get:
+      tags: [Auth]
+      summary: Verify email address via token
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Email verified
+        "400":
+          description: Invalid or expired token
+
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Reset email sent (if account exists)
+
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:    { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Password reset successful
+        "400":
+          description: Invalid or expired token
+
+  /api/users/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: User object
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/User" }
+
+  /api/users/me/preferences:
+    patch:
+      tags: [Auth]
+      summary: Update user preferences (theme, language, etc.)
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accentColor: { type: string }
+                language:    { type: string, enum: [en, tr] }
+      responses:
+        "200":
+          description: Preferences updated
+
+  # ── GENERATION ──────────────────────────────────────────────────────────────
+  /api/generate/capabilities:
+    get:
+      tags: [Generation]
+      summary: List available AI providers and options (public)
+      responses:
+        "200":
+          description: Providers, durations, styles, moods
+
+  /api/generate:
+    post:
+      tags: [Generation]
+      summary: Generate a music loop from a text prompt
+      description: |
+        Queues an async generation job. Returns jobId immediately.
+        Progress is streamed via SSE at /api/notify/sse.
+        **Credit cost**: Lyria 15s=2, 30s=3, 60s=5 | Beatoven 15s=3, 30s=5, 60s=8
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, provider, duration]
+              properties:
+                prompt:   { type: string, maxLength: 500 }
+                provider: { type: string, enum: [beatoven, lyria] }
+                duration: { type: integer, enum: [15, 30, 60] }
+                style:    { type: string }
+                mood:     { type: string }
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:        { type: string }
+                  generationId: { type: string }
+                  creditCost:   { type: integer }
+        "422":
+          description: Insufficient credits
+
+  /api/generate/sfx:
+    post:
+      tags: [Generation]
+      summary: Generate a sound effect from a text prompt
+      description: Powered by ElevenLabs. Credit cost = 2.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:   { type: string, maxLength: 300 }
+                duration: { type: number }
+      responses:
+        "202":
+          description: Job queued
+
+  /api/generate/analyze-image:
+    post:
+      tags: [Generation]
+      summary: Analyze a screenshot and generate matching music
+      description: Gemini Vision reads the screenshot, then generates music. Credit cost = 1 (analysis) + music cost.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageBase64, mimeType, provider, duration]
+              properties:
+                imageBase64: { type: string, description: "Base64 encoded image (max 10MB)" }
+                mimeType:    { type: string, enum: [image/jpeg, image/png, image/webp] }
+                provider:    { type: string, enum: [beatoven, lyria] }
+                duration:    { type: integer, enum: [15, 30, 60] }
+      responses:
+        "202":
+          description: Analysis + generation queued
+
+  /api/generate/{jobId}:
+    get:
+      tags: [Generation]
+      summary: Get generation job status and result
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Generation record
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Generation" }
+
+  /api/generate/history:
+    get:
+      tags: [Generation]
+      summary: List user's generation history
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, processing, done, failed] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated generation list
+
+  /api/generate/{id}/retry:
+    post:
+      tags: [Generation]
+      summary: Retry a failed generation at half the original credit cost
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "202":
+          description: Retry queued
+
+  /api/generate/{id}/favorite:
+    patch:
+      tags: [Generation]
+      summary: Toggle favorite on a generation
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Favorite toggled
+
+  # ── UPLOAD ──────────────────────────────────────────────────────────────────
+  /api/upload:
+    post:
+      tags: [Upload]
+      summary: Upload an audio file
+      description: |
+        Allowed: WAV, MP3, OGG. Max size: 50MB. Storage quota: 500MB per user.
+        Rate limit: 10 uploads/min.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: File uploaded
+        "413":
+          description: File too large or storage quota exceeded
+
+  /api/upload/{id}:
+    delete:
+      tags: [Upload]
+      summary: Delete an uploaded file
+      description: Deletes from MinIO and frees storage quota.
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: File deleted
+
+  /api/upload/quota:
+    get:
+      tags: [Upload]
+      summary: Get storage quota usage
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Used and total quota in bytes
+
+  # ── LIBRARY ─────────────────────────────────────────────────────────────────
+  /api/library:
+    get:
+      tags: [Library]
+      summary: Get user's combined library (generations + uploads)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: type
+          schema: { type: string, enum: [generation, upload, all] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+      responses:
+        "200":
+          description: Library items
+
+  /api/collections:
+    get:
+      tags: [Library]
+      summary: List user's collections
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Collections array
+    post:
+      tags: [Library]
+      summary: Create a new collection
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 80 }
+      responses:
+        "201":
+          description: Collection created
+
+  /api/collections/{id}:
+    get:
+      tags: [Library]
+      summary: Get a collection with its items
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Collection
+    patch:
+      tags: [Library]
+      summary: Rename a collection
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: [Library]
+      summary: Delete a collection
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+
+  /api/collections/{id}/items:
+    post:
+      tags: [Library]
+      summary: Add an item to a collection
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refId, refModel]
+              properties:
+                refId:    { type: string }
+                refModel: { type: string, enum: [Generation, Upload] }
+      responses:
+        "200":
+          description: Item added
+
+  /api/collections/{id}/items/{itemId}:
+    delete:
+      tags: [Library]
+      summary: Remove an item from a collection
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Item removed
+
+  # ── PROJECTS (DAW) ──────────────────────────────────────────────────────────
+  /api/projects:
+    get:
+      tags: [Library]
+      summary: List saved DAW projects
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Projects list
+    post:
+      tags: [Library]
+      summary: Save a new DAW project
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, tracks]
+              properties:
+                name:        { type: string }
+                tracks:      { type: array }
+                bpm:         { type: number }
+                loopEnabled: { type: boolean }
+      responses:
+        "201":
+          description: Project saved
+
+  /api/projects/{id}:
+    put:
+      tags: [Library]
+      summary: Update an existing DAW project
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Project updated
+    delete:
+      tags: [Library]
+      summary: Delete a DAW project
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+
+  /api/projects/{id}/share:
+    post:
+      tags: [Library]
+      summary: Generate a public share link for a project
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Share token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shareToken: { type: string }
+
+  /api/projects/share/{token}:
+    get:
+      tags: [Library]
+      summary: Load a shared project (public, no auth)
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Project data (read-only)
+        "404":
+          description: Share link not found
+
+  # ── CREDITS ─────────────────────────────────────────────────────────────────
+  /api/credits/balance:
+    get:
+      tags: [Credits]
+      summary: Get current credit balance
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance: { type: integer }
+
+  /api/credits/history:
+    get:
+      tags: [Credits]
+      summary: Get credit transaction history
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Credit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:  { type: array, items: { $ref: "#/components/schemas/CreditLog" } }
+                  total: { type: integer }
+
+  /api/credits/packages:
+    get:
+      tags: [Credits]
+      summary: List purchasable credit packages (public)
+      responses:
+        "200":
+          description: Available packages
+
+  /api/credits/purchase:
+    post:
+      tags: [Credits]
+      summary: Purchase credits (MVP — returns 503 stub)
+      security:
+        - cookieAuth: []
+      responses:
+        "503":
+          description: Payment not yet implemented
+
+  # ── NOTIFICATION ────────────────────────────────────────────────────────────
+  /api/notify/sse:
+    get:
+      tags: [Notification]
+      summary: Subscribe to server-sent events
+      description: |
+        Returns a persistent SSE stream for real-time job updates.
+        Events: `generation:done`, `generation:failed`, `credit:updated`.
+        On reconnect, poll `/api/generate/history?status=pending` to recover pending jobs.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ── ADMIN ───────────────────────────────────────────────────────────────────
+  /api/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Platform-wide statistics
+      description: Requires admin role. Dual-layer protection (gateway + service).
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Stats object
+        "403":
+          description: Admin only
+
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: List all users (paginated)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: Users list
+
+  /api/admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      summary: Change user role (user ↔ admin)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [user, admin] }
+      responses:
+        "200":
+          description: Role updated
+
+  /api/admin/generations:
+    get:
+      tags: [Admin]
+      summary: List all generations across users
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Generations
+
+  # ── PROFILE ─────────────────────────────────────────────────────────────────
+  /api/profile/me:
+    get:
+      tags: [Profile]
+      summary: Get current user's profile
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Profile
+    put:
+      tags: [Profile]
+      summary: Update current user's profile
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                bio:         { type: string, maxLength: 300 }
+                website:     { type: string, format: uri }
+      responses:
+        "200":
+          description: Updated
+
+  /api/profile/me/avatar:
+    post:
+      tags: [Profile]
+      summary: Upload profile avatar
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar: { type: string, format: binary }
+      responses:
+        "200":
+          description: Avatar URL returned
+
+  /api/profile/{username}:
+    get:
+      tags: [Profile]
+      summary: Get public profile by username (no auth)
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Public profile
+        "404":
+          description: User not found
+
+  # ── SOCIAL ──────────────────────────────────────────────────────────────────
+  /api/social/tracks:
+    get:
+      tags: [Social]
+      summary: List public tracks (explore feed, no auth)
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [newest, popular] }
+      responses:
+        "200":
+          description: Public tracks
+    post:
+      tags: [Social]
+      summary: Publish a track to the public feed
+      security:
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [generationId]
+              properties:
+                generationId: { type: string }
+                title:        { type: string }
+                description:  { type: string }
+      responses:
+        "201":
+          description: Track published
+
+  /api/social/tracks/{id}:
+    get:
+      tags: [Social]
+      summary: Get a specific public track
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Track
+    delete:
+      tags: [Social]
+      summary: Remove a published track
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Track removed
+
+  /api/social/tracks/{id}/like:
+    post:
+      tags: [Social]
+      summary: Toggle like on a track
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Like toggled
+
+  /api/social/follow/{userId}:
+    post:
+      tags: [Social]
+      summary: Follow or unfollow a user
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Follow state updated
+
+  /api/social/follow/{userId}/status:
+    get:
+      tags: [Social]
+      summary: Check if current user follows another user
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Following status
+
+  /api/social/followers:
+    get:
+      tags: [Social]
+      summary: List current user's followers
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Followers list
+
+  /api/social/following:
+    get:
+      tags: [Social]
+      summary: List users the current user follows
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Following list
+
+  /api/social/feed:
+    get:
+      tags: [Social]
+      summary: Personalized feed from followed users
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Feed tracks
+
+  /api/social/my-tracks:
+    get:
+      tags: [Social]
+      summary: List current user's published tracks
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: My published tracks
+
+  /api/social/sse:
+    get:
+      tags: [Social]
+      summary: SSE stream for social events (likes, follows)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string

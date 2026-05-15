@@ -1,4 +1,7 @@
+import { logger } from "./logger"
 // services/gateway/src/index.ts
+import { readFileSync } from "fs";
+import { join }         from "path";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { getCookie } from "hono/cookie";
@@ -32,7 +35,7 @@ const {
 } = process.env;
 
 if (!ACCESS_JWT_SECRET || !INTERNAL_JWT_SECRET) {
-  console.error("[gateway] Missing required JWT secrets");
+  logger.error("[gateway] Missing required JWT secrets");
   process.exit(1);
 }
 
@@ -43,10 +46,10 @@ const redis = createClient({
   socket: { reconnectStrategy: (retries) => Math.min(retries * 200, 3000) },
 });
 let redisReady = false;
-redis.on("ready", () => { redisReady = true;  console.log("[gateway] Redis connected"); });
+redis.on("ready", () => { redisReady = true;  logger.info("[gateway] Redis connected"); });
 redis.on("error", () => { redisReady = false; }); // crash önle, rate limit devre dışı kalır
 redis.on("end",   () => { redisReady = false; });
-redis.connect().catch(err => console.warn("[gateway] Redis unavailable:", err.message));
+redis.connect().catch(err => logger.warn("[gateway] Redis unavailable:", err.message));
 
 // ── RATE LIMITER ──────────────────────────────────────────────────────────────
 async function incrementRateKey(key: string, windowMs: number): Promise<number> {
@@ -165,7 +168,7 @@ async function proxyTo(c: Context, baseUrl: string, overridePath?: string): Prom
       headers:    responseHeaders,
     });
   } catch (err) {
-    console.error("[gateway] Proxy error →", baseUrl, err);
+    logger.error("[gateway] Proxy error →", baseUrl, err);
     return new Response(JSON.stringify({ success: false, error: "Service unavailable" }), {
       status: 502,
       headers: { "content-type": "application/json" },
@@ -199,6 +202,51 @@ app.all("/internal/*", (c) => c.json({ success: false, error: "Forbidden" }, 403
 
 // Health
 app.get("/health", (c) => c.json({ status: "ok", service: "gateway" }));
+
+// ── API Docs (Swagger UI) — development only ──────────────────────────────────
+const OPENAPI_SPEC_PATH = join(__dirname, "../../../docs/openapi.yaml");
+
+app.get("/api/docs", (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sonaralabs API Docs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #0e0e0e; }
+    .swagger-ui .topbar { background: #131313; border-bottom: 1px solid #262626; }
+    .swagger-ui .topbar .download-url-wrapper { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: "/api/openapi.yaml",
+      dom_id: "#swagger-ui",
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: "BaseLayout",
+      deepLinking: true,
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 2,
+    });
+  </script>
+</body>
+</html>`);
+});
+
+app.get("/api/openapi.yaml", (c) => {
+  try {
+    const spec = readFileSync(OPENAPI_SPEC_PATH, "utf-8");
+    c.header("Content-Type", "application/yaml");
+    return c.body(spec);
+  } catch {
+    return c.json({ error: "Spec file not found" }, 404);
+  }
+});
 
 // ── AUTH — public, IP rate limit ──────────────────────────────────────────────
 app.post("/api/auth/register",              authLimiter, (c) => proxyTo(c, AUTH_SERVICE_URL, "/register"));
@@ -313,5 +361,5 @@ app.all("*", (c) => c.json({ success: false, error: "Route not found" }, 404));
 
 // ── START ─────────────────────────────────────────────────────────────────────
 serve({ fetch: app.fetch, port: parseInt(PORT) }, () =>
-  console.log(`[gateway] Listening on :${PORT}`)
+  logger.info(`[gateway] Listening on :${PORT}`)
 );

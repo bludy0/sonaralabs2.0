@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/admin/src/index.ts
 // Defense in depth: Gateway /api/admin/* rotalarını önce role:admin filtreden geçirir.
 // Bu servis de her handler'da ayrıca rol kontrolü yapar — iki katman.
@@ -89,7 +90,7 @@ app.get("/stats", async (_req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    console.error("admin stats error", err);
+    logger.error("admin stats error", err);
     res.status(500).json({ success: false, error: "Failed to fetch stats" });
   }
 });
@@ -210,5 +211,5 @@ app.get("/generations", async (req, res) => {
 });
 
 mongoose.connect(MONGO_URI!).then(() => {
-  app.listen(PORT, () => console.log(`[admin] Listening on :${PORT}`));
-}).catch(err => { console.error("[admin] MongoDB failed", err); process.exit(1); });
+  app.listen(PORT, () => logger.info(`[admin] Listening on :${PORT}`));
+}).catch(err => { logger.error("[admin] MongoDB failed", err); process.exit(1); });

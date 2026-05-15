@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/notification/src/index.ts
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -42,11 +43,11 @@ queueEvents.on("completed", async ({ jobId, returnvalue }) => {
   // userId ve diğer bilgileri job data'dan almak için Generation koleksiyonuna
   // HTTP çağrısı yapmak yerine, generation servisi /internal/notify endpoint'i çağırır.
   // (Bu event'te sadece jobId var; gerçek data generation servisinden HTTP ile gelir.)
-  console.log(`[notification] Job ${jobId} completed`);
+  logger.info(`[notification] Job ${jobId} completed`);
 });
 
 queueEvents.on("failed", ({ jobId, failedReason }) => {
-  console.log(`[notification] Job ${jobId} failed: ${failedReason}`);
+  logger.info(`[notification] Job ${jobId} failed: ${failedReason}`);
 });
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ app.get("/stream", (req, res) => {
 
     // Bağlantı kaydı
     addConnection(userId, res);
-    console.log(`[notification] SSE connected: ${userId} (total: ${connections.size} users)`);
+    logger.info(`[notification] SSE connected: ${userId} (total: ${connections.size} users)`);
 
     // Ping — bağlantıyı canlı tutar (30sn)
     const pingInterval = setInterval(() => {
@@ -81,7 +82,7 @@ app.get("/stream", (req, res) => {
     req.on("close", () => {
       clearInterval(pingInterval);
       removeConnection(userId, res);
-      console.log(`[notification] SSE disconnected: ${userId}`);
+      logger.info(`[notification] SSE disconnected: ${userId}`);
     });
   } catch {
     res.status(401).end();
@@ -117,4 +118,4 @@ app.get("/health", (_, res) => res.json({
   totalConnections: [...connections.values()].reduce((s, c) => s + c.size, 0),
 }));
 
-app.listen(PORT, () => console.log(`[notification] Listening on :${PORT}`));
+app.listen(PORT, () => logger.info(`[notification] Listening on :${PORT}`));

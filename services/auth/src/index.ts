@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/auth/src/index.ts
 import express from "express";
 import mongoose from "mongoose";
@@ -34,7 +35,7 @@ const {
 } = process.env;
 
 if (!MONGO_URI || !ACCESS_JWT_SECRET || !REFRESH_JWT_SECRET || !INTERNAL_JWT_SECRET) {
-  console.error("Missing required env vars");
+  logger.error("Missing required env vars");
   process.exit(1);
 }
 
@@ -97,7 +98,7 @@ const BTN = `display:inline-block;padding:12px 28px;background:${ACCENT};color:$
 /** Ortak mail gönderici — dev'de console'a yazar */
 async function sendMail(to: string, subject: string, html: string, text: string): Promise<void> {
   if (!transporter) {
-    console.log(`\n[auth] 📧  ${subject}\n  To: ${to}\n  ${text}\n`);
+    logger.info(`\n[auth] 📧  ${subject}\n  To: ${to}\n  ${text}\n`);
     return;
   }
   await transporter.sendMail({ from: EMAIL_FROM, to, subject, html, text });
@@ -313,7 +314,7 @@ app.post("/register", async (req, res) => {
 
     // Email gönder (SMTP yoksa console'a yazar)
     await sendVerificationEmail(email, verifyToken).catch(err =>
-      console.error("[auth] Email gönderilemedi:", err.message)
+      logger.error("[auth] Email gönderilemedi:", err.message)
     );
 
     // Kayıt bonusu: default 100 kredi. Sıfırlamak için INITIAL_CREDIT_BALANCE=0 set et.
@@ -326,7 +327,7 @@ app.post("/register", async (req, res) => {
       axios.post(`${CREDIT_SERVICE_URL}/earn`,
         { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
         { headers: { "x-internal-token": internalToken } }
-      ).catch(err => console.warn("[auth] Credit earn log failed:", err.message));
+      ).catch(err => logger.warn("[auth] Credit earn log failed:", err.message));
     }
 
     res.status(201).json({
@@ -338,7 +339,7 @@ app.post("/register", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    console.error("register error", err);
+    logger.error("register error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -390,7 +391,7 @@ app.get("/verify-email", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    console.error("verify-email error", err);
+    logger.error("verify-email error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -424,12 +425,12 @@ app.post("/resend-verification", async (req, res) => {
     await user.save();
 
     await sendVerificationEmail(email, verifyToken).catch(err =>
-      console.error("[auth] Resend email hatası:", err.message)
+      logger.error("[auth] Resend email hatası:", err.message)
     );
 
     res.json({ success: true, message: "Onay emaili tekrar gönderildi." });
   } catch (err) {
-    console.error("resend-verification error", err);
+    logger.error("resend-verification error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -496,7 +497,7 @@ app.post("/login", async (req, res) => {
       user.email,
       req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
       req.headers["user-agent"] ?? "",
-    ).catch(err => console.warn("[auth] Login notification email failed:", err.message));
+    ).catch(err => logger.warn("[auth] Login notification email failed:", err.message));
 
     res.json({
       success: true,
@@ -508,7 +509,7 @@ app.post("/login", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    console.error("login error", err);
+    logger.error("login error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -539,12 +540,12 @@ app.post("/forgot-password", async (req, res) => {
     });
 
     await sendPasswordResetEmail(email, resetToken).catch(err =>
-      console.error("[auth] Reset email gönderilemedi:", err.message)
+      logger.error("[auth] Reset email gönderilemedi:", err.message)
     );
 
     res.json(genericOk);
   } catch (err) {
-    console.error("forgot-password error", err);
+    logger.error("forgot-password error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -587,7 +588,7 @@ app.post("/reset-password", async (req, res) => {
 
     res.json({ success: true, message: "Şifreniz başarıyla sıfırlandı. Lütfen tekrar giriş yapın." });
   } catch (err) {
-    console.error("reset-password error", err);
+    logger.error("reset-password error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -623,7 +624,7 @@ app.post("/refresh", async (req, res) => {
 
     res.json({ success: true, message: "Tokens refreshed" } as ApiResponse);
   } catch (err) {
-    console.error("refresh error", err);
+    logger.error("refresh error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -717,7 +718,7 @@ app.patch("/me/password", async (req, res) => {
     sendPasswordChangedEmail(
       user.email,
       req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
-    ).catch(err => console.warn("[auth] Password changed email failed:", err.message));
+    ).catch(err => logger.warn("[auth] Password changed email failed:", err.message));
 
     res.json({ success: true, message: "Password updated. Please log in again." } as ApiResponse);
   } catch {
@@ -769,10 +770,10 @@ export { app, User, RefreshToken };
 // ── BOOTSTRAP ─────────────────────────────────────────────────────────────────
 if (require.main === module) {
   mongoose.connect(MONGO_URI!).then(() => {
-    console.log("[auth] MongoDB connected");
+    logger.info("[auth] MongoDB connected");
     if (!EMAIL_ENABLED) {
-      console.warn("[auth] ⚠️  SMTP yapılandırılmamış — email onayı DEV modunda (console log)");
+      logger.warn("[auth] ⚠️  SMTP yapılandırılmamış — email onayı DEV modunda (console log)");
     }
-    app.listen(PORT, () => console.log(`[auth] Listening on :${PORT}`));
-  }).catch(err => { console.error("[auth] MongoDB connection failed", err); process.exit(1); });
+    app.listen(PORT, () => logger.info(`[auth] Listening on :${PORT}`));
+  }).catch(err => { logger.error("[auth] MongoDB connection failed", err); process.exit(1); });
 }

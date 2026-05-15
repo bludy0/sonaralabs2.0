@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/credit/src/index.ts
 import express from "express";
 import mongoose from "mongoose";
@@ -8,7 +9,7 @@ import { InternalJwtPayload, SpendCreditPayload, ApiResponse } from "@sonaralabs
 const app = express();
 
 const { PORT = "3005", MONGO_URI, INTERNAL_JWT_SECRET } = process.env;
-if (!MONGO_URI || !INTERNAL_JWT_SECRET) { console.error("Missing env"); process.exit(1); }
+if (!MONGO_URI || !INTERNAL_JWT_SECRET) { logger.error("Missing env"); process.exit(1); }
 
 // ── STRIPE ───────────────────────────────────────────────────────────────────
 const stripeClient = process.env.STRIPE_SECRET_KEY
@@ -35,7 +36,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
   try {
     event = stripeClient.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
   } catch (err) {
-    console.error("[webhook] Signature verification failed:", err);
+    logger.error("[webhook] Signature verification failed:", err);
     return res.status(400).json({ error: "Invalid signature" });
   }
 
@@ -46,7 +47,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
     // Metadata eksikse log at — Stripe tekrar denemesi için yine 200 döner
     if (!userId || credits <= 0) {
-      console.error("[webhook] checkout.session.completed: missing/invalid metadata in session", session.id, { userId, credits });
+      logger.error("[webhook] checkout.session.completed: missing/invalid metadata in session", session.id, { userId, credits });
     } else {
       try {
         const user = await User.findByIdAndUpdate(
@@ -64,12 +65,12 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
             relatedModel: "stripe_session",
             balanceAfter: user.creditBalance,
           });
-          console.log(`[webhook] Added ${credits} credits to user ${userId}`);
+          logger.info(`[webhook] Added ${credits} credits to user ${userId}`);
         } else {
-          console.error("[webhook] User not found for userId:", userId, "session:", session.id);
+          logger.error("[webhook] User not found for userId:", userId, "session:", session.id);
         }
       } catch (err) {
-        console.error("[webhook] Failed to add credits:", err);
+        logger.error("[webhook] Failed to add credits:", err);
         return res.status(500).json({ error: "Failed to process payment" });
       }
     }
@@ -174,7 +175,7 @@ app.post("/spend", async (req, res) => {
 
     res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
   } catch (err) {
-    console.error("spend error", err);
+    logger.error("spend error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -207,7 +208,7 @@ app.post("/earn", async (req, res) => {
 
     res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
   } catch (err) {
-    console.error("earn error", err);
+    logger.error("earn error", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -252,7 +253,7 @@ app.post("/purchase", async (req, res) => {
 
     res.json({ success: true, data: { checkoutUrl: session.url, sessionId: session.id } });
   } catch (err) {
-    console.error("[purchase]", err);
+    logger.error("[purchase]", err);
     res.status(500).json({ success: false, error: "Failed to create checkout session" });
   }
 });
@@ -272,5 +273,5 @@ app.get("/internal/credit-logs", async (req, res) => {
 app.get("/health", (_, res) => res.json({ status: "ok", service: "credit" }));
 
 mongoose.connect(MONGO_URI!).then(() => {
-  app.listen(PORT, () => console.log(`[credit] Listening on :${PORT}`));
-}).catch(err => { console.error("[credit] MongoDB failed", err); process.exit(1); });
+  app.listen(PORT, () => logger.info(`[credit] Listening on :${PORT}`));
+}).catch(err => { logger.error("[credit] MongoDB failed", err); process.exit(1); });

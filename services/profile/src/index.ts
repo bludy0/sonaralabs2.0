@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/profile/src/index.ts
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -24,7 +25,7 @@ const {
 const MINIO_PUBLIC_BASE = MINIO_PUBLIC_URL ?? `http://localhost:${MINIO_PORT}`;
 
 if (!DATABASE_URL || !INTERNAL_JWT_SECRET) {
-  console.error("[profile] Missing DATABASE_URL or INTERNAL_JWT_SECRET");
+  logger.error("[profile] Missing DATABASE_URL or INTERNAL_JWT_SECRET");
   process.exit(1);
 }
 
@@ -57,7 +58,7 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_profiles_username ON user_profiles(username);
   `);
-  console.log("[profile] Migration OK");
+  logger.info("[profile] Migration OK");
 }
 
 // ── AUTH HELPER ───────────────────────────────────────────────────────────────
@@ -155,7 +156,7 @@ app.put("/me", async (c) => {
   } catch (err: any) {
     if (err.code === "23505") return c.json({ success: false, error: "Username already taken" }, 409);
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    console.error("[profile] PUT /me:", err);
+    logger.error("[profile] PUT /me:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -194,7 +195,7 @@ app.post("/me/avatar", async (c) => {
     return c.json({ success: true, data: { avatarUrl: url } });
   } catch (err: any) {
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    console.error("[profile] POST /me/avatar:", err);
+    logger.error("[profile] POST /me/avatar:", err);
     return c.json({ success: false, error: "Upload failed" }, 500);
   }
 });
@@ -248,7 +249,7 @@ app.get("/:username", async (c) => {
     if (!rows.length) return c.json({ success: false, error: "Profile not found" }, 404);
     return c.json({ success: true, data: rowToProfile(rows[0]) });
   } catch (err) {
-    console.error("[profile] GET /:username:", err);
+    logger.error("[profile] GET /:username:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -256,10 +257,10 @@ app.get("/:username", async (c) => {
 // ── START ─────────────────────────────────────────────────────────────────────
 async function start() {
   await migrate();
-  await ensureBucket().catch(e => console.warn("[profile] MinIO bucket warning:", e.message));
+  await ensureBucket().catch(e => logger.warn("[profile] MinIO bucket warning:", e.message));
   serve({ fetch: app.fetch, port: parseInt(PORT) }, () =>
-    console.log(`[profile] Listening on :${PORT}`)
+    logger.info(`[profile] Listening on :${PORT}`)
   );
 }
 
-start().catch(err => { console.error("[profile] Startup failed:", err); process.exit(1); });
+start().catch(err => { logger.error("[profile] Startup failed:", err); process.exit(1); });

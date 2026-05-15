@@ -1,3 +1,4 @@
+import { logger } from "./logger"
 // services/upload/src/index.ts
 import express from "express";
 import mongoose from "mongoose";
@@ -32,7 +33,7 @@ const MINIO_PUBLIC_BASE = MINIO_PUBLIC_URL ?? `http://localhost:${MINIO_PORT}`;
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
 if (process.env.NODE_ENV === "production" && !process.env.MINIO_PUBLIC_URL) {
-  console.error("[upload] FATAL: MINIO_PUBLIC_URL is not set in production. Uploaded file URLs will point to localhost and be inaccessible.");
+  logger.error("[upload] FATAL: MINIO_PUBLIC_URL is not set in production. Uploaded file URLs will point to localhost and be inaccessible.");
   process.exit(1);
 }
 
@@ -126,7 +127,7 @@ app.post("/", upload.single("file"), async (req, res) => {
       // MinIO failed after storageUsed was already incremented — roll back quota
       fs.unlink(req.file.path, () => {});
       await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -fileSize } }).catch(() => {});
-      console.error("upload minio error", minioErr);
+      logger.error("upload minio error", minioErr);
       return res.status(502).json({ success: false, error: "Storage backend error. Please try again." });
     }
     fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
@@ -143,7 +144,7 @@ app.post("/", upload.single("file"), async (req, res) => {
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(413).json({ success: false, error: `File too large. Maximum ${MAX_SZ / 1_048_576} MB.` });
     }
-    console.error("upload error", err);
+    logger.error("upload error", err);
     res.status(500).json({ success: false, error: err.message || "Upload failed" });
   }
 });
@@ -225,5 +226,5 @@ app.delete("/internal/uploads/:id", async (req, res) => {
 app.get("/health", (_, res) => res.json({ status: "ok", service: "upload" }));
 
 mongoose.connect(MONGO_URI!).then(() => {
-  app.listen(PORT, () => console.log(`[upload] Listening on :${PORT}`));
-}).catch(err => { console.error("[upload] MongoDB failed", err); process.exit(1); });
+  app.listen(PORT, () => logger.info(`[upload] Listening on :${PORT}`));
+}).catch(err => { logger.error("[upload] MongoDB failed", err); process.exit(1); });
