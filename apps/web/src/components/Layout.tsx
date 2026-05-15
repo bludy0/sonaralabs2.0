@@ -35,11 +35,9 @@ export default function Layout() {
 
         {/* Brand */}
         <Link to="/" style={{ textDecoration: "none" }}>
-          <div className="px-5 pt-7 pb-5 transition-opacity hover:opacity-75">
-            <p className="text-[10px] font-medium tracking-[0.2em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
-              AI_CORE_v2.0
-            </p>
-            <p className="text-[15px] font-bold tracking-tight uppercase" style={{ color: "var(--accent)" }}>
+          <div className="px-4 pt-6 pb-5 flex items-center gap-2.5 transition-opacity hover:opacity-75">
+            <img src="/SONARALABS.png" alt="Sonaralabs" className="h-8 w-auto shrink-0" />
+            <p className="text-[13px] font-black tracking-tight uppercase" style={{ color: "var(--text-1)" }}>
               Sonaralabs
             </p>
           </div>

@@ -347,17 +347,8 @@ export default function WelcomePage() {
         <div className="wu-nav-wrap">
           <nav className="wu-nav">
             {/* Logo */}
-            <div className="flex items-center gap-2.5 shrink-0" style={{ position: "relative", zIndex: 1 }}>
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0"
-                style={{
-                  background: "var(--accent)",
-                  color: "var(--accent-on)",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25)",
-                }}
-              >
-                SL
-              </div>
+            <div className="flex items-center gap-2 shrink-0" style={{ position: "relative", zIndex: 1 }}>
+              <img src="/SONARALABS.png" alt="Sonaralabs" className="h-8 w-auto" />
               <span className="text-sm font-black tracking-tight hidden sm:block" style={{ color: "var(--text-1)" }}>
                 SONARALABS
               </span>
@@ -1018,13 +1009,8 @@ export default function WelcomePage() {
         <footer style={{ borderTop: "1px solid color-mix(in srgb, var(--text-3) 8%, transparent)" }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
             {/* Logo */}
-            <div className="flex items-center gap-2.5">
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black"
-                style={{ background: "var(--accent)", color: "var(--accent-on)" }}
-              >
-                SL
-              </div>
+            <div className="flex items-center gap-2">
+              <img src="/SONARALABS.png" alt="Sonaralabs" className="h-7 w-auto" />
               <p className="text-xs font-black tracking-wider uppercase" style={{ color: "var(--text-2)" }}>
                 SONARALABS
               </p>
