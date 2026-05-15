@@ -229,6 +229,11 @@ export function DAWLayout({
                   <button
                     key={t}
                     onClick={() => handleTabChange(t)}
+                    title={
+                      t === 'MIXER'
+                        ? 'Mixer — Adjust volume, panning and send effects for each track'
+                        : 'Piano Roll — Draw and edit MIDI notes with a visual keyboard editor'
+                    }
                     style={{
                       padding:      '0 16px',
                       background:   mainTab === t ? C.bgHover : 'none',
@@ -255,7 +260,7 @@ export function DAWLayout({
                     color: C.text3, cursor: 'pointer', fontSize: 16,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
-                  title="Close panel"
+                  title="Close panel — Hide the Mixer / Piano Roll panel"
                 >
                   ×
                 </button>
@@ -279,15 +284,16 @@ export function DAWLayout({
 interface SideItem {
   id:    SideNavTab
   label: string
+  title: string
   icon:  React.ReactNode
 }
 
 const SIDE_ITEMS: SideItem[] = [
-  { id: 'TRACKS',  label: 'Tracks',  icon: <TracksIcon /> },
-  { id: 'BROWSER', label: 'Browser', icon: <BrowserIcon /> },
-  { id: 'PROJECT', label: 'Project', icon: <ProjectIcon /> },
-  { id: 'SAMPLES', label: 'Samples', icon: <SamplesIcon /> },
-  { id: 'PLUGINS', label: 'Plugins', icon: <PluginsIcon /> },
+  { id: 'TRACKS',  label: 'Tracks',  title: 'Tracks — Add and manage audio & MIDI tracks in your project',           icon: <TracksIcon /> },
+  { id: 'BROWSER', label: 'Browser', title: 'Browser — Browse your library and import audio files into the timeline', icon: <BrowserIcon /> },
+  { id: 'PROJECT', label: 'Project', title: 'Project — Save, load and manage your saved projects',                    icon: <ProjectIcon /> },
+  { id: 'SAMPLES', label: 'Samples', title: 'Samples — Browse sample sounds and drag them into the timeline',         icon: <SamplesIcon /> },
+  { id: 'PLUGINS', label: 'Plugins', title: 'Plugins — Audio effects and instrument plugins for your tracks',         icon: <PluginsIcon /> },
 ]
 
 function SideNavItem({ item, active, hasContent, onClick }: {
@@ -296,7 +302,7 @@ function SideNavItem({ item, active, hasContent, onClick }: {
   return (
     <button
       onClick={onClick}
-      title={item.label}
+      title={item.title}
       style={{
         display:        'flex',
         flexDirection:  'column',

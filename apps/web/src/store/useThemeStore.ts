@@ -161,6 +161,28 @@ export const PRESET_THEMES: Theme[] = [
     },
   },
 
+  {
+    id: "fl-studio", name: "Classic DAW", emoji: "🎛️",
+    vars: {
+      "--bg-page":"#1a1a1a","--bg-card":"#222222","--bg-mid":"#282828",
+      "--bg-input":"#303030","--bg-border":"#3c3c3c","--bg-bright":"#424242",
+      "--text-1":"#e8e8e8","--text-2":"#a0a0a0","--text-3":"#606060",
+      "--accent":"#e87020","--accent-on":"#ffffff","--accent-dim":"#3d1a00",
+      "--success":"#6ec96e","--error":"#ff6060","--teal":"#60b8d0",
+      "--daw-deep":"#141414","--daw-base":"#1c1c1c","--daw-raised":"#242424",
+      "--daw-subtle":"#2a2a2a","--daw-hover":"#303030","--daw-selected":"#383838",
+      "--daw-border":"#3c3c3c","--daw-border-dim":"#242424",
+      "--daw-accent":"#e87020","--daw-accent-bright":"#ff9040",
+      "--daw-accent-dim":"#3d1a00","--daw-accent-on":"#ffffff",
+      "--daw-success":"#2ae500","--daw-success-dim":"#0f6d00",
+      "--daw-warning":"#ffba20","--daw-warning-dim":"#7d5800",
+      "--daw-error":"#ff6060","--daw-error-cont":"#4a0000",
+      "--daw-text1":"#e8e8e8","--daw-text2":"#a0a0a0","--daw-text3":"#606060",
+      "--daw-playhead":"#e87020",
+      "--daw-loop-bg":"rgba(232,112,32,0.06)","--daw-loop-border":"#e87020",
+    },
+  },
+
   // ── AÇIK TEMALAR ─────────────────────────────────────────────────────────
   {
     id: "solar-white", name: "Solar White", emoji: "☀️", isLight: true,

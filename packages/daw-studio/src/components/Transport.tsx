@@ -108,6 +108,11 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
           <button
             key={tab}
             onClick={() => onTabChange(tab)}
+            title={
+              tab === 'ARRANGER' ? 'Arranger — Arrange and sequence audio/MIDI clips on the timeline' :
+              tab === 'MIXER'    ? 'Mixer — Adjust levels, panning and effects for each track' :
+                                   'Editor — Piano roll for drawing and editing MIDI notes'
+            }
             style={{
               fontFamily: "'Space Grotesk', 'Inter', system-ui, sans-serif",
               fontSize:   11,
@@ -151,6 +156,7 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
           ref={bpmInputRef}
           type="number" min={40} max={300}
           defaultValue={transport.bpm}
+          title="BPM — Beats Per Minute. Sets the tempo of the project (40–300). Press Enter or click away to apply."
           onKeyDown={e => {
             if (e.key === 'Enter') {
               const v = Math.max(40, Math.min(300, Number((e.target as HTMLInputElement).value)))
@@ -186,7 +192,7 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
             const found = TIME_SIGNATURES.find(t => t.label === e.target.value)
             if (found) setTimeSignature(found.value)
           }}
-          title="Time Signature"
+          title="Time Signature — Sets the meter of the project (beats per bar / note value)"
           style={{
             background:    C.bgSelected,
             border:        `1px solid ${C.border}`,
@@ -231,14 +237,10 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         </TransportBtn>
 
         {/* Stop */}
-        <TransportBtn title="Stop" onClick={stop}>
+        <TransportBtn title="Stop — Return playhead to the beginning" onClick={stop}>
           <StopIcon />
         </TransportBtn>
 
-        {/* Record */}
-        <TransportBtn title="Record" activeColor={C.error}>
-          <RecordIcon />
-        </TransportBtn>
       </div>
 
       {/* ── Spacer ──────────────────────────────────────────────────────── */}
@@ -249,7 +251,7 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         <IconBtn
           active={transport.loopEnabled}
           onClick={toggleLoop}
-          title="Loop (L)"
+          title="Loop (L) — Toggle loop playback between loop start and end points"
         >
           <LoopIcon />
         </IconBtn>
@@ -257,14 +259,14 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
 
       {/* ── Undo / Redo ─────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 1, padding: '0 4px', borderLeft: `1px solid ${C.border}`, height: '100%', alignItems: 'center' }}>
-        <IconBtn active={false} onClick={undo} title="Undo (Ctrl+Z)"><UndoIcon /></IconBtn>
-        <IconBtn active={false} onClick={redo} title="Redo (Ctrl+Y)"><RedoIcon /></IconBtn>
+        <IconBtn active={false} onClick={undo} title="Undo (Ctrl+Z) — Revert the last action"><UndoIcon /></IconBtn>
+        <IconBtn active={false} onClick={redo} title="Redo (Ctrl+Y) — Re-apply the last undone action"><RedoIcon /></IconBtn>
       </div>
 
       {/* ── Add tracks ──────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, padding: '0 12px', borderLeft: `1px solid ${C.border}`, height: '100%', alignItems: 'center' }}>
-        <SmallTextBtn onClick={addAudio}>{dt.addAudio}</SmallTextBtn>
-        <SmallTextBtn onClick={addMidi}>{dt.addMidi}</SmallTextBtn>
+        <SmallTextBtn onClick={addAudio} title="Add Audio Track — Create a new track for audio clips and recordings">{dt.addAudio}</SmallTextBtn>
+        <SmallTextBtn onClick={addMidi} title="Add MIDI Track — Create a new track for MIDI instrument clips">{dt.addMidi}</SmallTextBtn>
       </div>
 
       {/* ── Master Volume ───────────────────────────────────────────────── */}
@@ -280,7 +282,7 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
           type="range" min={0} max={1} step={0.01}
           value={masterVolume}
           onChange={e => setMasterVol(parseFloat(e.target.value))}
-          title={`Master volume: ${Math.round(masterVolume * 100)}%`}
+          title={`Master Volume — Controls the overall output level of the mix (${Math.round(masterVolume * 100)}%)`}
           style={{ width: 64, cursor: 'pointer', accentColor: C.accent, margin: 0 }}
         />
         <span style={{ fontSize: 9, color: C.text3, width: 26, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -293,24 +295,18 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         <SmallTextBtn
           onClick={() => setExportLoop(v => !v)}
           accent={exportLoop}
-          title={exportLoop ? 'Exporting loop region only' : 'Export full mix (click to export loop only)'}
+          title={exportLoop ? 'Loop Export — Only the loop region will be rendered' : 'Loop Export — Click to export only the loop region instead of the full mix'}
         >
           {exportLoop ? 'LOOP ✓' : 'LOOP'}
         </SmallTextBtn>
-        <SmallTextBtn onClick={() => handleExport('wav')} accent>
+        <SmallTextBtn onClick={() => handleExport('wav')} accent title="Export WAV — Render and download the mix as a lossless WAV file">
           {exportState === 'wav' ? '…' : 'WAV'}
         </SmallTextBtn>
-        <SmallTextBtn onClick={() => handleExport('mp3')}>
+        <SmallTextBtn onClick={() => handleExport('mp3')} title="Export MP3 — Render and download the mix as a compressed MP3 (192kbps)">
           {exportState === 'mp3' ? '…' : 'MP3'}
         </SmallTextBtn>
       </div>
 
-      {/* ── Settings icon ───────────────────────────────────────────────── */}
-      <div style={{ paddingRight: 8, paddingLeft: 4, borderLeft: `1px solid ${C.border}`, height: '100%', display: 'flex', alignItems: 'center' }}>
-        <IconBtn active={false} onClick={() => {}} title="Settings">
-          <SettingsIcon />
-        </IconBtn>
-      </div>
     </header>
   )
 }
@@ -442,14 +438,6 @@ function StopIcon() {
   )
 }
 
-function RecordIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-      <circle cx="6" cy="6" r="5"/>
-    </svg>
-  )
-}
-
 function LoopIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -479,11 +467,3 @@ function RedoIcon() {
   )
 }
 
-function SettingsIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-      <circle cx="7" cy="7" r="2"/>
-      <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M11.4 2.6l-1.1 1.1M3.7 10.3l-1.1 1.1"/>
-    </svg>
-  )
-}
