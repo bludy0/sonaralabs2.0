@@ -319,6 +319,17 @@ export const useThemeStore = create<ThemeState>()(
     {
       name: "sonaralabs-theme",
       partialize: (s) => ({ themeId: s.themeId, customThemes: s.customThemes }),
+      // localStorage'dan yüklenince temayı React render'ından önce senkron uygula.
+      // Bu sayede ThemeProvider'ın ilk mount effect'i atlanabilir ve
+      // useFixedTheme (auth/landing sayfaları) ThemeProvider tarafından ezilmez.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const theme =
+          PRESET_THEMES.find(t => t.id === state.themeId) ??
+          state.customThemes?.find((t: Theme) => t.id === state.themeId) ??
+          PRESET_THEMES[0];
+        applyTheme(theme.vars);
+      },
     }
   )
 );
