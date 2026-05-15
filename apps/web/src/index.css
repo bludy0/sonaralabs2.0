@@ -14,29 +14,30 @@
   /* Ensure Latin uppercase rules regardless of document language */
 }
 
-/* ── Tema CSS değişkenleri (varsayılan: Cyber Yellow) ────────────────────── */
+/* ── Tema CSS değişkenleri (varsayılan: Cyber Red) ───────────────────────── */
+/* Auth/landing sayfaları bu renkleri kullanır — JS yüklenmeden önce de. */
 :root {
   /* Yüzeyler */
   --bg-page:    #0e0e0e;
   --bg-card:    #131313;
   --bg-mid:     #191919;
-  --bg-input:   #1f2937;
-  --bg-border:  #262626;
-  --bg-bright:  #2c2c2c;
+  --bg-input:   #1f2020;
+  --bg-border:  #262020;
+  --bg-bright:  #2c2020;
 
   /* Metin */
   --text-1:  #ffffff;
-  --text-2:  #ababab;
-  --text-3:  #484848;
+  --text-2:  #b8aaaa;
+  --text-3:  #524848;
 
-  /* Vurgu */
-  --accent:      var(--accent);
-  --accent-on:   #624e00;
-  --accent-dim:  #2a2100;
+  /* Vurgu — Cyber Red */
+  --accent:      #ff3c3c;
+  --accent-on:   #ffffff;
+  --accent-dim:  #3d0000;
 
   /* Durum */
   --success:  #6ec96e;
-  --error:    #ff7351;
+  --error:    #ff9977;
   --teal:     #64c8b4;
 }
 
