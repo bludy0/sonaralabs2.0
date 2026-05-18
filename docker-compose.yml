@@ -354,7 +354,8 @@ services:
     ports:
       - "5174:5174"
     environment:
-      VITE_API_BASE_URL: http://localhost:3000
+      VITE_API_BASE_URL: http://localhost:3000   # browser → host port 3000 (gateway)
+      VITE_PROXY_TARGET: http://gateway:3000     # Vite server-side proxy → Docker DNS
     volumes:
       - .:/app
       - /app/node_modules

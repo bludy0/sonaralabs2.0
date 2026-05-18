@@ -32,8 +32,20 @@ export default defineConfig({
     fs: { allow: [".."] },
     proxy: {
       "/api": {
-        target: process.env.VITE_API_BASE_URL || "http://localhost:3000",
+        // VITE_PROXY_TARGET: Docker-internal gateway (container-to-container).
+        // VITE_API_BASE_URL: fallback for local dev (host-side gateway on :3000).
+        target: process.env.VITE_PROXY_TARGET || process.env.VITE_API_BASE_URL || "http://localhost:3000",
         changeOrigin: true,
+        // SSE (Server-Sent Events) için: yanıtı buffer'lamadan doğrudan ilet
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes) => {
+            // SSE stream'lerini flush etmeden tut
+            if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
+              proxyRes.headers["cache-control"] = "no-cache";
+              proxyRes.headers["connection"]    = "keep-alive";
+            }
+          });
+        },
       },
     },
   },
