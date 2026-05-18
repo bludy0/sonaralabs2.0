@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useFixedTheme } from "../hooks/useFixedTheme";
 import Balatro from "../components/Balatro";
@@ -135,7 +135,7 @@ export default function WelcomePage() {
     return () => clearInterval(typeTimer);
   }, [mockIdx]);
 
-  if (user) return null;
+  if (user) return <Navigate to="/dashboard" replace />;
 
   return (
     <>
