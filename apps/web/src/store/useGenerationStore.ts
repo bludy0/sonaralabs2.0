@@ -38,6 +38,7 @@ interface GenerationState {
   }) => Promise<{ jobId: string; generationId: string }>;
   analyzeImage: (imageBase64: string, mimeType: string) => Promise<string>;
   retry: (generationId: string) => Promise<void>;
+  removeItem: (generationId: string) => Promise<void>;
   handleSSEEvent: (event: SseStatusEvent) => void;
   fetchHistory: (status?: GenerationStatus) => Promise<void>;
 }
@@ -106,6 +107,16 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
     if (src) {
       const retryItem: GenerationItem = { ...src, _id: newId, jobId, status: "pending", creditCost, createdAt: new Date().toISOString() };
       set(s => ({ items: [retryItem, ...s.items], activeJobId: jobId }));
+    }
+  },
+
+  removeItem: async (generationId: string) => {
+    // Optimistik: önce UI'dan kaldır, sonra backend'e sil isteği gönder
+    set(s => ({ items: s.items.filter(i => i._id !== generationId) }));
+    try {
+      await api.delete(`/api/generate/${generationId}`);
+    } catch {
+      // Sessizce geç — UI'dan zaten kalktı, sayfa yenilenirse geri gelir
     }
   },
 

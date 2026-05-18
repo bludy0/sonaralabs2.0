@@ -231,13 +231,15 @@ export interface GenerationCardProps {
   item: GenerationItem;
   onOpenEditor: (url: string) => void;
   onRetry: (id: string) => void;
+  onRemove: (id: string) => void;
   onOpenInStudio: (item: GenerationItem) => void;
 }
 
-export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: GenerationCardProps) {
+export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenInStudio }: GenerationCardProps) {
   ensureKeyframes();
 
-  const [retrying, setRetrying] = useState(false);
+  const [retrying,  setRetrying]  = useState(false);
+  const [removing,  setRemoving]  = useState(false);
   const [exporting, setExporting] = useState(false);
 
   // Track elapsed seconds since creation (anchor = createdAt)
@@ -286,6 +288,12 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
     setRetrying(true);
     try { await onRetry(item._id); }
     finally { setRetrying(false); }
+  }
+
+  async function handleRemove() {
+    setRemoving(true);
+    try { await onRemove(item._id); }
+    finally { setRemoving(false); }
   }
 
   const borderColor =
@@ -404,14 +412,27 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onOpenInStudio }: 
               {item.failReason}
             </p>
           )}
-          <button
-            onClick={handleRetry}
-            disabled={retrying}
-            className="w-full rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40"
-            style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
-          >
-            {retrying ? "Retrying…" : "↺ Retry"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleRetry}
+              disabled={retrying || removing}
+              className="flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40"
+              style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
+            >
+              {retrying ? "Retrying…" : "↺ Retry"}
+            </button>
+            <button
+              onClick={handleRemove}
+              disabled={removing || retrying}
+              title="Kuyrudan kaldır"
+              className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 flex items-center gap-1"
+              style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
+              onMouseEnter={e => !removing && ((e.currentTarget as HTMLButtonElement).style.background = "color-mix(in srgb, var(--error) 18%, transparent)")}
+              onMouseLeave={e =>              ((e.currentTarget as HTMLButtonElement).style.background = "color-mix(in srgb, var(--error) 8%, transparent)")}
+            >
+              {removing ? "…" : "✕ Kaldır"}
+            </button>
+          </div>
         </div>
       )}
 

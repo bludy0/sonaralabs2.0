@@ -112,7 +112,7 @@ async function notifyUser(payload: NotifyJobPayload) {
       headers: { "x-internal-token": makeInternalToken() },
     });
   } catch (err) {
-    logger.warn("[generation] Notification failed:", err);
+    logger.warn("[generation] Notification failed", { message: String(err) });
   }
 }
 
@@ -128,7 +128,7 @@ async function earnCredit(userId: string, amount: number, relatedId: string) {
       userId, amount, reason: "queue_failure_refund", relatedId, relatedModel: "Generation",
     }, { headers: { "x-internal-token": makeInternalToken() } });
   } catch {
-    logger.warn("[generation] Credit refund failed for", relatedId);
+    logger.warn("[generation] Credit refund failed", { relatedId });
   }
 }
 
@@ -162,12 +162,48 @@ const worker = new Worker("generation", async (job: Job) => {
   lockDuration: parseInt(JOB_TIMEOUT_MS) + 10_000,
 });
 
+/**
+ * Infrastructure hataları (provider API key, sunucu çökmesi, ağ) → kredi iade edilir.
+ * Prompt hataları (içerik politikası, geçersiz istek) → iade edilmez.
+ */
+function isInfrastructureError(err: any): boolean {
+  if (err?.response) {
+    const s = err.response.status as number;
+    // 401 Unauthorized (geçersiz API key) | 403 Forbidden | 5xx (provider down)
+    return s === 401 || s === 403 || s >= 500;
+  }
+  // Ağ/bağlantı hatası
+  if (["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET"].includes(err?.code)) return true;
+  // Bilinmeyen provider
+  if (err?.message?.startsWith("Unknown provider")) return true;
+  return false;
+}
+
 worker.on("failed", async (job, err) => {
   if (!job) return;
   const { generationId, userId } = job.data;
-  await Generation.findByIdAndUpdate(generationId, { status: "failed", failedAt: new Date(), failReason: err.message });
-  await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: err.message });
-  logger.error(`[generation] Job ${job.id} failed:`, err.message);
+
+  const anyErr       = err as any;
+  const infraError   = isInfrastructureError(anyErr);
+  const userFacingMsg = infraError
+    ? `Provider hatası (${anyErr?.response?.status ?? anyErr?.code ?? "network"}) — krediler iade edildi`
+    : err.message;
+
+  await Generation.findByIdAndUpdate(generationId, {
+    status: "failed", failedAt: new Date(), failReason: userFacingMsg,
+  });
+
+  // Infrastructure hatalarında krediyi geri ver
+  if (infraError) {
+    const gen = await Generation.findById(generationId).select("creditCost").lean();
+    if (gen?.creditCost) {
+      await earnCredit(userId, gen.creditCost, generationId);
+      logger.info(`[generation] Refunded credits for job ${job.id}`, { credits: gen.creditCost });
+    }
+  }
+
+  await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: userFacingMsg });
+  logger.error(`[generation] Job ${job.id} failed`, { infraError, message: err.message });
 });
 
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
@@ -218,7 +254,7 @@ app.post("/", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue generation job" });
     }
   } catch (err) {
-    logger.error("generate error", err);
+    logger.error("generate error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -264,7 +300,7 @@ app.post("/sfx", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue SFX job" });
     }
   } catch (err) {
-    logger.error("sfx error", err);
+    logger.error("sfx error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -295,7 +331,7 @@ app.post("/analyze-image", async (req, res) => {
     const promptText = await analyzeImageWithGemini(imageBase64, mimeType);
     res.json({ success: true, data: { prompt: promptText } } as ApiResponse);
   } catch (err) {
-    logger.error("analyze-image error", err);
+    logger.error("analyze-image error", { message: String(err) });
     res.status(500).json({ success: false, error: "Analysis failed" });
   }
 });
@@ -321,6 +357,23 @@ app.get("/history", async (req, res) => {
     res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit) } } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
+// DELETE /:id — kullanıcı kendi başarısız/tamamlanmış üretimini siler
+app.delete("/:id", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const gen = await Generation.findOne({ _id: req.params.id, userId });
+    if (!gen) return res.status(404).json({ success: false, error: "Not found" });
+    if (gen.status === "pending" || gen.status === "processing") {
+      return res.status(409).json({ success: false, error: "Active job cannot be deleted — wait for it to finish" });
+    }
+    await Generation.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Deleted" } as ApiResponse);
+  } catch (err) {
+    logger.error("[generation] DELETE /:id error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
@@ -367,7 +420,7 @@ app.post("/:id/retry", async (req, res) => {
       res.status(500).json({ success: false, error: "Failed to queue retry job" });
     }
   } catch (err) {
-    logger.error("retry error", err);
+    logger.error("retry error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -447,7 +500,7 @@ app.post("/export/ogg", (req, res, next) => {
       res.setHeader("Content-Disposition", 'attachment; filename="export.ogg"');
       res.send(ogg);
     } catch (err) {
-      logger.error("[export/ogg]", err);
+      logger.error("[export/ogg]", { message: String(err) });
       if (!res.headersSent) {
         res.status(500).json({ error: "OGG conversion failed. Ensure ffmpeg is installed." });
       }
@@ -541,7 +594,7 @@ Return ONLY a valid JSON array, no other text:
 
     res.json({ data: { suggestions } });
   } catch (err) {
-    logger.error("[master]", err);
+    logger.error("[master]", { message: String(err) });
     res.status(500).json({ error: "Mastering analysis failed" });
   }
 });
@@ -636,7 +689,7 @@ Return ONLY valid JSON array, no markdown, no explanation:
 
     res.json({ notes: sanitized, bpm, key, scale, bars, totalBeats });
   } catch (err) {
-    logger.error("[generate/midi]", err);
+    logger.error("[generate/midi]", { message: String(err) });
     res.status(500).json({ error: "MIDI generation failed" });
   }
 });

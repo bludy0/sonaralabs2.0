@@ -36,7 +36,7 @@ type Tab  = "prompt" | "image";
 
 export default function GeneratePage() {
   const navigate = useNavigate();
-  const { items, isGenerating, generate, generateSFX, analyzeImage, retry, handleSSEEvent, fetchHistory } =
+  const { items, isGenerating, generate, generateSFX, analyzeImage, retry, removeItem, handleSSEEvent, fetchHistory } =
     useGenerationStore();
   const { user, updateCredit } = useAuthStore();
 
@@ -537,6 +537,7 @@ export default function GeneratePage() {
                   item={item}
                   onOpenEditor={setEditorUrl}
                   onRetry={handleRetry}
+                  onRemove={removeItem}
                   onOpenInStudio={handleOpenInStudio}
                 />
               ))}
