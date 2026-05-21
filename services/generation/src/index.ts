@@ -411,9 +411,20 @@ app.post("/:id/retry", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
-    const gen = await Generation.findOne({ _id: req.params.id, userId });
-    if (!gen) return res.status(404).json({ success: false, error: "Not found" });
-    if (gen.status !== "failed") return res.status(400).json({ success: false, error: "Only failed generations can be retried" });
+    // Atomic: sadece status==="failed" olan kaydı bul ve pending'e çek.
+    // Eş zamanlı iki retry isteği gelirse biri null döner → 409.
+    const gen = await Generation.findOneAndUpdate(
+      { _id: req.params.id, userId, status: "failed" },
+      { $set: { status: "pending" } },
+      { new: false },
+    );
+    if (!gen) {
+      const exists = await Generation.exists({ _id: req.params.id, userId });
+      return res.status(exists ? 409 : 404).json({
+        success: false,
+        error: exists ? "Retry already in progress" : "Not found",
+      });
+    }
 
     const genType = (gen.type as GenerationType) || "music";
     const creditCost = genType === "sfx"
@@ -427,10 +438,13 @@ app.post("/:id/retry", async (req, res) => {
       isImageGeneration: gen.isImageGeneration, sourceImageUrl: gen.sourceImageUrl,
     });
 
+    const revertOriginal = () =>
+      Generation.findByIdAndUpdate(gen._id, { $set: { status: "failed" } }).catch(() => {});
+
     try {
       await spendCredit(userId, creditCost, String(newGen._id), `${genType}_retry`);
     } catch (err: any) {
-      await Generation.findByIdAndDelete(newGen._id);
+      await Promise.all([Generation.findByIdAndDelete(newGen._id), revertOriginal()]);
       return res.status(err.response?.status === 422 ? 422 : 500).json({
         success: false, error: err.response?.data?.error || "Credit error",
       });
@@ -445,8 +459,11 @@ app.post("/:id/retry", async (req, res) => {
       await Generation.findByIdAndUpdate(newGen._id, { jobId: job.id });
       res.status(202).json({ success: true, data: { jobId: job.id, generationId: newGen._id, creditCost } } as ApiResponse);
     } catch {
-      await Generation.findByIdAndDelete(newGen._id);
-      await earnCredit(userId, creditCost, String(newGen._id));
+      await Promise.all([
+        Generation.findByIdAndDelete(newGen._id),
+        earnCredit(userId, creditCost, String(newGen._id)),
+        revertOriginal(),
+      ]);
       res.status(500).json({ success: false, error: "Failed to queue retry job" });
     }
   } catch (err) {

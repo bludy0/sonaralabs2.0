@@ -94,15 +94,18 @@ function makeInternalToken(): string {
 }
 
 // ── SSE CONNECTIONS ───────────────────────────────────────────────────────────
-const sseConnections = new Map<string, Set<ReadableStreamDefaultController>>();
+interface SseConn { ctrl: ReadableStreamDefaultController; resetIdle: () => void; }
+const sseConnections = new Map<string, Set<SseConn>>();
 
 function broadcast(userId: string, data: object) {
   const conns = sseConnections.get(userId);
   if (!conns?.size) return;
   const msg = `data: ${JSON.stringify(data)}\n\n`;
-  for (const ctrl of conns) {
-    try { ctrl.enqueue(msg); }
-    catch { conns.delete(ctrl); }
+  for (const conn of conns) {
+    try {
+      conn.ctrl.enqueue(msg);
+      conn.resetIdle();
+    } catch { conns.delete(conn); }
   }
 }
 
@@ -178,16 +181,31 @@ app.get("/sse", (c) => {
 
   // ctrl'i closure üzerinden capture ediyoruz — cancel() controller parametresi almaz,
   // "this" bağlamı da tanımsız, bu yüzden start()'ta kaydedip cancel'da kullanıyoruz.
-  let savedCtrl: ReadableStreamDefaultController;
+  const SSE_IDLE_MS = 30 * 60 * 1000; // 30 dakika — kopuk client'ları temizle
+  let conn: SseConn;
+  let idleTimer: ReturnType<typeof setTimeout>;
+
+  const cleanup = () => {
+    clearTimeout(idleTimer);
+    sseConnections.get(userId)?.delete(conn);
+    try { conn.ctrl.close(); } catch { /* already closed */ }
+  };
+
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(cleanup, SSE_IDLE_MS);
+  };
+
   const stream = new ReadableStream({
     start(ctrl) {
-      savedCtrl = ctrl;
+      conn = { ctrl, resetIdle };
       if (!sseConnections.has(userId)) sseConnections.set(userId, new Set());
-      sseConnections.get(userId)!.add(ctrl);
+      sseConnections.get(userId)!.add(conn);
       ctrl.enqueue(`: connected\n\n`);
+      resetIdle();
     },
     cancel() {
-      sseConnections.get(userId)?.delete(savedCtrl);
+      cleanup();
     },
   });
 
