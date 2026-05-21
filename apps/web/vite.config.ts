@@ -19,8 +19,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'router': ['react-router-dom'],
-          'daw': ['@sonaralabs/daw-studio'],
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'state':        ['zustand', 'axios'],
+          'daw':          ['@sonaralabs/daw-studio'],
         },
       },
     },

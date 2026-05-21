@@ -68,7 +68,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run unit tests
-        run: pnpm --filter "!sonaralabs-web" test --if-present
+        run: pnpm --filter "!sonaralabs-frontend" test --if-present
         env:
           NODE_ENV: test
 
@@ -159,7 +159,7 @@ jobs:
           done
 
       - name: Build frontend
-        run: pnpm --filter "sonaralabs-web" build
+        run: pnpm --filter "sonaralabs-frontend" build
         env:
           VITE_API_BASE_URL: ""
 

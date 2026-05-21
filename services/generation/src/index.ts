@@ -742,7 +742,9 @@ Return ONLY valid JSON array, no markdown, no explanation:
 });
 
 // GET /capabilities — public, frontend uses to disable unavailable providers
-app.get("/capabilities", (_, res) => res.json({
+app.get("/capabilities", (_, res) => {
+  res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+  return res.json({
   success: true,
   data: {
     music: {
@@ -757,7 +759,8 @@ app.get("/capabilities", (_, res) => res.json({
       gemini: Boolean(process.env.GEMINI_API_KEY),
     },
   },
-}));
+  });
+});
 
 app.get("/health", (_, res) => res.json({
   status: "ok", service: "generation",

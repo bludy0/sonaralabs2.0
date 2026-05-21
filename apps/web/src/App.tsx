@@ -1,26 +1,28 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "./store/useAuthStore";
 import Layout from "./components/Layout";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { ToastContainer } from "./components/ToastContainer";
 
-// Pages
-import WelcomePage          from "./pages/WelcomePage";
-import LoginPage             from "./pages/LoginPage";
-import RegisterPage          from "./pages/RegisterPage";
-import VerifyEmailPage       from "./pages/VerifyEmailPage";
-import ForgotPasswordPage    from "./pages/ForgotPasswordPage";
-import ResetPasswordPage     from "./pages/ResetPasswordPage";
-import GeneratePage from "./pages/GeneratePage";
-import LibraryPage  from "./pages/LibraryPage";
-import DashboardPage from "./pages/DashboardPage";
-import AdminPage    from "./pages/AdminPage";
-import StudioPage   from "./pages/StudioPage";
-import ExplorePage  from "./pages/ExplorePage";
-import ProfilePage  from "./pages/ProfilePage";
-import FeedPage     from "./pages/FeedPage";
-import SettingsPage from "./pages/SettingsPage";
+// Critical path — loaded eagerly (used on initial render)
+import WelcomePage       from "./pages/WelcomePage";
+import LoginPage         from "./pages/LoginPage";
+import RegisterPage      from "./pages/RegisterPage";
+
+// Deferred — lazy-loaded on first navigation
+const VerifyEmailPage    = lazy(() => import("./pages/VerifyEmailPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const ResetPasswordPage  = lazy(() => import("./pages/ResetPasswordPage"));
+const GeneratePage       = lazy(() => import("./pages/GeneratePage"));
+const LibraryPage        = lazy(() => import("./pages/LibraryPage"));
+const DashboardPage      = lazy(() => import("./pages/DashboardPage"));
+const AdminPage          = lazy(() => import("./pages/AdminPage"));
+const StudioPage         = lazy(() => import("./pages/StudioPage"));
+const ExplorePage        = lazy(() => import("./pages/ExplorePage"));
+const ProfilePage        = lazy(() => import("./pages/ProfilePage"));
+const FeedPage           = lazy(() => import("./pages/FeedPage"));
+const SettingsPage       = lazy(() => import("./pages/SettingsPage"));
 
 // ── PROTECTED ROUTE ───────────────────────────────────────────────────────────
 function ProtectedRoute() {
@@ -53,6 +55,7 @@ export default function App() {
     <ThemeProvider>
       <ToastContainer />
       <BrowserRouter>
+        <Suspense fallback={null}>
         <Routes>
           {/* Auth sayfaları */}
           <Route path="/login"            element={<LoginPage />} />
@@ -91,6 +94,7 @@ export default function App() {
           <Route path="/" element={<WelcomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </ThemeProvider>
   );
