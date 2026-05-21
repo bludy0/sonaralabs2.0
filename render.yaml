@@ -210,6 +210,12 @@ services:
         sync: false
       - key: INITIAL_CREDIT_BALANCE
         value: 100
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false   # Vercel URL'in — Stripe success/cancel redirect için
 
   # ── ADMIN ──────────────────────────────────────────────────────────────────
   - type: web
@@ -244,3 +250,55 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+
+  # ── PROFILE ────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-profile
+    runtime: docker
+    dockerfilePath: ./services/profile/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3008
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false   # PostgreSQL bağlantı string'i
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_PORT
+        value: 443
+      - key: MINIO_USE_SSL
+        value: true
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_BUCKET_AVATARS
+        value: sonaralabs-avatars
+      - key: MINIO_PUBLIC_URL
+        sync: false
+
+  # ── SOCIAL ─────────────────────────────────────────────────────────────────
+  - type: web
+    name: sonaralabs-social
+    runtime: docker
+    dockerfilePath: ./services/social/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3009
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false   # PostgreSQL bağlantı string'i
+      - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: PROFILE_SERVICE_URL
+        value: https://sonaralabs-profile.onrender.com
