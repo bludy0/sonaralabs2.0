@@ -7,7 +7,7 @@ import axios from "axios";
 import { InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "3mb" }));
 
 const {
   PORT = "3004",
@@ -51,11 +51,18 @@ const DawProject = mongoose.model("DawProject", dawProjectSchema);
 // favorites "Generation" ve "Upload" modellerinde isFavorited flag ile tutulur.
 // Library servisi bu verilere internal HTTP ile erişir.
 
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function isValidObjectId(id: string): boolean {
+  return /^[0-9a-fA-F]{24}$/.test(id);
+}
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 function getPayload(req: express.Request): InternalJwtPayload {
   const token = req.headers["x-internal-token"] as string;
   if (!token) throw new Error("No token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 function internalToken(): string {
@@ -108,15 +115,27 @@ app.get("/", async (req, res) => {
 
     res.json({ success: true, data: { items: paginated, total, page, pages: Math.ceil(total / limit) } } as ApiResponse);
   } catch (err) {
-    logger.error("library list error", err);
+    logger.error("library list error", { message: String(err) });
     res.status(500).json({ success: false, error: "Failed to fetch library" });
   }
+});
+
+// DELETE /collections/:id — must be defined BEFORE /:model/:id to avoid shadowing
+app.delete("/collections/:id", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
+    const result = await Collection.findOneAndDelete({ _id: req.params.id, userId });
+    if (!result) return res.status(404).json({ success: false, error: "Not found" });
+    res.json({ success: true, message: "Collection deleted" } as ApiResponse);
+  } catch { res.status(500).json({ success: false, error: "Failed" }); }
 });
 
 // PATCH /:model/:id/favorite — favori toggle
 app.patch("/:model/:id/favorite", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const { model, id } = req.params;
     const headers = { "x-internal-token": internalToken() };
 
@@ -138,6 +157,7 @@ app.patch("/:model/:id/favorite", async (req, res) => {
 app.delete("/:model/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const { model, id } = req.params;
     const headers = { "x-internal-token": internalToken() };
 
@@ -182,6 +202,7 @@ app.post("/collections", async (req, res) => {
 app.get("/collections/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const col = await Collection.findOne({ _id: req.params.id, userId });
     if (!col) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, data: col } as ApiResponse);
@@ -192,6 +213,7 @@ app.get("/collections/:id", async (req, res) => {
 app.patch("/collections/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const { name } = req.body;
     if (!name?.trim()) return res.status(400).json({ success: false, error: "Name required" });
     const col = await Collection.findOneAndUpdate(
@@ -201,16 +223,6 @@ app.patch("/collections/:id", async (req, res) => {
     );
     if (!col) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, data: col } as ApiResponse);
-  } catch { res.status(500).json({ success: false, error: "Failed" }); }
-});
-
-// DELETE /collections/:id
-app.delete("/collections/:id", async (req, res) => {
-  try {
-    const { sub: userId } = getPayload(req);
-    const result = await Collection.findOneAndDelete({ _id: req.params.id, userId });
-    if (!result) return res.status(404).json({ success: false, error: "Not found" });
-    res.json({ success: true, message: "Collection deleted" } as ApiResponse);
   } catch { res.status(500).json({ success: false, error: "Failed" }); }
 });
 

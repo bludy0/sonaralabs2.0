@@ -14,6 +14,25 @@
   /* Ensure Latin uppercase rules regardless of document language */
 }
 
+/* ── Font boyutu değişkenleri (applyUiScale tarafından güncellenir) ─────── */
+/* Tüm bileşenler px yerine bu değişkenleri kullanmalı. */
+:root {
+  --fs-2xs:  9px;   /* etiket, caps */
+  --fs-xs:  11px;   /* nav, küçük metin */
+  --fs-sm:  12px;   /* yardımcı metin */
+  --fs-md:  13px;   /* varsayılan gövde */
+  --fs-lg:  15px;   /* alt başlık */
+  --fs-xl:  18px;   /* başlık, ikon */
+  --fs-2xl: 22px;   /* büyük başlık */
+  --fs-3xl: 28px;   /* sayfa başlığı */
+
+  /* Buton/input iç boşluğu — font ile orantılı büyür */
+  --btn-py:  6px;
+  --btn-px: 14px;
+  --input-py: 8px;
+  --input-px: 12px;
+}
+
 /* ── Tema CSS değişkenleri (varsayılan: Cyber Red) ───────────────────────── */
 /* Auth/landing sayfaları bu renkleri kullanır — JS yüklenmeden önce de. */
 :root {
@@ -39,6 +58,54 @@
   --success:  #6ec96e;
   --error:    #ff9977;
   --teal:     #64c8b4;
+}
+
+
+/* ── Range slider (arayüz boyutu ayarı) ─────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-border);
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) calc(
+      (var(--range-pct, 50) * 1%)
+    ),
+    var(--bg-border) calc(var(--range-pct, 50) * 1%)
+  );
 }
 
 /* ── Gövde ───────────────────────────────────────────────────────────────── */

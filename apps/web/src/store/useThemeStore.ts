@@ -254,11 +254,24 @@ export function makeDefaultCustomVars(baseId = "cyber-red"): ThemeVars {
   return { ...(PRESET_THEMES.find(t => t.id === baseId) ?? PRESET_THEMES[1]).vars };
 }
 
+// ── UI Ölçek ──────────────────────────────────────────────────────────────────
+export const UI_SCALE_MIN     = 0.70;
+export const UI_SCALE_MAX     = 1.40;
+export const UI_SCALE_STEP    = 0.05;
+export const UI_SCALE_DEFAULT = 1.00;
+
+/** Seçili ölçekte varsayılan gövde font boyutunu döndürür (UI'da gösterim için) */
+export function scaleToPx(scale: number): string {
+  return `${Math.round(13 * scale)}px`;
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 interface ThemeState {
   themeId:       string;
   customThemes:  Theme[];
+  uiScale:       number;  // 0.70 – 1.40 arası
   setTheme:      (id: string) => void;
+  setUiScale:    (scale: number) => void;
   createTheme:   (name: string, emoji: string, baseId: string) => string;
   updateTheme:   (id: string, key: keyof ThemeVars, value: string) => void;
   renameTheme:   (id: string, name: string, emoji: string) => void;
@@ -273,11 +286,20 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       themeId:      "cyber-red",
       customThemes: [],
+      uiScale:      UI_SCALE_DEFAULT,
 
       setTheme: (id) => {
         set({ themeId: id });
         const theme = get().getTheme();
         applyTheme(theme.vars);
+      },
+
+      setUiScale: (scale) => {
+        const clamped = Math.round(
+          Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, scale)) / UI_SCALE_STEP
+        ) * UI_SCALE_STEP;
+        set({ uiScale: clamped });
+        applyUiScale(clamped);
       },
 
       createTheme: (name, emoji, baseId) => {
@@ -340,10 +362,8 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: "sonaralabs-theme",
-      partialize: (s) => ({ themeId: s.themeId, customThemes: s.customThemes }),
-      // localStorage'dan yüklenince temayı React render'ından önce senkron uygula.
-      // Bu sayede ThemeProvider'ın ilk mount effect'i atlanabilir ve
-      // useFixedTheme (auth/landing sayfaları) ThemeProvider tarafından ezilmez.
+      partialize: (s) => ({ themeId: s.themeId, customThemes: s.customThemes, uiScale: s.uiScale }),
+      // localStorage'dan yüklenince temayı ve ölçeği React render'ından önce senkron uygula.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         const theme =
@@ -351,6 +371,7 @@ export const useThemeStore = create<ThemeState>()(
           state.customThemes?.find((t: Theme) => t.id === state.themeId) ??
           PRESET_THEMES[0];
         applyTheme(theme.vars);
+        applyUiScale(state.uiScale ?? UI_SCALE_DEFAULT);
       },
     }
   )
@@ -364,4 +385,29 @@ export function applyTheme(vars: ThemeVars) {
   root.setAttribute("data-theme-light",
     vars["--bg-page"] > "#888" ? "true" : "false"
   );
+}
+
+/** Font büyüklüğü, ikon ve buton padding CSS değişkenlerini günceller.
+ *  Layout (sidebar genişliği, sayfa yapısı) etkilenmez — sadece metin ve butonlar ölçeklenir. */
+const FS_BASE: Record<string, number> = {
+  "--fs-2xs":  9,
+  "--fs-xs":  11,
+  "--fs-sm":  12,
+  "--fs-md":  13,
+  "--fs-lg":  15,
+  "--fs-xl":  18,
+  "--fs-2xl": 22,
+  "--fs-3xl": 28,
+  "--btn-py":   6,
+  "--btn-px":  14,
+  "--input-py": 8,
+  "--input-px":12,
+};
+
+export function applyUiScale(scale: number) {
+  const root = document.documentElement;
+  root.style.zoom = ""; // zoom tamamen kapalı
+  Object.entries(FS_BASE).forEach(([key, base]) => {
+    root.style.setProperty(key, `${Math.round(base * scale)}px`);
+  });
 }

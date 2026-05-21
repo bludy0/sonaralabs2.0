@@ -18,8 +18,8 @@ import {
   InternalJwtPayload, ApiResponse, NotifyJobPayload, GenerationType,
   getMusicCreditCost, getSFXCreditCost,
 } from "@sonaralabs/types";
-import { BeatovenProvider } from "./providers/beatoven";
-import { SonautoProvider }  from "./providers/sonauto";
+import { BeatovenProvider }  from "./providers/beatoven";
+import { SonautoProvider }   from "./providers/sonauto";
 import { ElevenLabsProvider } from "./providers/elevenlabs";
 import { analyzeImageWithGemini } from "./providers/gemini-vision";
 import { GEMINI_MASTERING_CONFIG, GEMINI_MIDI_CONFIG } from "./providers/config";
@@ -82,8 +82,8 @@ interface IMusicProvider {
 // Yeni provider eklemek için: providers/ altında dosya oluştur + buraya 1 satır ekle.
 // "lyria" henüz stabil değil — Gemini Audio API hazır olunca eklenecek.
 const musicProviders = new Map<MusicProvider, IMusicProvider>([
-  ["beatoven", new BeatovenProvider()],
-  ["sonauto",  new SonautoProvider()],
+  ["beatoven",  new BeatovenProvider()],
+  ["sonauto",   new SonautoProvider()],
 ]);
 
 const sfxProvider = new ElevenLabsProvider();
@@ -169,14 +169,27 @@ const worker = new Worker("generation", async (job: Job) => {
 function isInfrastructureError(err: any): boolean {
   if (err?.response) {
     const s = err.response.status as number;
-    // 401 Unauthorized (geçersiz API key) | 403 Forbidden | 5xx (provider down)
-    return s === 401 || s === 403 || s >= 500;
+    // 401 Unauthorized (geçersiz API key) | 402 Payment Required (provider kredisi bitti)
+    // 403 Forbidden | 429 Rate limit | 5xx (provider down)
+    // 404 = endpoint/model bulunamadı (HF router değişikliği vb.) → kredi iade
+    return s === 401 || s === 402 || s === 403 || s === 404 || s === 429 || s >= 500;
   }
   // Ağ/bağlantı hatası
   if (["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET"].includes(err?.code)) return true;
   // Bilinmeyen provider
   if (err?.message?.startsWith("Unknown provider")) return true;
   return false;
+}
+
+function providerErrorMessage(err: any): string {
+  const status = err?.response?.status as number | undefined;
+  if (status === 404) return "Sağlayıcı modeli bulunamadı — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
+  if (status === 402) return "Müzik sağlayıcısının kredisi tükendi — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
+  if (status === 401) return "Sağlayıcı API anahtarı geçersiz — kredileriniz iade edildi.";
+  if (status === 429) return "Sağlayıcı istek limiti aşıldı — kredileriniz iade edildi, birazdan tekrar deneyin.";
+  if (status && status >= 500) return `Sağlayıcı geçici olarak kullanılamıyor (${status}) — kredileriniz iade edildi.`;
+  if (err?.code) return `Bağlantı hatası (${err.code}) — kredileriniz iade edildi.`;
+  return "Sağlayıcı hatası — kredileriniz iade edildi.";
 }
 
 worker.on("failed", async (job, err) => {
@@ -186,7 +199,7 @@ worker.on("failed", async (job, err) => {
   const anyErr       = err as any;
   const infraError   = isInfrastructureError(anyErr);
   const userFacingMsg = infraError
-    ? `Provider hatası (${anyErr?.response?.status ?? anyErr?.code ?? "network"}) — krediler iade edildi`
+    ? providerErrorMessage(anyErr)
     : err.message;
 
   await Generation.findByIdAndUpdate(generationId, {
@@ -206,11 +219,18 @@ worker.on("failed", async (job, err) => {
   logger.error(`[generation] Job ${job.id} failed`, { infraError, message: err.message });
 });
 
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function isValidObjectId(id: string): boolean {
+  return /^[0-9a-fA-F]{24}$/.test(id);
+}
+
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
 function getPayload(req: express.Request): InternalJwtPayload {
   const token = req.headers["x-internal-token"] as string;
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
@@ -320,16 +340,24 @@ app.post("/analyze-image", async (req, res) => {
       return res.status(413).json({ success: false, error: "Image too large. Maximum 10 MB" });
     }
 
+    const refId = `img-${Date.now()}`;
     try {
-      await spendCredit(userId, 1, `img-${Date.now()}`, "image_analysis");
+      await spendCredit(userId, 1, refId, "image_analysis");
     } catch (err: any) {
       return res.status(err.response?.status === 422 ? 422 : 500).json({
         success: false, error: err.response?.data?.error || "Credit error",
       });
     }
 
-    const promptText = await analyzeImageWithGemini(imageBase64, mimeType);
-    res.json({ success: true, data: { prompt: promptText } } as ApiResponse);
+    try {
+      const promptText = await analyzeImageWithGemini(imageBase64, mimeType);
+      res.json({ success: true, data: { prompt: promptText } } as ApiResponse);
+    } catch (err) {
+      // Gemini API başarısız oldu — krediyi iade et
+      logger.error("analyze-image gemini error", { message: String(err) });
+      await earnCredit(userId, 1, refId).catch(() => {});
+      res.status(500).json({ success: false, error: "Image analysis failed. Your credit has been refunded." });
+    }
   } catch (err) {
     logger.error("analyze-image error", { message: String(err) });
     res.status(500).json({ success: false, error: "Analysis failed" });
@@ -364,6 +392,7 @@ app.get("/history", async (req, res) => {
 app.delete("/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const gen = await Generation.findOne({ _id: req.params.id, userId });
     if (!gen) return res.status(404).json({ success: false, error: "Not found" });
     if (gen.status === "pending" || gen.status === "processing") {
@@ -381,6 +410,7 @@ app.delete("/:id", async (req, res) => {
 app.post("/:id/retry", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const gen = await Generation.findOne({ _id: req.params.id, userId });
     if (!gen) return res.status(404).json({ success: false, error: "Not found" });
     if (gen.status !== "failed") return res.status(400).json({ success: false, error: "Only failed generations can be retried" });
@@ -696,16 +726,19 @@ Return ONLY valid JSON array, no markdown, no explanation:
 
 // GET /capabilities — public, frontend uses to disable unavailable providers
 app.get("/capabilities", (_, res) => res.json({
-  music: {
-    beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
-    sonauto:   Boolean(process.env.SONAUTO_API_KEY),
-    lyria:     false,
-  },
-  sfx: {
-    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
-  },
-  vision: {
-    gemini: Boolean(process.env.GEMINI_API_KEY),
+  success: true,
+  data: {
+    music: {
+      beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
+      sonauto:   Boolean(process.env.SONAUTO_API_KEY),
+      lyria:     false,
+    },
+    sfx: {
+      elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
+    },
+    vision: {
+      gemini: Boolean(process.env.GEMINI_API_KEY),
+    },
   },
 }));
 

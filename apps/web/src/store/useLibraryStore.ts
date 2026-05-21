@@ -105,7 +105,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       ),
     }));
     try {
-      await api.patch(`/api/library/${model}s/${id}/favorite`);
+      await api.patch(`/api/library/${model}/${id}/favorite`);
     } catch {
       // Revert on failure
       set(state => ({
@@ -117,7 +117,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   deleteItem: async (id, model) => {
-    await api.delete(`/api/library/${model}s/${id}`);
+    await api.delete(`/api/library/${model}/${id}`);
     set(state => ({
       items: state.items.filter(item => item._id !== id),
       total: Math.max(0, state.total - 1),

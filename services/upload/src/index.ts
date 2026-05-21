@@ -19,6 +19,7 @@ const {
   MINIO_ENDPOINT = "minio", MINIO_PORT = "9000",
   MINIO_ACCESS_KEY = "minioadmin", MINIO_SECRET_KEY = "minioadmin",
   MINIO_BUCKET = "sonaralabs-audio",
+  MINIO_USE_SSL = "false",
   // MINIO_PUBLIC_URL: browser-accessible base URL for stored files.
   // Dev default = localhost (bucket policy = anonymous download, port 9000 exposed).
   // Prod: set to CDN / Backblaze public URL.
@@ -44,7 +45,7 @@ const MAX_SZ = parseInt(MAX_FILE_SIZE_BYTES);
 const minioClient = new Minio.Client({
   endPoint:  MINIO_ENDPOINT,
   port:      parseInt(MINIO_PORT),
-  useSSL:    false,
+  useSSL:    MINIO_USE_SSL === "true",
   accessKey: MINIO_ACCESS_KEY,
   secretKey: MINIO_SECRET_KEY,
 });
@@ -68,6 +69,14 @@ const Upload = mongoose.model("Upload", uploadSchema);
 // ── MULTER (disk storage — heap'e yüklemez, MinIO'ya stream edilir) ──────────
 const ALLOWED_MIMES = ["audio/wav", "audio/mpeg", "audio/ogg", "audio/mp3"];
 
+// VULN-15: Derive file extension from MIME type — never trust originalname
+const MIME_TO_EXT: Record<string, string> = {
+  "audio/wav":  ".wav",
+  "audio/mpeg": ".mp3",
+  "audio/mp3":  ".mp3",
+  "audio/ogg":  ".ogg",
+};
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, os.tmpdir()),
@@ -80,79 +89,95 @@ const upload = multer({
   },
 });
 
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function isValidObjectId(id: string): boolean {
+  return /^[0-9a-fA-F]{24}$/.test(id);
+}
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 function getPayload(req: express.Request): InternalJwtPayload {
   const token = req.headers["x-internal-token"] as string;
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 
 // POST / — dosya yükle (atomik quota kontrolü)
-app.post("/", upload.single("file"), async (req, res) => {
-  try {
-    const { sub: userId } = getPayload(req);
-    if (!req.file) return res.status(400).json({ success: false, error: "No file provided" });
-
-    const fileSize = req.file.size;
-
-    // Atomik quota kontrolü: storageUsed + fileSize <= QUOTA ise $inc ile güncelle
-    // Race condition koruması — kredi sistemiyle aynı pattern
-    const updated = await User.findOneAndUpdate(
-      {
-        _id: userId,
-        $expr: { $lte: [{ $add: ["$storageUsed", fileSize] }, QUOTA] },
-      },
-      { $inc: { storageUsed: fileSize } },
-      { new: true, select: "storageUsed" }
-    );
-
-    if (!updated) {
-      return res.status(413).json({
-        success: false,
-        error: "Storage quota exceeded. Maximum 500 MB per user.",
-      });
+app.post("/", (req, res) => {
+  // Multer callback form — middleware hatalarını JSON olarak döndürür (HTML 500 yerine)
+  upload.single("file")(req, res, async (multerErr: any) => {
+    if (multerErr) {
+      if (multerErr.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ success: false, error: `File too large. Maximum ${MAX_SZ / 1_048_576} MB.` });
+      }
+      // fileFilter'dan gelen "Invalid file type" veya diğer Multer hataları
+      return res.status(400).json({ success: false, error: multerErr.message || "File upload error" });
     }
-
-    // MinIO'ya disk'ten stream et — heap'e yükleme
-    const ext      = path.extname(req.file.originalname) || ".ogg";
-    const key      = `uploads/${userId}/${crypto.randomUUID()}${ext}`;
-    const metadata = { "Content-Type": req.file.mimetype };
 
     try {
-      const fileStream = fs.createReadStream(req.file.path);
-      await minioClient.putObject(MINIO_BUCKET, key, fileStream, fileSize, metadata);
-    } catch (minioErr) {
-      // MinIO failed after storageUsed was already incremented — roll back quota
-      fs.unlink(req.file.path, () => {});
-      await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -fileSize } }).catch(() => {});
-      logger.error("upload minio error", minioErr);
-      return res.status(502).json({ success: false, error: "Storage backend error. Please try again." });
-    }
-    fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
-    const audioUrl = `${MINIO_PUBLIC_BASE}/${MINIO_BUCKET}/${key}`;
+      const { sub: userId } = getPayload(req);
+      if (!req.file) return res.status(400).json({ success: false, error: "No file provided" });
 
-    const doc = await Upload.create({
-      userId, originalName: req.file.originalname,
-      audioUrl, mimeType: req.file.mimetype, fileSize,
-    });
+      const fileSize = req.file.size;
 
-    res.status(201).json({ success: true, data: { id: doc._id, audioUrl, fileSize } } as ApiResponse);
-  } catch (err: any) {
-    // Multer hataları
-    if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(413).json({ success: false, error: `File too large. Maximum ${MAX_SZ / 1_048_576} MB.` });
+      // Atomik quota kontrolü: storageUsed + fileSize <= QUOTA ise $inc ile güncelle
+      // Race condition koruması — kredi sistemiyle aynı pattern
+      const updated = await User.findOneAndUpdate(
+        {
+          _id: userId,
+          $expr: { $lte: [{ $add: ["$storageUsed", fileSize] }, QUOTA] },
+        },
+        { $inc: { storageUsed: fileSize } },
+        { new: true, select: "storageUsed" }
+      );
+
+      if (!updated) {
+        return res.status(413).json({
+          success: false,
+          error: "Storage quota exceeded. Maximum 500 MB per user.",
+        });
+      }
+
+      // MinIO'ya disk'ten stream et — heap'e yükleme
+      // VULN-15: Use MIME-derived extension, never originalname (path traversal / spoofing)
+      const ext      = MIME_TO_EXT[req.file.mimetype] ?? ".ogg";
+      const key      = `uploads/${userId}/${crypto.randomUUID()}${ext}`;
+      const metadata = { "Content-Type": req.file.mimetype };
+
+      try {
+        const fileStream = fs.createReadStream(req.file.path);
+        await minioClient.putObject(MINIO_BUCKET, key, fileStream, fileSize, metadata);
+      } catch (minioErr) {
+        // MinIO failed after storageUsed was already incremented — roll back quota
+        fs.unlink(req.file.path, () => {});
+        await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -fileSize } }).catch(() => {});
+        logger.error("upload minio error", { message: String(minioErr) });
+        return res.status(502).json({ success: false, error: "Storage backend error. Please try again." });
+      }
+      fs.unlink(req.file.path, () => {}); // temp dosyayı sil (async, hata ignore)
+      const audioUrl = `${MINIO_PUBLIC_BASE}/${MINIO_BUCKET}/${key}`;
+
+      const doc = await Upload.create({
+        userId, originalName: req.file.originalname,
+        audioUrl, mimeType: req.file.mimetype, fileSize,
+      });
+
+      res.status(201).json({ success: true, data: { id: doc._id, audioUrl, fileSize } } as ApiResponse);
+    } catch (err: any) {
+      logger.error("upload error", { message: String(err) });
+      res.status(500).json({ success: false, error: err.message || "Upload failed" });
     }
-    logger.error("upload error", err);
-    res.status(500).json({ success: false, error: err.message || "Upload failed" });
-  }
+  });
 });
 
 // DELETE /:id — dosya sil (quota iade et)
 app.delete("/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const doc = await Upload.findOne({ _id: req.params.id, userId });
     if (!doc) return res.status(404).json({ success: false, error: "Upload not found" });
 

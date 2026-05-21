@@ -9,6 +9,7 @@ import { Hono }          from "hono";
 import { getCookie }     from "hono/cookie";
 import { cors }          from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
+import { getConnInfo }   from "@hono/node-server/conninfo";
 import jwt               from "jsonwebtoken";
 import type { Context, MiddlewareHandler } from "hono";
 import { UserJwtPayload, InternalJwtPayload, INTERNAL_TOKEN_HEADER } from "@sonaralabs/types";
@@ -60,7 +61,17 @@ export function createApp(deps: AppDeps): Hono {
     };
   }
 
-  const userKey = (c: Context) => c.get("userId") ?? c.req.header("x-forwarded-for") ?? "unknown";
+  // Gerçek bağlantı IP'sini kullan — X-Forwarded-For header'ı client tarafından
+  // sahte olarak set edilebileceğinden rate-limit key olarak güvenilmez.
+  const getClientIp = (c: Context): string => {
+    try {
+      const info = getConnInfo(c);
+      return info.remote.address ?? "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
+  const userKey = (c: Context) => c.get("userId") ?? getClientIp(c);
 
   const generalLimiter    = rateLimiter(rateLimits.general,    60_000,  "rl:general:",    userKey);
   const generationLimiter = rateLimiter(rateLimits.generation, 60_000,  "rl:generation:", userKey);

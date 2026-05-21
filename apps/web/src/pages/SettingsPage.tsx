@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import {
   useThemeStore, PRESET_THEMES,
+  UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_STEP, UI_SCALE_DEFAULT,
   type Theme, type ThemeVars,
 } from "../store/useThemeStore";
 import { useI18nStore, LANGUAGES, useT } from "../store/useI18nStore";
@@ -25,6 +26,7 @@ function CustomThemeEditor({
   theme, onClose,
 }: { theme: Theme; onClose: () => void }) {
   const { updateTheme, renameTheme, setTheme, themeId } = useThemeStore();
+  const t = useT();
   const [name,       setName]    = useState(theme.name);
   const [emoji,      setEmoji]   = useState(theme.emoji);
   const [showEmoji,  setShowEmoji] = useState(false);
@@ -84,7 +86,7 @@ function CustomThemeEditor({
         <input
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder="Theme name"
+          placeholder={t.settings.themeName}
           style={{
             flex: 1, background: C.cardBg, border: `1px solid ${C.border}`,
             borderRadius: 6, padding: "5px 8px", fontSize: 13,
@@ -100,7 +102,7 @@ function CustomThemeEditor({
             background: C.accent, color: C.accentOn, border: "none", cursor: "pointer",
           }}
         >
-          {isActive ? "Save" : "Apply"}
+          {isActive ? t.common.save : t.settings.themeApply}
         </button>
         <button
           onClick={onClose}
@@ -180,7 +182,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div style={{ marginBottom: 32 }}>
       <h2 style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: "0.2em",
+        fontSize: 11, fontWeight: 700, letterSpacing: "0.2em",
         textTransform: "uppercase", color: C.text3,
         marginBottom: 16, paddingBottom: 8, borderBottom: `1px solid ${C.border}`,
       }}>{title}</h2>
@@ -281,7 +283,8 @@ function ThemeCard({
 // ── Yeni tema oluştur modalı ──────────────────────────────────────────────────
 function CreateThemeModal({ onClose }: { onClose: () => void }) {
   const { createTheme } = useThemeStore();
-  const [name,    setName]    = useState("My Theme");
+  const t = useT();
+  const [name,    setName]    = useState("");
   const [emoji,   setEmoji]   = useState("🎨");
   const [baseId,  setBaseId]  = useState(PRESET_THEMES[0].id);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -309,7 +312,7 @@ function CreateThemeModal({ onClose }: { onClose: () => void }) {
         }}
       >
         <h3 style={{ fontSize: 15, fontWeight: 700, color: C.text1, marginBottom: 18 }}>
-          Create New Theme
+          {t.settings.newTheme}
         </h3>
 
         {/* İsim + Emoji */}
@@ -338,7 +341,7 @@ function CreateThemeModal({ onClose }: { onClose: () => void }) {
           </div>
           <input
             value={name} onChange={e => setName(e.target.value)}
-            placeholder="Theme name"
+            placeholder={t.settings.themeName}
             autoFocus
             style={{
               flex: 1, background: C.inputBg, border: `1px solid ${C.border}`,
@@ -349,7 +352,7 @@ function CreateThemeModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Temel preset */}
-        <p style={{ fontSize: 11, color: C.text2, marginBottom: 8 }}>Start from preset</p>
+        <p style={{ fontSize: 11, color: C.text2, marginBottom: 8 }}>{t.settings.startFromPreset}</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
           {PRESET_THEMES.map(t => (
             <button key={t.id} onClick={() => setBaseId(t.id)}
@@ -372,11 +375,11 @@ function CreateThemeModal({ onClose }: { onClose: () => void }) {
             padding: "8px 16px", borderRadius: 8, fontSize: 13,
             background: "none", color: C.text2,
             border: `1px solid ${C.border}`, cursor: "pointer",
-          }}>Cancel</button>
+          }}>{t.common.cancel}</button>
           <button onClick={handleCreate} style={{
             padding: "8px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700,
             background: C.accent, color: C.accentOn, border: "none", cursor: "pointer",
-          }}>Create & Edit</button>
+          }}>{t.settings.themeCreateEdit}</button>
         </div>
       </div>
     </div>
@@ -387,7 +390,7 @@ function CreateThemeModal({ onClose }: { onClose: () => void }) {
 export default function SettingsPage() {
   const t = useT();
   const { user, logout, logoutAll } = useAuthStore();
-  const { themeId, setTheme, customThemes, deleteTheme } = useThemeStore();
+  const { themeId, setTheme, customThemes, deleteTheme, uiScale, setUiScale } = useThemeStore();
   const { lang, setLang } = useI18nStore();
 
   const [editingTheme,  setEditingTheme]  = useState<Theme | null>(null);
@@ -414,7 +417,7 @@ export default function SettingsPage() {
       setPassMsg(t.settings.saved);
       setPassOld(""); setPassNew("");
     } catch {
-      setPassMsg("Failed. Check your current password.");
+      setPassMsg(t.settings.changePasswordFailed);
     } finally {
       setPassSaving(false);
       setTimeout(() => setPassMsg(null), 3000);
@@ -423,14 +426,15 @@ export default function SettingsPage() {
 
   const inputStyle: React.CSSProperties = {
     background: C.inputBg, border: `1px solid ${C.border}`,
-    borderRadius: 8, padding: "8px 12px",
+    borderRadius: 8,
+    padding: "8px 12px",
     fontSize: 12, color: C.text1, outline: "none",
     width: "100%", boxSizing: "border-box",
   };
 
   return (
     <div style={{ maxWidth: 740, margin: "0 auto", padding: "32px 24px", color: C.text1 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 32 }}>{t.settings.title}</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 32 }}>{t.settings.title}</h1>
 
       {/* ── Görünüm ─────────────────────────────────────────────────────── */}
       <Section title={t.settings.appearance}>
@@ -438,7 +442,7 @@ export default function SettingsPage() {
         {/* Karanlık temalar */}
         <div style={{ marginBottom: 18 }}>
           <p style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-            Dark
+            {t.settings.darkThemes}
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {darkPresets.map(theme => (
@@ -454,8 +458,8 @@ export default function SettingsPage() {
 
         {/* Açık temalar */}
         <div style={{ marginBottom: 18 }}>
-          <p lang="en" style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-            Light
+          <p style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
+            {t.settings.lightThemes}
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {lightPresets.map(theme => (
@@ -473,7 +477,7 @@ export default function SettingsPage() {
         <div style={{ marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 10 }}>
             <p style={{ fontSize: 10, color: C.text3, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              Custom
+              {t.settings.customThemes}
             </p>
             <button
               onClick={() => setShowCreate(true)}
@@ -483,13 +487,13 @@ export default function SettingsPage() {
                 border: `1px solid ${C.accent}50`, cursor: "pointer",
               }}
             >
-              + New Theme
+              {t.settings.newTheme}
             </button>
           </div>
 
           {customThemes.length === 0 ? (
             <p style={{ fontSize: 12, color: C.text3 }}>
-              No custom themes yet. Click "+ New Theme" to create one.
+              {t.settings.noCustomThemes}
             </p>
           ) : (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -515,6 +519,143 @@ export default function SettingsPage() {
               onClose={() => setEditingTheme(null)}
             />
           )}
+        </div>
+
+        {/* Arayüz Boyutu */}
+        <div style={{ padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13, color: C.text1 }}>{t.settings.uiScale}</p>
+              <p style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{t.settings.uiScaleHint}</p>
+            </div>
+            {/* Mevcut değer göstergesi */}
+            <div style={{
+              minWidth: 52, textAlign: "center",
+              padding: "4px 10px", borderRadius: 8,
+              background: C.accent + "20",
+              border: `1.5px solid ${C.accent}60`,
+            }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: C.accent, fontVariantNumeric: "tabular-nums" }}>
+                {Math.round((uiScale ?? UI_SCALE_DEFAULT) * 100)}%
+              </span>
+            </div>
+          </div>
+
+          {/* Slider + −/+ butonları */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Azalt */}
+            <button
+              onClick={() => setUiScale((uiScale ?? UI_SCALE_DEFAULT) - UI_SCALE_STEP)}
+              disabled={(uiScale ?? UI_SCALE_DEFAULT) <= UI_SCALE_MIN}
+              style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                background: C.inputBg, border: `1px solid ${C.border}`,
+                color: C.text2, cursor: "pointer", fontSize: 18, lineHeight: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: (uiScale ?? UI_SCALE_DEFAULT) <= UI_SCALE_MIN ? 0.35 : 1,
+              }}
+            >−</button>
+
+            {/* Range slider */}
+            <div style={{ flex: 1, position: "relative" }}>
+              <input
+                type="range"
+                min={Math.round(UI_SCALE_MIN * 100)}
+                max={Math.round(UI_SCALE_MAX * 100)}
+                step={Math.round(UI_SCALE_STEP * 100)}
+                value={Math.round((uiScale ?? UI_SCALE_DEFAULT) * 100)}
+                onChange={e => {
+                  const v = parseInt(e.target.value);
+                  setUiScale(v / 100);
+                  // Dolu kısım rengi için CSS değişkeni güncelle
+                  const pct = ((v - Math.round(UI_SCALE_MIN * 100)) /
+                    (Math.round(UI_SCALE_MAX * 100) - Math.round(UI_SCALE_MIN * 100))) * 100;
+                  e.currentTarget.style.setProperty("--range-pct", String(Math.round(pct)));
+                }}
+                ref={el => {
+                  // İlk render'da dolu kısmı doğru ayarla
+                  if (el) {
+                    const v = Math.round((uiScale ?? UI_SCALE_DEFAULT) * 100);
+                    const pct = ((v - Math.round(UI_SCALE_MIN * 100)) /
+                      (Math.round(UI_SCALE_MAX * 100) - Math.round(UI_SCALE_MIN * 100))) * 100;
+                    el.style.setProperty("--range-pct", String(Math.round(pct)));
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  cursor: "pointer",
+                }}
+              />
+              {/* Tick marks */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, padding: "0 1px" }}>
+                {[70, 80, 90, 100, 110, 120, 130, 140].map(v => (
+                  <span
+                    key={v}
+                    style={{
+                      fontSize: 9, color: Math.round((uiScale ?? 1) * 100) === v ? C.accent : C.text3,
+                      fontWeight: Math.round((uiScale ?? 1) * 100) === v ? 700 : 400,
+                      cursor: "pointer", userSelect: "none",
+                    }}
+                    onClick={() => setUiScale(v / 100)}
+                  >{v}%</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Artır */}
+            <button
+              onClick={() => setUiScale((uiScale ?? UI_SCALE_DEFAULT) + UI_SCALE_STEP)}
+              disabled={(uiScale ?? UI_SCALE_DEFAULT) >= UI_SCALE_MAX}
+              style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                background: C.inputBg, border: `1px solid ${C.border}`,
+                color: C.text2, cursor: "pointer", fontSize: 18, lineHeight: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                opacity: (uiScale ?? UI_SCALE_DEFAULT) >= UI_SCALE_MAX ? 0.35 : 1,
+              }}
+            >+</button>
+          </div>
+
+          {/* Hızlı presetler */}
+          <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+            {[
+              { label: t.settings.scaleSmall,  pct: 85 },
+              { label: t.settings.scaleNormal,  pct: 100 },
+              { label: t.settings.scaleLarge,   pct: 115 },
+              { label: t.settings.scaleXLarge,  pct: 130 },
+            ].map(({ label, pct }) => {
+              const active = Math.round((uiScale ?? UI_SCALE_DEFAULT) * 100) === pct;
+              return (
+                <button
+                  key={pct}
+                  onClick={() => setUiScale(pct / 100)}
+                  style={{
+                    padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: active ? 700 : 400,
+                    background: active ? C.accent + "20" : C.inputBg,
+                    color:      active ? C.accent : C.text3,
+                    border: `1.5px solid ${active ? C.accent + "60" : C.border}`,
+                    cursor: "pointer", transition: "all 0.12s",
+                  }}
+                >
+                  {label} <span style={{ opacity: 0.65 }}>({pct}%)</span>
+                </button>
+              );
+            })}
+            {/* Sıfırla */}
+            {Math.round((uiScale ?? UI_SCALE_DEFAULT) * 100) !== 100 && (
+              <button
+                onClick={() => setUiScale(UI_SCALE_DEFAULT)}
+                style={{
+                  padding: "5px 12px", borderRadius: 7, fontSize: 11,
+                  background: "none", color: C.text3,
+                  border: `1.5px solid ${C.border}`,
+                  cursor: "pointer", marginLeft: "auto",
+                }}
+              >
+                {t.settings.scaleReset}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Dil seçici */}
@@ -545,9 +686,9 @@ export default function SettingsPage() {
         <div style={{ paddingTop: 16 }}>
           <p style={{ fontSize: 12, color: C.text2, marginBottom: 10 }}>{t.settings.changePass}</p>
           <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input type="password" placeholder="Current password" value={passOld}
+            <input type="password" placeholder={t.settings.currentPassword} value={passOld}
               onChange={e => setPassOld(e.target.value)} style={inputStyle} autoComplete="current-password" />
-            <input type="password" placeholder="New password" value={passNew}
+            <input type="password" placeholder={t.settings.newPasswordPlaceholder} value={passNew}
               onChange={e => setPassNew(e.target.value)} style={inputStyle} autoComplete="new-password" />
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button type="submit" disabled={passSaving} style={{
@@ -565,7 +706,7 @@ export default function SettingsPage() {
 
       {/* ── Güvenlik ────────────────────────────────────────────────────── */}
       <Section title={t.settings.security}>
-        <Row label={t.settings.logoutAll} sub="Signs you out on all browsers & devices.">
+        <Row label={t.settings.logoutAll} sub={t.settings.logoutAllSub}>
           <button onClick={() => logoutAll()} style={{
             padding: "6px 14px", borderRadius: 8, background: C.inputBg,
             color: C.text2, border: `1px solid ${C.border}`, cursor: "pointer", fontSize: 12,
@@ -577,10 +718,10 @@ export default function SettingsPage() {
 
       {/* ── Tehlikeli Bölge ─────────────────────────────────────────────── */}
       <Section title={t.settings.dangerZone}>
-        <Row label={t.settings.deleteAccount} sub="Irreversible. All your data will be permanently deleted.">
+        <Row label={t.settings.deleteAccount} sub={t.settings.deleteAccountSub}>
           <button
             onClick={() => {
-              if (window.confirm("Are you sure? This cannot be undone.")) {
+              if (window.confirm(t.settings.deleteAccountConfirm)) {
                 api.delete("/api/users/me").then(() => logout()).catch(() => {});
               }
             }}

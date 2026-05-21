@@ -12,6 +12,7 @@ import { MUSIC_CREDIT_COST as CREDIT_COST } from "@sonaralabs/types";
 import { GenerationCard } from "../components/generation/GenerationCard";
 import { SelectField } from "../components/SelectField";
 import type { GenerationItem } from "../store/useGenerationStore";
+import { useT } from "../store/useI18nStore";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,9 +21,9 @@ const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", 
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
 
 interface Capabilities { music: { beatoven: boolean; sonauto: boolean }; }
-const ALL_PROVIDERS: { value: MusicProvider; label: string }[] = [
+const ALL_PROVIDERS: { value: MusicProvider; label: string; badge?: string }[] = [
   { value: "beatoven", label: "Beatoven" },
-  { value: "sonauto",  label: "Sonauto" },
+  { value: "sonauto",  label: "Sonauto"  },
 ];
 
 const MAX_IMAGE_BYTES     = 10 * 1024 * 1024;
@@ -36,6 +37,7 @@ type Tab  = "prompt" | "image";
 
 export default function GeneratePage() {
   const navigate = useNavigate();
+  const t = useT();
   const { items, isGenerating, generate, generateSFX, analyzeImage, retry, removeItem, handleSSEEvent, fetchHistory } =
     useGenerationStore();
   const { user, updateCredit } = useAuthStore();
@@ -74,7 +76,7 @@ export default function GeneratePage() {
 
   useEffect(() => {
     api.get("/api/generate/capabilities")
-      .then(r => setCapabilities(r.data))
+      .then(r => setCapabilities(r.data.data ?? r.data))
       .catch(() => {}); // hata olursa tüm provider'lar gösterilir
   }, []);
 
@@ -90,11 +92,11 @@ export default function GeneratePage() {
   function processFile(file: File) {
     setImageError(null);
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setImageError("Only PNG, JPG and WEBP images are allowed.");
+      setImageError(t.generate.imageOnly);
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      setImageError("Image must be smaller than 10 MB.");
+      setImageError(t.generate.imageSize);
       return;
     }
     setImageFile(file);
@@ -107,7 +109,7 @@ export default function GeneratePage() {
         const generatedPrompt = await analyzeImage(base64, file.type);
         setPrompt(generatedPrompt);
       } catch {
-        setImageError("Image analysis failed. You can still type a prompt manually.");
+        setImageError(t.generate.imageAnalysisFailed);
       } finally {
         setIsAnalyzing(false);
       }
@@ -129,14 +131,14 @@ export default function GeneratePage() {
     e.preventDefault();
     setFormError(null);
     const cleanPrompt = stripTags(prompt.trim())
-    if (!cleanPrompt) { setFormError("Please enter a prompt."); return; }
+    if (!cleanPrompt) { setFormError(t.generate.enterPrompt); return; }
     try {
       await generate({ prompt: cleanPrompt, provider, style, mood, duration });
       updateCredit(-creditCost);
       setPrompt("");
     } catch (err) {
       const msg = (err as AxiosError<{ error?: string }>).response?.data?.error
-        ?? (err as Error).message ?? "Generation failed.";
+        ?? (err as Error).message ?? t.generate.generationFailed;
       setFormError(msg);
     }
   }
@@ -145,10 +147,10 @@ export default function GeneratePage() {
     e.preventDefault();
     setFormError(null);
     const cleanSfxPrompt = stripTags(sfxPrompt.trim())
-    if (!cleanSfxPrompt) { setFormError("Please enter a prompt."); return; }
+    if (!cleanSfxPrompt) { setFormError(t.generate.sfxEnterPrompt); return; }
     const durSec = sfxDuration !== "" ? Number(sfxDuration) : undefined;
     if (durSec !== undefined && (durSec < 0.5 || durSec > 22)) {
-      setFormError("Duration must be between 0.5 and 22 seconds.");
+      setFormError(t.generate.sfxDurationRange);
       return;
     }
     try {
@@ -158,7 +160,7 @@ export default function GeneratePage() {
       setSfxDuration("");
     } catch (err) {
       const msg = (err as AxiosError<{ error?: string }>).response?.data?.error
-        ?? (err as Error).message ?? "SFX generation failed.";
+        ?? (err as Error).message ?? t.generate.sfxFailed;
       setFormError(msg);
     }
   }
@@ -239,7 +241,7 @@ export default function GeneratePage() {
                     : { background: "transparent", color: "var(--text-3)" }
                 }
               >
-                {m === "music" ? "Music" : "SFX"}
+                {m === "music" ? t.generate.tabMusic : t.generate.tabSfxMode}
               </button>
             ))}
           </div>
@@ -249,19 +251,19 @@ export default function GeneratePage() {
             <>
               {/* Sub-tabs: prompt / image */}
               <div className="flex gap-4 border-b" style={{ borderColor: "var(--bg-input)" }}>
-                {(["prompt", "image"] as Tab[]).map(t => (
+                {(["prompt", "image"] as Tab[]).map(tabVal => (
                   <button
-                    key={t}
+                    key={tabVal}
                     type="button"
-                    onClick={() => setTab(t)}
+                    onClick={() => setTab(tabVal)}
                     className="pb-2.5 text-[11px] font-semibold uppercase tracking-wider transition-all duration-100"
                     style={{
-                      color: tab === t ? "var(--accent)" : "var(--text-3)",
-                      borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
+                      color: tab === tabVal ? "var(--accent)" : "var(--text-3)",
+                      borderBottom: tab === tabVal ? "2px solid var(--accent)" : "2px solid transparent",
                       marginBottom: -1,
                     }}
                   >
-                    From {t === "prompt" ? "Prompt" : "Image"}
+                    {tabVal === "prompt" ? t.generate.tabPrompt : t.generate.tabImage}
                   </button>
                 ))}
               </div>
@@ -279,7 +281,7 @@ export default function GeneratePage() {
                         className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed h-36 cursor-pointer transition-all duration-100 text-center px-4"
                         style={{ borderColor: "var(--text-3)", background: "var(--bg-card)" }}
                         role="button"
-                        aria-label="Upload game screenshot"
+                        aria-label={t.generate.imageUploadLabel}
                       >
                         <span className="material-symbols-outlined mb-2" style={{ fontSize: 28, color: "var(--text-3)" }}>
                           image
@@ -303,7 +305,7 @@ export default function GeneratePage() {
                         {isAnalyzing && (
                           <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
                             <span className="text-xs tracking-widest uppercase animate-pulse" style={{ color: "var(--accent)" }}>
-                              Analyzing…
+                              {t.generate.promptAnalyzing}
                             </span>
                           </div>
                         )}
@@ -331,7 +333,7 @@ export default function GeneratePage() {
                     style={{ color: "var(--text-3)" }}
                     htmlFor="prompt-input"
                   >
-                    {tab === "image" ? "Generated Prompt (editable)" : "Prompt"}
+                    {tab === "image" ? t.generate.promptLabelImage : t.generate.promptLabel}
                   </label>
                   <textarea
                     id="prompt-input"
@@ -340,10 +342,10 @@ export default function GeneratePage() {
                     onChange={e => setPrompt(e.target.value)}
                     placeholder={
                       tab === "prompt"
-                        ? "e.g. A tense 8-bit dungeon theme with heavy drums…"
+                        ? t.generate.promptHint
                         : isAnalyzing
-                        ? "Analyzing image…"
-                        : "Upload an image to auto-generate a prompt, or type manually."
+                        ? t.generate.promptAnalyzing
+                        : t.generate.promptHintImage
                     }
                     rows={4}
                     className="w-full rounded-lg px-4 py-3 text-sm resize-none outline-none transition-all duration-100"
@@ -361,28 +363,28 @@ export default function GeneratePage() {
                 <div className="grid grid-cols-2 gap-3">
                   <SelectField
                     id="style-select"
-                    label="Style"
+                    label={t.generate.style}
                     value={style}
                     onChange={v => setStyle(v as MusicStyle)}
                     options={STYLES.map(s => ({ value: s, label: s }))}
                   />
                   <SelectField
                     id="mood-select"
-                    label="Mood"
+                    label={t.generate.mood}
                     value={mood}
                     onChange={v => setMood(v as MusicMood)}
                     options={MOODS.map(m => ({ value: m, label: m }))}
                   />
                   <SelectField
                     id="duration-select"
-                    label="Duration"
+                    label={t.generate.duration}
                     value={String(duration)}
                     onChange={v => setDuration(Number(v) as GenerationDuration)}
                     options={DURATIONS.map(d => ({ value: String(d), label: `${d}s` }))}
                   />
                   <SelectField
                     id="provider-select"
-                    label="AI Provider"
+                    label={t.generate.provider}
                     value={provider}
                     onChange={v => setProvider(v as MusicProvider)}
                     options={availableProviders.map(p => ({ value: p.value, label: p.label }))}
@@ -394,7 +396,7 @@ export default function GeneratePage() {
                     className="text-[10px] rounded px-3 py-2 leading-relaxed"
                     style={{ background: "color-mix(in srgb, var(--accent) 6%, transparent)", color: "var(--text-3)" }}
                   >
-                    Sonauto always generates ~95s of audio. The selected duration is stored as metadata only.
+                    {t.generate.sonautoNote}
                   </p>
                 )}
 
@@ -424,12 +426,12 @@ export default function GeneratePage() {
                         className="h-4 w-4 rounded-full border-2 animate-spin"
                         style={{ borderColor: "color-mix(in srgb, var(--accent-on) 30%, transparent)", borderTopColor: "var(--accent-on)" }}
                       />
-                      Generating…
+                      {t.generate.generating}
                     </>
                   ) : (
                     <>
                       <span className="material-symbols-outlined" style={{ fontSize: 18 }}>graphic_eq</span>
-                      Generate Music
+                      {t.generate.generateBtn}
                       <span
                         className="rounded px-2 py-0.5 text-[10px] font-bold"
                         style={{ background: "color-mix(in srgb, var(--accent-on) 20%, transparent)" }}
@@ -458,19 +460,18 @@ export default function GeneratePage() {
                   surround_sound
                 </span>
                 <div className="space-y-1">
-                  <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--text-2)" }} lang="en">
-                    SFX Generation — Coming Soon
+                  <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--text-2)" }}>
+                    {t.generate.sfxComingSoon}
                   </p>
                   <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-                    Sound effects via ElevenLabs will be available in a future update.
+                    {t.generate.sfxComingSoonDesc}
                   </p>
                 </div>
                 <span
                   className="px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest"
                   style={{ background: "var(--bg-input)", color: "var(--text-3)" }}
-                  lang="en"
                 >
-                  Not Available
+                  {t.common.noResults}
                 </span>
               </div>
             </div>
@@ -509,7 +510,7 @@ export default function GeneratePage() {
                 style={{ background: items.some(i => i.status === "processing") ? "var(--accent)" : "var(--text-3)" }}
               />
               <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-2)" }} lang="en">
-                {items.length} jobs
+                {items.length} {t.generate.queueJobs}
               </span>
             </div>
           </div>
@@ -525,8 +526,8 @@ export default function GeneratePage() {
               <span className="material-symbols-outlined" style={{ fontSize: 40, color: "var(--bg-border)" }}>
                 graphic_eq
               </span>
-              <p className="text-[11px] uppercase tracking-widest text-center" style={{ color: "var(--text-3)" }} lang="en">
-                No generations yet.<br />Create your first music loop or SFX.
+              <p className="text-[11px] uppercase tracking-widest text-center" style={{ color: "var(--text-3)" }}>
+                {t.generate.noHistory}
               </p>
             </div>
           ) : (

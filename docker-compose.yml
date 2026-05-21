@@ -57,11 +57,11 @@ services:
     networks: [sonaralabs]
     volumes:
       - redis_data:/data
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-sonaralabs_redis_dev}
     ports:
-      - "6379:6379"
+      - "6379:6379"   # ⚠️ DEV ONLY — production'da kaldır
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-sonaralabs_redis_dev}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -134,7 +134,7 @@ services:
       PROFILE_SERVICE_URL:      http://profile:3008
       SOCIAL_SERVICE_URL:       http://social:3009
       # Redis (rate limit store)
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
       # CORS
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
     depends_on:
@@ -147,8 +147,6 @@ services:
       dockerfile: services/auth/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3001:3001"
     environment:
       PORT: 3001
       NODE_ENV: development
@@ -159,6 +157,7 @@ services:
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
       INTERNAL_TOKEN_TTL: ${INTERNAL_TOKEN_TTL:-5m}
+      INITIAL_CREDIT_BALANCE: ${INITIAL_CREDIT_BALANCE:-100}
     depends_on:
       mongo:
         condition: service_healthy
@@ -169,19 +168,20 @@ services:
       dockerfile: services/generation/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3002:3002"
     environment:
       PORT: 3002
       NODE_ENV: development
       MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
       # AI Providers
       BEATOVEN_API_KEY: ${BEATOVEN_API_KEY:-}
+      SONAUTO_API_KEY: ${SONAUTO_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       STABILITY_API_KEY: ${STABILITY_API_KEY:-}
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      HUGGINGFACE_MUSICGEN_ENDPOINT: ${HUGGINGFACE_MUSICGEN_ENDPOINT:-}
       # Job config
       JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-300000}
       # Storage
@@ -208,8 +208,6 @@ services:
       dockerfile: services/upload/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3003:3003"
     environment:
       PORT: 3003
       NODE_ENV: development
@@ -237,8 +235,6 @@ services:
       dockerfile: services/library/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3004:3004"
     environment:
       PORT: 3004
       NODE_ENV: development
@@ -247,6 +243,10 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      generation:
+        condition: service_started
+      upload:
+        condition: service_started
 
   credit:
     build:
@@ -254,14 +254,11 @@ services:
       dockerfile: services/credit/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3005:3005"
     environment:
       PORT: 3005
       NODE_ENV: development
       MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      INITIAL_CREDIT_BALANCE: ${INITIAL_CREDIT_BALANCE:-100}
     depends_on:
       mongo:
         condition: service_healthy
@@ -272,8 +269,6 @@ services:
       dockerfile: services/admin/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3006:3006"
     environment:
       PORT: 3006
       NODE_ENV: development
@@ -289,13 +284,11 @@ services:
       dockerfile: services/notification/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3007:3007"
     environment:
       PORT: 3007
       NODE_ENV: development
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
     depends_on:
       redis:
         condition: service_healthy
@@ -306,8 +299,6 @@ services:
       dockerfile: services/profile/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3008:3008"
     environment:
       PORT: 3008
       NODE_ENV: development
@@ -327,14 +318,12 @@ services:
       dockerfile: services/social/Dockerfile
     restart: unless-stopped
     networks: [sonaralabs]
-    ports:
-      - "3009:3009"
     environment:
       PORT: 3009
       NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
       PROFILE_SERVICE_URL: http://profile:3008
     depends_on:
       postgres:

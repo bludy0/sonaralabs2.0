@@ -11,7 +11,7 @@ import nodemailer from "nodemailer";
 import { UserJwtPayload, InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 app.use(cookieParser());
 
 // ── ENV ───────────────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ app.post("/register", async (req, res) => {
 
     // Email gönder (SMTP yoksa console'a yazar)
     await sendVerificationEmail(email, verifyToken).catch(err =>
-      logger.error("[auth] Email gönderilemedi:", err.message)
+      logger.error("[auth] Email gönderilemedi:", { message: String(err) })
     );
 
     // Kayıt bonusu: default 100 kredi. Sıfırlamak için INITIAL_CREDIT_BALANCE=0 set et.
@@ -327,7 +327,7 @@ app.post("/register", async (req, res) => {
       axios.post(`${CREDIT_SERVICE_URL}/earn`,
         { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
         { headers: { "x-internal-token": internalToken } }
-      ).catch(err => logger.warn("[auth] Credit earn log failed:", err.message));
+      ).catch(err => logger.warn("[auth] Credit earn log failed:", { message: String(err) }));
     }
 
     res.status(201).json({
@@ -339,7 +339,7 @@ app.post("/register", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    logger.error("register error", err);
+    logger.error("register error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -391,7 +391,7 @@ app.get("/verify-email", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    logger.error("verify-email error", err);
+    logger.error("verify-email error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -425,22 +425,30 @@ app.post("/resend-verification", async (req, res) => {
     await user.save();
 
     await sendVerificationEmail(email, verifyToken).catch(err =>
-      logger.error("[auth] Resend email hatası:", err.message)
+      logger.error("[auth] Resend email hatası:", { message: String(err) })
     );
 
     res.json({ success: true, message: "Onay emaili tekrar gönderildi." });
   } catch (err) {
-    logger.error("resend-verification error", err);
+    logger.error("resend-verification error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
+
+// VULN-19: Dummy hash for constant-time comparison when user doesn't exist
+// Generated once with bcrypt.hashSync("dummy", 12) — prevents timing oracle attacks
+const DUMMY_HASH = "$2a$12$LGnCnc./bhN1q.AMCRZXaOgBIQ3N5pnFRbE1pOQ8GRpNqBSSLOjsK";
 
 // POST /login
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email }).select("+passwordHash +lockoutUntil");
-    if (!user) return res.status(401).json({ success: false, error: "Invalid credentials" });
+    if (!user) {
+      // VULN-19: Run bcrypt anyway to prevent timing-based user enumeration
+      await bcrypt.compare(password ?? "", DUMMY_HASH);
+      return res.status(401).json({ success: false, error: "Invalid credentials" });
+    }
 
     // Brute-force: hesap kilitli mi?
     if (user.lockoutUntil && user.lockoutUntil > new Date()) {
@@ -497,7 +505,7 @@ app.post("/login", async (req, res) => {
       user.email,
       req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
       req.headers["user-agent"] ?? "",
-    ).catch(err => logger.warn("[auth] Login notification email failed:", err.message));
+    ).catch(err => logger.warn("[auth] Login notification email failed:", { message: String(err) }));
 
     res.json({
       success: true,
@@ -509,7 +517,7 @@ app.post("/login", async (req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    logger.error("login error", err);
+    logger.error("login error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -540,12 +548,12 @@ app.post("/forgot-password", async (req, res) => {
     });
 
     await sendPasswordResetEmail(email, resetToken).catch(err =>
-      logger.error("[auth] Reset email gönderilemedi:", err.message)
+      logger.error("[auth] Reset email gönderilemedi:", { message: String(err) })
     );
 
     res.json(genericOk);
   } catch (err) {
-    logger.error("forgot-password error", err);
+    logger.error("forgot-password error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -588,7 +596,7 @@ app.post("/reset-password", async (req, res) => {
 
     res.json({ success: true, message: "Şifreniz başarıyla sıfırlandı. Lütfen tekrar giriş yapın." });
   } catch (err) {
-    logger.error("reset-password error", err);
+    logger.error("reset-password error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -624,7 +632,7 @@ app.post("/refresh", async (req, res) => {
 
     res.json({ success: true, message: "Tokens refreshed" } as ApiResponse);
   } catch (err) {
-    logger.error("refresh error", err);
+    logger.error("refresh error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -718,7 +726,7 @@ app.patch("/me/password", async (req, res) => {
     sendPasswordChangedEmail(
       user.email,
       req.ip ?? req.headers["x-forwarded-for"] as string ?? "",
-    ).catch(err => logger.warn("[auth] Password changed email failed:", err.message));
+    ).catch(err => logger.warn("[auth] Password changed email failed:", { message: String(err) }));
 
     res.json({ success: true, message: "Password updated. Please log in again." } as ApiResponse);
   } catch {
@@ -735,7 +743,7 @@ app.delete("/me", async (req, res) => {
     await RefreshToken.deleteMany({ userId: payload.sub });
     await User.findByIdAndDelete(payload.sub);
     res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
-    res.clearCookie("refresh_token", { path: "/api/auth/refresh", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
+    res.clearCookie("refresh_token", { path: "/api/auth", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
     res.json({ success: true, message: "Account deleted" } as ApiResponse);
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
@@ -775,5 +783,5 @@ if (require.main === module) {
       logger.warn("[auth] ⚠️  SMTP yapılandırılmamış — email onayı DEV modunda (console log)");
     }
     app.listen(PORT, () => logger.info(`[auth] Listening on :${PORT}`));
-  }).catch(err => { logger.error("[auth] MongoDB connection failed", err); process.exit(1); });
+  }).catch(err => { logger.error("[auth] MongoDB connection failed", { message: String(err) }); process.exit(1); });
 }

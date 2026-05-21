@@ -6,7 +6,7 @@ import { QueueEvents } from "bullmq";
 import { InternalJwtPayload, SseStatusEvent, NotifyJobPayload } from "@sonaralabs/types";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "4kb" }));
 
 const { PORT = "3007", INTERNAL_JWT_SECRET, REDIS_URL = "redis://localhost:6379" } = process.env;
 if (!INTERNAL_JWT_SECRET) { process.exit(1); }
@@ -55,10 +55,12 @@ queueEvents.on("failed", ({ jobId, failedReason }) => {
 // GET /stream — SSE bağlantısı (frontend EventSource ile bağlanır)
 app.get("/stream", (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string || req.query.token as string;
+    // Yalnızca header kabul edilir — query string'e JWT koymak log'lara sızar
+    const internalToken = req.headers["x-internal-token"] as string;
     if (!internalToken) return res.status(401).end();
 
     const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    if (!payload._internal) return res.status(401).end(); // internal token zorunlu
     const userId = payload.sub;
 
     // SSE headers

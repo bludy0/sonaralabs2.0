@@ -23,23 +23,24 @@ export const SONAUTO_CONFIG = {
   outputFormat:      "mp3" as const,
   /**
    * style → Sonauto tags eşlemesi.
-   * Geçerli tag listesi için: https://sonauto.ai/tag-explorer
+   * Geçerli tag listesi: test edilmiş değerler — geçersiz tag 422 verir.
+   * Tag explorer: https://sonauto.ai/tag-explorer
    */
   styleTags: {
-    ambient:    ["ambient", "atmospheric", "electronic"],
-    action:     ["action", "energetic", "fast-paced", "aggressive"],
-    puzzle:     ["calm", "minimalist", "subtle", "lo-fi"],
-    horror:     ["dark", "eerie", "tense", "cinematic"],
-    platformer: ["upbeat", "chiptune", "cheerful", "video-game"],
+    ambient:    ["ambient", "atmospheric", "electronic", "synth"],
+    action:     ["action", "energetic", "aggressive", "intense"],
+    puzzle:     ["calm", "lo-fi", "peaceful", "relaxing"],
+    horror:     ["dark", "horror", "cinematic", "dramatic"],
+    platformer: ["chiptune", "retro", "game", "fun"],
   } as Record<string, string[]>,
   /**
    * mood → Sonauto tags eşlemesi.
    */
   moodTags: {
-    calm:       ["peaceful", "relaxing", "serene"],
-    tense:      ["tense", "suspenseful", "dramatic"],
+    calm:       ["peaceful", "relaxing", "calm"],
+    tense:      ["tension", "suspenseful", "dramatic"],
     epic:       ["epic", "cinematic", "powerful", "orchestral"],
-    mysterious: ["mysterious", "ethereal", "mystical"],
+    mysterious: ["mysterious", "ethereal", "dark"],
     cheerful:   ["happy", "uplifting", "fun"],
   } as Record<string, string[]>,
   /** Sonauto birden fazla variant üretebilir; hangisini kullanacağımız */

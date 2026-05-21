@@ -65,7 +65,9 @@ async function migrate() {
 function getPayload(req: Request): InternalJwtPayload {
   const token = req.headers.get("x-internal-token");
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 // ── MINIO HELPERS ─────────────────────────────────────────────────────────────
@@ -113,8 +115,13 @@ app.get("/health", (c) => c.json({ status: "ok", service: "profile" }));
 // hex (0-9, a-f) olduğundan default username her zaman geçerli formattadır.
 // ON CONFLICT (user_id) DO UPDATE ile tek sorgu — ayrı SELECT/refetch gereksiz.
 app.get("/me", async (c) => {
+  let userId: string;
   try {
-    const { sub: userId } = getPayload(c.req.raw);
+    userId = getPayload(c.req.raw).sub;
+  } catch {
+    return c.json({ success: false, error: "Unauthorized" }, 401);
+  }
+  try {
     const defaultUsername = `user_${userId.slice(-8)}`;
     const { rows } = await pool.query(`
       INSERT INTO user_profiles (user_id, username, is_public)
@@ -123,7 +130,10 @@ app.get("/me", async (c) => {
       RETURNING *
     `, [userId, defaultUsername]);
     return c.json({ success: true, data: rowToProfile(rows[0]) });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err: any) {
+    logger.error("[profile] GET /me:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // ── PUT /me ───────────────────────────────────────────────────────────────────
@@ -156,7 +166,7 @@ app.put("/me", async (c) => {
   } catch (err: any) {
     if (err.code === "23505") return c.json({ success: false, error: "Username already taken" }, 409);
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    logger.error("[profile] PUT /me:", err);
+    logger.error("[profile] PUT /me:", { message: String(err) });
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -195,7 +205,7 @@ app.post("/me/avatar", async (c) => {
     return c.json({ success: true, data: { avatarUrl: url } });
   } catch (err: any) {
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    logger.error("[profile] POST /me/avatar:", err);
+    logger.error("[profile] POST /me/avatar:", { message: String(err) });
     return c.json({ success: false, error: "Upload failed" }, 500);
   }
 });
@@ -249,7 +259,7 @@ app.get("/:username", async (c) => {
     if (!rows.length) return c.json({ success: false, error: "Profile not found" }, 404);
     return c.json({ success: true, data: rowToProfile(rows[0]) });
   } catch (err) {
-    logger.error("[profile] GET /:username:", err);
+    logger.error("[profile] GET /:username:", { message: String(err) });
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -263,4 +273,4 @@ async function start() {
   );
 }
 
-start().catch(err => { logger.error("[profile] Startup failed:", err); process.exit(1); });
+start().catch(err => { logger.error("[profile] Startup failed:", { message: String(err) }); process.exit(1); });

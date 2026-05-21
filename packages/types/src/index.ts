@@ -147,13 +147,13 @@ export type GenerationType = "music" | "sfx";
 // ── CREDIT COST TABLES ────────────────────────────────────────────────────────
 
 export const MUSIC_CREDIT_COST: Record<MusicProvider, Record<number, number>> = {
-  beatoven: { 15: 3, 30: 5, 60: 8 },
-  lyria:    { 15: 2, 30: 3, 60: 5 },
+  beatoven:  { 15: 3,  30: 5,  60: 8  },
+  lyria:     { 15: 2,  30: 3,  60: 5  },
   /**
    * Sonauto v2 her zaman ~95s üretir (duration parametresi modeli etkilemez).
    * Flat fiyat: her istekte 5 kredi.
    */
-  sonauto:  { 15: 5, 30: 5, 60: 5 },
+  sonauto:   { 15: 5,  30: 5,  60: 5  },
 } as const;
 
 export const SFX_CREDIT_COST: Record<SFXProvider, number> = {

@@ -18,12 +18,26 @@ export interface Translations {
     // Errors
     sessionExpired: string; emailNotVerified: string; resendVerification: string; resendSent: string; resendFailed: string; accountLocked: string; passwordMismatch: string; passwordWeak: string;
   };
-  generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string; imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxGenerate: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string };
+  generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string; imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxGenerate: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string;
+    sonautoNote: string; queueJobs: string;
+    // GenerationCard statuses & labels
+    statusQueued: string; statusProcessing: string; statusSuccess: string; statusFailed: string;
+    pipelineQueued: string; pipelineAiWork: string; pipelineComplete: string;
+    waitingInQueue: string; aiSynthesis: string; generationComplete: string; generationFailedStatus: string; finalizing: string;
+    retrying: string; remove: string; removing: string; openEditor: string;
+  };
   library:   { title: string; search: string; upload: string; all: string; uploads: string; generations: string; favorites: string; empty: string; noMatches: string; addToStudio: string; download: string; delete: string; favorite: string; unfavorite: string; publish: string; unpublish: string; sortNewest: string; sortOldest: string; sortLongest: string; sortShortest: string; filterAll: string; filterDone: string; filterProcessing: string; filterFailed: string; filterGenerated: string; filterUploaded: string; confirmDelete: string; loadError: string; uploadSuccess: string; uploadFailed: string; addedToCollection: string; collectionError: string; removeError: string; renameError: string; deleteCollectionError: string; loadCollectionError: string; newCollectionError: string };
   dashboard: { title: string; totalGen: string; credits: string; storage: string; history: string; creditLog: string; noHistory: string; earned: string; spent: string; refunded: string; creditBalance: string; completed: string };
   explore:   { title: string; trending: string; recent: string; search: string };
   feed:      { title: string; following: string; forYou: string; noFeed: string };
-  settings:  { title: string; appearance: string; theme: string; language: string; account: string; email: string; changePass: string; security: string; logoutAll: string; dangerZone: string; deleteAccount: string; saved: string; saving: string };
+  settings:  { title: string; appearance: string; theme: string; language: string; account: string; email: string; changePass: string; security: string; logoutAll: string; dangerZone: string; deleteAccount: string; saved: string; saving: string;
+    // Theme editor
+    darkThemes: string; lightThemes: string; customThemes: string; newTheme: string; themeName: string; noCustomThemes: string; startFromPreset: string; themeApply: string; themeCreateEdit: string;
+    // UI scale
+    uiScale: string; uiScaleHint: string; scaleSmall: string; scaleNormal: string; scaleLarge: string; scaleXLarge: string; scaleReset: string;
+    // Account form
+    currentPassword: string; newPasswordPlaceholder: string; logoutAllSub: string; deleteAccountSub: string; deleteAccountConfirm: string; changePasswordFailed: string;
+  };
   studio: {
     browser: string; project: string; untitled: string; save: string; saveProject: string; saving: string; saved: string; failed: string;
     share: string; shared: string; copied: string; newProject: string; noProjects: string; loading: string; current: string; saved_projects: string;
@@ -151,6 +165,25 @@ export const en: Translations = {
     sfxDurationRange: "Duration must be between 0.5 and 22 seconds.",
     generationFailed: "Generation failed.",
     sfxFailed:        "SFX generation failed.",
+    sonautoNote:      "Sonauto always generates ~95s of audio. The selected duration is stored as metadata only.",
+    queueJobs:        "jobs",
+    // GenerationCard
+    statusQueued:     "QUEUED",
+    statusProcessing: "PROCESSING",
+    statusSuccess:    "SUCCESS",
+    statusFailed:     "FAILED",
+    pipelineQueued:   "QUEUED",
+    pipelineAiWork:   "AI WORK",
+    pipelineComplete: "COMPLETE",
+    waitingInQueue:   "Waiting in queue…",
+    aiSynthesis:      "AI synthesis in progress…",
+    generationComplete:     "Generation complete",
+    generationFailedStatus: "Generation failed",
+    finalizing:       "Finalizing…",
+    retrying:         "Retrying…",
+    remove:           "Remove",
+    removing:         "Removing…",
+    openEditor:       "Open Editor",
   },
   library: {
     title:       "My Library",
@@ -231,6 +264,31 @@ export const en: Translations = {
     deleteAccount:"Delete Account",
     saved:        "Saved ✓",
     saving:       "Saving…",
+    // Theme editor
+    darkThemes:       "Dark",
+    lightThemes:      "Light",
+    customThemes:     "Custom",
+    newTheme:         "+ New Theme",
+    themeName:        "Theme name",
+    noCustomThemes:   "No custom themes yet. Click \"+ New Theme\" to create one.",
+    startFromPreset:  "Start from preset",
+    themeApply:       "Apply",
+    themeCreateEdit:  "Create & Edit",
+    // UI scale
+    uiScale:      "Interface Size",
+    uiScaleHint:  "Affects font, button and menu sizes",
+    scaleSmall:   "Small",
+    scaleNormal:  "Normal",
+    scaleLarge:   "Large",
+    scaleXLarge:  "Extra Large",
+    scaleReset:   "↺ Reset",
+    // Account form
+    currentPassword:      "Current password",
+    newPasswordPlaceholder: "New password",
+    logoutAllSub:         "Signs you out on all browsers & devices.",
+    deleteAccountSub:     "Irreversible. All your data will be permanently deleted.",
+    deleteAccountConfirm: "Are you sure? This cannot be undone.",
+    changePasswordFailed: "Failed. Check your current password.",
   },
   studio: {
     browser:    "Browser",

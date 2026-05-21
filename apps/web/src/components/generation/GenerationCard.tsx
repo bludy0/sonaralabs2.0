@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import type { GenerationItem } from "../../store/useGenerationStore";
 import { waveformBars } from "../../lib/format";
+import { useT } from "../../store/useI18nStore";
 
 // ── Estimated processing durations (seconds) by provider + track length ───────
 const ESTIMATED_DURATION: Record<string, Record<number, number>> = {
-  beatoven: { 15: 35, 30: 55, 60: 95 },
-  lyria:    { 15: 25, 30: 40, 60: 70 },
-  sonauto:  { 15: 95, 30: 95, 60: 95 },
+  beatoven:  { 15: 35,  30: 55,  60: 95  },
+  lyria:     { 15: 25,  30: 40,  60: 70  },
+  sonauto:   { 15: 95,  30: 95,  60: 95  },
 };
 const SFX_ESTIMATED = 12;
 
@@ -28,13 +29,13 @@ function fmtTime(secs: number): string {
 // ── Pipeline step indicators ──────────────────────────────────────────────────
 type PipelineStatus = "pending" | "processing" | "done" | "failed";
 
-const PIPELINE_STEPS = [
-  { key: "pending",    label: "QUEUED"   },
-  { key: "processing", label: "AI WORK"  },
-  { key: "done",       label: "COMPLETE" },
-] as const;
+function PipelineSteps({ status, t }: { status: PipelineStatus; t: ReturnType<typeof useT> }) {
+  const PIPELINE_STEPS = [
+    { key: "pending",    label: t.generate.pipelineQueued   },
+    { key: "processing", label: t.generate.pipelineAiWork   },
+    { key: "done",       label: t.generate.pipelineComplete },
+  ] as const;
 
-function PipelineSteps({ status }: { status: PipelineStatus }) {
   const activeIdx =
     status === "pending"    ? 0 :
     status === "processing" ? 1 :
@@ -107,11 +108,12 @@ function PipelineSteps({ status }: { status: PipelineStatus }) {
 
 // ── Progress bar (time-based) ─────────────────────────────────────────────────
 function ProgressBar({
-  item, elapsed, estimated,
+  item, elapsed, estimated, t,
 }: {
   item: GenerationItem;
   elapsed: number;
   estimated: number;
+  t: ReturnType<typeof useT>;
 }) {
   const pct =
     item.status === "pending"    ? null :               // indeterminate for queued
@@ -120,7 +122,7 @@ function ProgressBar({
     Math.min(90, (elapsed / estimated) * 100);          // cap at 90% until SSE "done"
 
   const remaining = estimated - elapsed;
-  const etaLabel  = remaining > 2 ? `~${fmtTime(remaining)}` : "Finalizing…";
+  const etaLabel  = remaining > 2 ? `~${fmtTime(remaining)}` : t.generate.finalizing;
 
   return (
     <div className="space-y-1.5">
@@ -157,10 +159,10 @@ function ProgressBar({
       {/* Stats row */}
       <div className="flex items-center justify-between">
         <span className="text-[9px] uppercase tracking-widest" style={{ color: "var(--text-3)" }}>
-          {item.status === "pending"    ? "Waiting in queue…"         :
-           item.status === "processing" ? "AI synthesis in progress…" :
-           item.status === "done"       ? "Generation complete"        :
-                                          "Generation failed"}
+          {item.status === "pending"    ? t.generate.waitingInQueue         :
+           item.status === "processing" ? t.generate.aiSynthesis            :
+           item.status === "done"       ? t.generate.generationComplete     :
+                                          t.generate.generationFailedStatus }
         </span>
         <div className="flex items-center gap-2">
           {/* Elapsed timer */}
@@ -204,12 +206,12 @@ function ensureKeyframes() {
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: GenerationItem["status"] }) {
+function StatusBadge({ status, t }: { status: GenerationItem["status"]; t: ReturnType<typeof useT> }) {
   const configs: Record<GenerationItem["status"], { label: string; bg: string; color: string }> = {
-    pending:    { label: "QUEUED",     bg: "color-mix(in srgb, var(--accent) 10%, transparent)",  color: "var(--accent)" },
-    processing: { label: "PROCESSING", bg: "color-mix(in srgb, var(--accent) 15%, transparent)",  color: "var(--accent)" },
-    done:       { label: "SUCCESS",    bg: "color-mix(in srgb, var(--success) 10%, transparent)", color: "var(--success)" },
-    failed:     { label: "FAILED",     bg: "color-mix(in srgb, var(--error) 10%, transparent)",   color: "var(--error)" },
+    pending:    { label: t.generate.statusQueued,     bg: "color-mix(in srgb, var(--accent) 10%, transparent)",  color: "var(--accent)" },
+    processing: { label: t.generate.statusProcessing, bg: "color-mix(in srgb, var(--accent) 15%, transparent)",  color: "var(--accent)" },
+    done:       { label: t.generate.statusSuccess,    bg: "color-mix(in srgb, var(--success) 10%, transparent)", color: "var(--success)" },
+    failed:     { label: t.generate.statusFailed,     bg: "color-mix(in srgb, var(--error) 10%, transparent)",   color: "var(--error)" },
   };
   const cfg = configs[status];
   return (
@@ -237,6 +239,7 @@ export interface GenerationCardProps {
 
 export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenInStudio }: GenerationCardProps) {
   ensureKeyframes();
+  const t = useT();
 
   const [retrying,  setRetrying]  = useState(false);
   const [removing,  setRemoving]  = useState(false);
@@ -322,7 +325,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
 
       {/* Metadata chips */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <StatusBadge status={item.status} />
+        <StatusBadge status={item.status} t={t} />
         {isSFX ? (
           <span
             className="text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded"
@@ -379,13 +382,14 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
           style={{ background: "var(--bg-mid)", border: "1px solid var(--bg-border)" }}
         >
           {/* Pipeline steps */}
-          <PipelineSteps status={item.status} />
+          <PipelineSteps status={item.status} t={t} />
 
           {/* Progress bar + ETA */}
           <ProgressBar
             item={item}
             elapsed={item.status === "processing" ? processingElapsed : elapsed}
             estimated={estimated}
+            t={t}
           />
 
           {/* Estimated total time hint */}
@@ -403,7 +407,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
           className="rounded-lg p-3 space-y-2"
           style={{ background: "var(--bg-mid)", border: "1px solid color-mix(in srgb, var(--error) 20%, transparent)" }}
         >
-          <PipelineSteps status="failed" />
+          <PipelineSteps status="failed" t={t} />
           {item.failReason && (
             <p
               className="text-[10px] rounded px-2 py-1.5 leading-relaxed"
@@ -419,18 +423,18 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
               className="flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40"
               style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
             >
-              {retrying ? "Retrying…" : "↺ Retry"}
+              {retrying ? t.generate.retrying : `↺ ${t.generate.retryBtn}`}
             </button>
             <button
               onClick={handleRemove}
               disabled={removing || retrying}
-              title="Kuyrudan kaldır"
+              title={t.generate.remove}
               className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 flex items-center gap-1"
               style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
               onMouseEnter={e => !removing && ((e.currentTarget as HTMLButtonElement).style.background = "color-mix(in srgb, var(--error) 18%, transparent)")}
               onMouseLeave={e =>              ((e.currentTarget as HTMLButtonElement).style.background = "color-mix(in srgb, var(--error) 8%, transparent)")}
             >
-              {removing ? "…" : "✕ Kaldır"}
+              {removing ? "…" : `✕ ${t.generate.remove}`}
             </button>
           </div>
         </div>
@@ -456,7 +460,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
               onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-border)")}
               onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-input)")}
             >
-              Open Editor
+              {t.generate.openEditor}
             </button>
             <button
               onClick={() => onOpenInStudio(item)}

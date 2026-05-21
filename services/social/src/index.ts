@@ -84,7 +84,9 @@ async function migrate() {
 function getPayload(req: Request): InternalJwtPayload {
   const token = req.headers.get("x-internal-token");
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 function makeInternalToken(): string {
@@ -211,24 +213,27 @@ app.post("/tracks", async (c) => {
       genreTags?: string[]; moodTags?: string[]; gameTypeTags?: string[];
       isLoop?: boolean; loopMetadata?: { loopStart: number; loopEnd: number; tempo: number };
       waveformData?: number[];
-      username?: string;
+      // username intentionally NOT accepted from client — always fetched from profile service
     };
 
     if (!body.title || !body.audioUrl) {
       return c.json({ success: false, error: "title and audioUrl required" }, 400);
     }
 
-    // Auto-lookup username from profile service if not provided by client
-    let username = body.username ?? "";
-    if (!username) {
-      try {
-        const res = await fetch(`${PROFILE_SERVICE_URL}/internal/profile/${userId}`, {
-          headers: { "x-internal-token": makeInternalToken() },
-        });
-        const pd = await res.json() as { data?: { username?: string } };
-        username = pd.data?.username ?? userId;
-      } catch { username = userId; }
-    }
+    // VULN-11: Always fetch username from profile service — never trust client-supplied value
+    let username = userId; // fallback to userId if profile lookup fails
+    try {
+      const res = await fetch(`${PROFILE_SERVICE_URL}/internal/profile/${userId}`, {
+        headers: { "x-internal-token": makeInternalToken() },
+      });
+      const pd = await res.json() as { data?: { username?: string } };
+      username = pd.data?.username ?? userId;
+    } catch { /* keep fallback */ }
+
+    // VULN-09: Cap waveformData to prevent oversized JSONB payloads
+    const safeWaveform = Array.isArray(body.waveformData)
+      ? body.waveformData.slice(0, 2000)
+      : null;
 
     const { rows } = await pool.query(`
       INSERT INTO public_tracks
@@ -240,7 +245,7 @@ app.post("/tracks", async (c) => {
     `, [
       userId, username, body.generationId ?? null, body.uploadId ?? null,
       body.title, body.audioUrl,
-      body.waveformData ? JSON.stringify(body.waveformData) : null,
+      safeWaveform ? JSON.stringify(safeWaveform) : null,
       body.durationSec ?? 0, body.bpm ?? null,
       body.genreTags ?? [], body.moodTags ?? [], body.gameTypeTags ?? [],
       body.isLoop ?? false,
@@ -254,7 +259,7 @@ app.post("/tracks", async (c) => {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-internal-token": makeInternalToken() },
       body: JSON.stringify({ trackDelta: 1 }),
-    }).catch(err => logger.error("[social] track_count sync failed (publish):", err));
+    }).catch(err => logger.error("[social] track_count sync failed (publish):", { message: String(err) }));
 
     // Fan-out to followers' feeds
     fanOutFeedEvent(userId, username, "published", "track", track.id, body.title).catch(() => {});
@@ -262,7 +267,7 @@ app.post("/tracks", async (c) => {
     return c.json({ success: true, data: track }, 201);
   } catch (err: any) {
     if (err.message === "No internal token") return c.json({ success: false, error: "Unauthorized" }, 401);
-    logger.error("[social] POST /tracks:", err);
+    logger.error("[social] POST /tracks:", { message: String(err) });
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -301,7 +306,7 @@ app.get("/tracks", async (c) => {
       },
     });
   } catch (err) {
-    logger.error("[social] GET /tracks error:", err);
+    logger.error("[social] GET /tracks error:", { message: String(err) });
     return c.json({ success: false, error: "Failed to fetch tracks" }, 500);
   }
 });
@@ -314,15 +319,17 @@ app.get("/tracks/:id", async (c) => {
     if (!rows.length) return c.json({ success: false, error: "Not found" }, 404);
     return c.json({ success: true, data: rowToTrack(rows[0]) });
   } catch (err) {
-    logger.error("[social] GET /tracks/:id error:", err);
+    logger.error("[social] GET /tracks/:id error:", { message: String(err) });
     return c.json({ success: false, error: "Failed to fetch track" }, 500);
   }
 });
 
 // DELETE /tracks/:id
 app.delete("/tracks/:id", async (c) => {
+  let userId: string;
+  try { userId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: userId } = getPayload(c.req.raw);
     const { id } = c.req.param();
     const { rowCount } = await pool.query(
       "DELETE FROM public_tracks WHERE id = $1 AND user_id = $2",
@@ -336,7 +343,10 @@ app.delete("/tracks/:id", async (c) => {
       body: JSON.stringify({ trackDelta: -1 }),
     }).catch(() => {});
     return c.json({ success: true });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] DELETE /tracks/:id:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // POST /tracks/:id/like — atomic toggle via single transaction
@@ -385,7 +395,7 @@ app.post("/tracks/:id/like", async (c) => {
   } catch (err) {
     if ((err as Error).message === "No internal token")
       return c.json({ success: false, error: "Unauthorized" }, 401);
-    logger.error("[social] POST /tracks/:id/like:", err);
+    logger.error("[social] POST /tracks/:id/like:", { message: String(err) });
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -461,54 +471,71 @@ app.post("/follow/:userId", async (c) => {
   } catch (err) {
     if ((err as Error).message === "No internal token")
       return c.json({ success: false, error: "Unauthorized" }, 401);
-    logger.error("[social] POST /follow:", err);
+    logger.error("[social] POST /follow:", { message: String(err) });
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
 // GET /followers — own followers
 app.get("/followers", async (c) => {
+  let userId: string;
+  try { userId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: userId } = getPayload(c.req.raw);
     const { rows } = await pool.query(
       "SELECT follower_id, created_at FROM follows WHERE followee_id = $1 ORDER BY created_at DESC",
       [userId]
     );
     return c.json({ success: true, data: rows });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] GET /followers:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // GET /following — who I follow
 app.get("/following", async (c) => {
+  let userId: string;
+  try { userId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: userId } = getPayload(c.req.raw);
     const { rows } = await pool.query(
       "SELECT followee_id, created_at FROM follows WHERE follower_id = $1 ORDER BY created_at DESC",
       [userId]
     );
     return c.json({ success: true, data: rows });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] GET /following:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // GET /follow/:userId/status — am I following this user?
 app.get("/follow/:userId/status", async (c) => {
+  let followerId: string;
+  try { followerId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: followerId } = getPayload(c.req.raw);
     const { userId: followeeId } = c.req.param();
     const { rows } = await pool.query(
       "SELECT 1 FROM follows WHERE follower_id = $1 AND followee_id = $2",
       [followerId, followeeId]
     );
     return c.json({ success: true, data: { following: rows.length > 0 } });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] GET /follow/status:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // ── FEED ──────────────────────────────────────────────────────────────────────
 
 // GET /feed — activity feed (with Redis cache)
 app.get("/feed", async (c) => {
+  let userId: string;
+  try { userId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: userId } = getPayload(c.req.raw);
     const page  = Math.max(1, parseInt(c.req.query("page") ?? "1"));
     const limit = Math.min(50, parseInt(c.req.query("limit") ?? "20"));
 
@@ -542,19 +569,27 @@ app.get("/feed", async (c) => {
     }
 
     return c.json({ success: true, data: { items } });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] GET /feed:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // ── MY TRACKS ─────────────────────────────────────────────────────────────────
 app.get("/my-tracks", async (c) => {
+  let userId: string;
+  try { userId = getPayload(c.req.raw).sub; }
+  catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
   try {
-    const { sub: userId } = getPayload(c.req.raw);
     const { rows } = await pool.query(
       "SELECT * FROM public_tracks WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50",
       [userId]
     );
     return c.json({ success: true, data: rows.map(rowToTrack) });
-  } catch { return c.json({ success: false, error: "Unauthorized" }, 401); }
+  } catch (err) {
+    logger.error("[social] GET /my-tracks:", { message: String(err) });
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
@@ -566,4 +601,4 @@ async function start() {
   );
 }
 
-start().catch(err => { logger.error("[social] Startup failed:", err); process.exit(1); });
+start().catch(err => { logger.error("[social] Startup failed:", { message: String(err) }); process.exit(1); });

@@ -36,7 +36,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
   try {
     event = stripeClient.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
   } catch (err) {
-    logger.error("[webhook] Signature verification failed:", err);
+    logger.error("[webhook] Signature verification failed", { message: String(err) });
     return res.status(400).json({ error: "Invalid signature" });
   }
 
@@ -47,7 +47,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
     // Metadata eksikse log at — Stripe tekrar denemesi için yine 200 döner
     if (!userId || credits <= 0) {
-      logger.error("[webhook] checkout.session.completed: missing/invalid metadata in session", session.id, { userId, credits });
+      logger.error("[webhook] checkout.session.completed: missing/invalid metadata", { sessionId: session.id, userId, credits });
     } else {
       try {
         const user = await User.findByIdAndUpdate(
@@ -67,10 +67,10 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
           });
           logger.info(`[webhook] Added ${credits} credits to user ${userId}`);
         } else {
-          logger.error("[webhook] User not found for userId:", userId, "session:", session.id);
+          logger.error("[webhook] User not found", { userId, sessionId: session.id });
         }
       } catch (err) {
-        logger.error("[webhook] Failed to add credits:", err);
+        logger.error("[webhook] Failed to add credits", { message: String(err) });
         return res.status(500).json({ error: "Failed to process payment" });
       }
     }
@@ -80,7 +80,7 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 });
 
 // ── JSON middleware (after webhook raw route) ─────────────────────────────────
-app.use(express.json());
+app.use(express.json({ limit: "8kb" }));
 
 // ── MODELS ────────────────────────────────────────────────────────────────────
 const userSchema = new mongoose.Schema({
@@ -105,7 +105,9 @@ const CreditLog = mongoose.model("CreditLog", creditLogSchema);
 function getInternalPayload(req: express.Request): InternalJwtPayload {
   const token = req.headers["x-internal-token"] as string;
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (!payload._internal) throw new Error("Not an internal token");
+  return payload;
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
@@ -175,7 +177,7 @@ app.post("/spend", async (req, res) => {
 
     res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
   } catch (err) {
-    logger.error("spend error", err);
+    logger.error("spend error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -208,7 +210,7 @@ app.post("/earn", async (req, res) => {
 
     res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
   } catch (err) {
-    logger.error("earn error", err);
+    logger.error("earn error", { message: String(err) });
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
@@ -229,6 +231,10 @@ app.post("/purchase", async (req, res) => {
     const pkg = CREDIT_PACKAGES.find(p => p.id === packageId);
     if (!pkg) return res.status(400).json({ success: false, error: "Invalid package" });
 
+    const FRONTEND = process.env.FRONTEND_URL ?? "http://localhost:5173";
+    const safeSuccessUrl = (successUrl?.startsWith(FRONTEND)) ? successUrl : `${FRONTEND}/dashboard?purchase=success`;
+    const safeCancelUrl  = (cancelUrl?.startsWith(FRONTEND))  ? cancelUrl  : `${FRONTEND}/dashboard?purchase=cancelled`;
+
     const session = await stripeClient.checkout.sessions.create({
       mode: "payment",
       line_items: [{
@@ -247,13 +253,13 @@ app.post("/purchase", async (req, res) => {
         packageId: pkg.id,
         credits: String(pkg.credits),
       },
-      success_url: successUrl ?? `${process.env.FRONTEND_URL ?? "http://localhost:5173"}/dashboard?purchase=success`,
-      cancel_url: cancelUrl ?? `${process.env.FRONTEND_URL ?? "http://localhost:5173"}/dashboard?purchase=cancelled`,
+      success_url: safeSuccessUrl,
+      cancel_url: safeCancelUrl,
     });
 
     res.json({ success: true, data: { checkoutUrl: session.url, sessionId: session.id } });
   } catch (err) {
-    logger.error("[purchase]", err);
+    logger.error("[purchase] error", { message: String(err) });
     res.status(500).json({ success: false, error: "Failed to create checkout session" });
   }
 });
@@ -274,4 +280,4 @@ app.get("/health", (_, res) => res.json({ status: "ok", service: "credit" }));
 
 mongoose.connect(MONGO_URI!).then(() => {
   app.listen(PORT, () => logger.info(`[credit] Listening on :${PORT}`));
-}).catch(err => { logger.error("[credit] MongoDB failed", err); process.exit(1); });
+}).catch(err => { logger.error("[credit] MongoDB failed", { message: String(err) }); process.exit(1); });
