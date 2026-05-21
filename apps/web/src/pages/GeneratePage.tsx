@@ -13,6 +13,7 @@ import { GenerationCard } from "../components/generation/GenerationCard";
 import { SelectField } from "../components/SelectField";
 import type { GenerationItem } from "../store/useGenerationStore";
 import { useT } from "../store/useI18nStore";
+import { toast } from "../lib/toast";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,10 +21,11 @@ const STYLES: MusicStyle[]            = ["ambient", "action", "puzzle", "horror"
 const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
 
-interface Capabilities { music: { beatoven: boolean; sonauto: boolean }; }
-const ALL_PROVIDERS: { value: MusicProvider; label: string; badge?: string }[] = [
+interface Capabilities { music: { beatoven: boolean; sonauto: boolean; lyria?: boolean }; }
+const ALL_PROVIDERS: { value: MusicProvider; label: string; badge?: string; comingSoon?: boolean }[] = [
   { value: "beatoven", label: "Beatoven" },
   { value: "sonauto",  label: "Sonauto"  },
+  { value: "lyria",    label: "Lyria",    badge: "SOON", comingSoon: true },
 ];
 
 const MAX_IMAGE_BYTES     = 10 * 1024 * 1024;
@@ -64,15 +66,18 @@ export default function GeneratePage() {
   const [formError,     setFormError]     = useState<string | null>(null);
   const [capabilities,  setCapabilities]  = useState<Capabilities | null>(null);
 
+  // Lyria her zaman listede kalır (comingSoon=true), diğerleri capabilities'e göre filtrelenir
   const availableProviders = capabilities
-    ? ALL_PROVIDERS.filter(p => capabilities.music[p.value as keyof typeof capabilities.music])
+    ? ALL_PROVIDERS.filter(p => p.comingSoon || capabilities.music[p.value as keyof typeof capabilities.music])
     : ALL_PROVIDERS;
 
   const creditCost = CREDIT_COST[provider]?.[duration] ?? 0;
 
   const onSSEStatus = useCallback((event: SseStatusEvent) => handleSSEEvent(event), [handleSSEEvent]);
   useGenerationSSE({ onStatus: onSSEStatus });
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => {
+    fetchHistory().catch(() => toast(t.generate.generationFailed, "error"));
+  }, [fetchHistory]);
 
   useEffect(() => {
     api.get("/api/generate/capabilities")
@@ -80,10 +85,12 @@ export default function GeneratePage() {
       .catch(() => {}); // hata olursa tüm provider'lar gösterilir
   }, []);
 
-  // Eğer seçili provider artık mevcut değilse birinciye geç
+  // Eğer seçili provider coming-soon veya mevcut değilse birinciye geç
   useEffect(() => {
-    if (availableProviders.length && !availableProviders.find(p => p.value === provider)) {
-      setProvider(availableProviders[0].value);
+    const current = availableProviders.find(p => p.value === provider);
+    if (!current || current.comingSoon) {
+      const first = availableProviders.find(p => !p.comingSoon);
+      if (first) setProvider(first.value);
     }
   }, [availableProviders, provider]);
 
@@ -174,7 +181,11 @@ export default function GeneratePage() {
         ? 1
         : Math.ceil((CREDIT_COST[item.provider as MusicProvider]?.[item.duration ?? 30] ?? 5) / 2);
       updateCredit(-retryCost);
-    } catch { /* card stays in failed state */ }
+    } catch (err) {
+      const msg = (err as AxiosError<{ error?: string }>).response?.data?.error
+        ?? (err as Error).message;
+      toast(msg || t.generate.generationFailed, "error");
+    }
   }
 
   function handleOpenInStudio(item: GenerationItem) {
@@ -387,7 +398,11 @@ export default function GeneratePage() {
                     label={t.generate.provider}
                     value={provider}
                     onChange={v => setProvider(v as MusicProvider)}
-                    options={availableProviders.map(p => ({ value: p.value, label: p.label }))}
+                    options={availableProviders.map(p => ({
+                      value: p.value,
+                      label: p.comingSoon ? `${p.label} — Coming Soon` : p.label,
+                      disabled: p.comingSoon,
+                    }))}
                   />
                 </div>
 

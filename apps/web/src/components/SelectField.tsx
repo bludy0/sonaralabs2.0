@@ -3,7 +3,7 @@ interface SelectFieldProps {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
 }
 
 export function SelectField({ id, label, value, onChange, options }: SelectFieldProps) {
@@ -25,7 +25,9 @@ export function SelectField({ id, label, value, onChange, options }: SelectField
         style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
       >
         {options.map(o => (
-          <option key={o.value} value={o.value} className="capitalize">{o.label}</option>
+          <option key={o.value} value={o.value} disabled={o.disabled} className="capitalize">
+            {o.label}
+          </option>
         ))}
       </select>
     </div>
