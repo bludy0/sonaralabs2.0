@@ -130,8 +130,7 @@ services:
       LIBRARY_SERVICE_URL: http://library:3004
       CREDIT_SERVICE_URL: http://credit:3005
       ADMIN_SERVICE_URL: http://admin:3006
-      NOTIFICATION_SERVICE_URL: http://notification:3007
-      PROFILE_SERVICE_URL:      http://profile:3008
+      PROFILE_SERVICE_URL: http://profile:3008
       SOCIAL_SERVICE_URL:       http://social:3009
       # Redis (rate limit store)
       REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
@@ -193,7 +192,6 @@ services:
       MINIO_BUCKET: sonaralabs-audio
       # Internal service URLs
       CREDIT_SERVICE_URL: http://credit:3005
-      NOTIFICATION_SERVICE_URL: http://notification:3007
     depends_on:
       mongo:
         condition: service_healthy
@@ -276,21 +274,6 @@ services:
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
     depends_on:
       mongo:
-        condition: service_healthy
-
-  notification:
-    build:
-      context: .
-      dockerfile: services/notification/Dockerfile
-    restart: unless-stopped
-    networks: [sonaralabs]
-    environment:
-      PORT: 3007
-      NODE_ENV: development
-      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
-    depends_on:
-      redis:
         condition: service_healthy
 
   profile:

@@ -88,7 +88,6 @@ jobs:
           - library
           - credit
           - admin
-          - notification
           - profile
           - social
     steps:
@@ -147,7 +146,7 @@ jobs:
         run: |
           docker compose up -d \
             mongo redis postgres minio minio-init \
-            auth generation upload library credit admin notification profile social gateway
+            auth generation upload library credit admin profile social gateway
         timeout-minutes: 5
 
       - name: Wait for gateway to be healthy
@@ -207,7 +206,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          for svc in gateway auth generation upload library credit admin notification profile social; do
+          for svc in gateway auth generation upload library credit admin profile social; do
             echo "=== Deploying $svc ==="
             railway redeploy --service "$svc" --yes || echo "WARN: $svc redeploy failed (check Railway dashboard)"
           done

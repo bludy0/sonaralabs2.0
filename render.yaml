@@ -41,8 +41,6 @@ services:
         value: https://sonaralabs-credit.onrender.com
       - key: ADMIN_SERVICE_URL
         value: https://sonaralabs-admin.onrender.com
-      - key: NOTIFICATION_SERVICE_URL
-        value: https://sonaralabs-notification.onrender.com
       - key: PROFILE_SERVICE_URL
         value: https://sonaralabs-profile.onrender.com
       - key: SOCIAL_SERVICE_URL
@@ -135,8 +133,6 @@ services:
         sync: false   # B2 public URL: https://f005.backblazeb2.com/file/sonaralabs-audio
       - key: CREDIT_SERVICE_URL
         value: https://sonaralabs-credit.onrender.com
-      - key: NOTIFICATION_SERVICE_URL
-        value: https://sonaralabs-notification.onrender.com
 
   # ── UPLOAD ─────────────────────────────────────────────────────────────────
   - type: web
@@ -232,23 +228,6 @@ services:
       - key: MONGO_URI
         sync: false
       - key: INTERNAL_JWT_SECRET
-        sync: false
-
-  # ── NOTIFICATION ───────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-notification
-    runtime: docker
-    dockerfilePath: ./services/notification/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3007
-      - key: NODE_ENV
-        value: production
-      - key: INTERNAL_JWT_SECRET
-        sync: false
-      - key: REDIS_URL
         sync: false
 
   # ── PROFILE ────────────────────────────────────────────────────────────────
