@@ -39,8 +39,6 @@ services:
         value: https://sonaralabs-library.onrender.com
       - key: ADMIN_SERVICE_URL
         value: https://sonaralabs-admin.onrender.com
-      - key: PROFILE_SERVICE_URL
-        value: https://sonaralabs-profile.onrender.com
       - key: SOCIAL_SERVICE_URL
         value: https://sonaralabs-social.onrender.com
       - key: REDIS_URL
@@ -211,21 +209,23 @@ services:
       - key: INTERNAL_JWT_SECRET
         sync: false
 
-  # ── PROFILE ────────────────────────────────────────────────────────────────
+  # ── SOCIAL (profile absorbed — MongoDB only) ──────────────────────────────
   - type: web
-    name: sonaralabs-profile
+    name: sonaralabs-social
     runtime: docker
-    dockerfilePath: ./services/profile/Dockerfile
+    dockerfilePath: ./services/social/Dockerfile
     dockerContext: .
     plan: free
     envVars:
       - key: PORT
-        value: 3008
+        value: 3009
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        sync: false   # PostgreSQL bağlantı string'i
+      - key: MONGO_URI
+        sync: false
       - key: INTERNAL_JWT_SECRET
+        sync: false
+      - key: REDIS_URL
         sync: false
       - key: MINIO_ENDPOINT
         sync: false
@@ -241,24 +241,3 @@ services:
         value: sonaralabs-avatars
       - key: MINIO_PUBLIC_URL
         sync: false
-
-  # ── SOCIAL ─────────────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-social
-    runtime: docker
-    dockerfilePath: ./services/social/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3009
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false   # PostgreSQL bağlantı string'i
-      - key: INTERNAL_JWT_SECRET
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: PROFILE_SERVICE_URL
-        value: https://sonaralabs-profile.onrender.com

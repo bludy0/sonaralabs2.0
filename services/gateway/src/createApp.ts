@@ -26,7 +26,6 @@ export interface AppDeps {
     upload:     string;
     library:    string;
     admin:      string;
-    profile:    string;
     social:     string;
   };
   rateLimits: {
@@ -228,10 +227,10 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.auth, c.req.path.replace("/api/users", "") || "/"));
 
   // ── Profile ───────────────────────────────────────────────────────────────
-  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me/avatar"));
-  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.profile, `/${c.req.param("username")}`));
+  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me/avatar"));
+  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.social, `/profile/${c.req.param("username")}`));
 
   // ── Projects ──────────────────────────────────────────────────────────────
   app.get("/api/projects/share/:token", generalLimiter, (c) =>

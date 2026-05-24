@@ -19,7 +19,6 @@ const {
   UPLOAD_SERVICE_URL       = "http://upload:3003",
   LIBRARY_SERVICE_URL      = "http://library:3004",
   ADMIN_SERVICE_URL  = "http://admin:3006",
-  PROFILE_SERVICE_URL = "http://profile:3008",
   SOCIAL_SERVICE_URL  = "http://social:3009",
 } = process.env;
 
@@ -63,7 +62,6 @@ const app = createApp({
     upload:     UPLOAD_SERVICE_URL,
     library:    LIBRARY_SERVICE_URL,
     admin:      ADMIN_SERVICE_URL,
-    profile:    PROFILE_SERVICE_URL,
     social:     SOCIAL_SERVICE_URL,
   },
   rateLimits: {

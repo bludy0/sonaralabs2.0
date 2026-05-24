@@ -129,8 +129,7 @@ services:
       UPLOAD_SERVICE_URL: http://upload:3003
       LIBRARY_SERVICE_URL: http://library:3004
       ADMIN_SERVICE_URL: http://admin:3006
-      PROFILE_SERVICE_URL: http://profile:3008
-      SOCIAL_SERVICE_URL:       http://social:3009
+      SOCIAL_SERVICE_URL: http://social:3009
       # Redis (rate limit store)
       REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
       # CORS
@@ -262,25 +261,6 @@ services:
       mongo:
         condition: service_healthy
 
-  profile:
-    build:
-      context: .
-      dockerfile: services/profile/Dockerfile
-    restart: unless-stopped
-    networks: [sonaralabs]
-    environment:
-      PORT: 3008
-      NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
-      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   social:
     build:
       context: .
@@ -290,17 +270,22 @@ services:
     environment:
       PORT: 3009
       NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
       REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
-      PROFILE_SERVICE_URL: http://profile:3008
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: false
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_AVATARS: sonaralabs-avatars
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
-      profile:
-        condition: service_started
+      minio:
+        condition: service_healthy
 
   frontend:
     build:
