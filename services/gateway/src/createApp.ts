@@ -25,7 +25,6 @@ export interface AppDeps {
     generation: string;
     upload:     string;
     library:    string;
-    credit:     string;
     admin:      string;
     profile:    string;
     social:     string;
@@ -208,12 +207,12 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.library, "/collections" + c.req.path.replace("/api/collections", "")));
 
   // ── Credits ───────────────────────────────────────────────────────────────
-  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/packages"));
-  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/webhook"));
+  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/packages"));
+  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/webhook"));
   app.post("/api/credits/earn",  (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.post("/api/credits/spend", (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.all ("/api/credits/*", requireAuth, generalLimiter, (c) =>
-    proxyTo(c, serviceUrls.credit, c.req.path.replace("/api/credits", "") || "/"));
+    proxyTo(c, serviceUrls.auth, "/credits" + (c.req.path.replace("/api/credits", "") || "/")));
 
   // ── Notification ──────────────────────────────────────────────────────────
   // /api/notify/stream → generation servisi (SSE notification taşındı)

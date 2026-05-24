@@ -221,6 +221,9 @@ importers:
       nodemailer:
         specifier: ^8.0.7
         version: 8.0.7
+      stripe:
+        specifier: ^17.7.0
+        version: 17.7.0
     devDependencies:
       '@types/bcryptjs':
         specifier: ^2.4.6
@@ -469,58 +472,6 @@ importers:
       mongodb-memory-server:
         specifier: ^11.0.1
         version: 11.0.1
-      supertest:
-        specifier: ^7.0.0
-        version: 7.2.2
-      ts-jest:
-        specifier: ^29.2.5
-        version: 29.4.9(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@30.3.0)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@30.3.0)(jest@29.7.0(@types/node@22.19.17))(typescript@5.9.3)
-      tsx:
-        specifier: ^4.19.2
-        version: 4.21.0
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
-
-  services/notification:
-    dependencies:
-      '@sonaralabs/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      axios:
-        specifier: ^1.7.9
-        version: 1.15.0
-      bullmq:
-        specifier: ^5.34.0
-        version: 5.73.3
-      express:
-        specifier: ^4.21.2
-        version: 4.22.1
-      jsonwebtoken:
-        specifier: ^9.0.2
-        version: 9.0.3
-      redis:
-        specifier: ^4.7.0
-        version: 4.7.1
-    devDependencies:
-      '@types/express':
-        specifier: ^5.0.0
-        version: 5.0.6
-      '@types/jest':
-        specifier: ^30.0.0
-        version: 30.0.0
-      '@types/jsonwebtoken':
-        specifier: ^9.0.8
-        version: 9.0.10
-      '@types/node':
-        specifier: ^22.10.7
-        version: 22.19.17
-      '@types/supertest':
-        specifier: ^6.0.2
-        version: 6.0.3
-      jest:
-        specifier: ^29.7.0
-        version: 29.7.0(@types/node@22.19.17)
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
@@ -3773,6 +3724,10 @@ packages:
 
   stripe@14.25.0:
     resolution: {integrity: sha512-wQS3GNMofCXwH8TSje8E1SE8zr6ODiGtHQgPtO95p9Mb4FhKC9jvXR2NUTpZ9ZINlckJcFidCmaTFV4P6vsb9g==}
+    engines: {node: '>=12.*'}
+
+  stripe@17.7.0:
+    resolution: {integrity: sha512-aT2BU9KkizY9SATf14WhhYVv2uOapBWX0OFWF4xvcj1mPaNotlSc2CsxpS4DS46ZueSppmCF5BX1sNYBtwBvfw==}
     engines: {node: '>=12.*'}
 
   strnum@2.2.3:
@@ -7321,6 +7276,11 @@ snapshots:
   strip-json-comments@3.1.1: {}
 
   stripe@14.25.0:
+    dependencies:
+      '@types/node': 22.19.17
+      qs: 6.15.1
+
+  stripe@17.7.0:
     dependencies:
       '@types/node': 22.19.17
       qs: 6.15.1

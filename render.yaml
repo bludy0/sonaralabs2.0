@@ -37,8 +37,6 @@ services:
         value: https://sonaralabs-upload.onrender.com
       - key: LIBRARY_SERVICE_URL
         value: https://sonaralabs-library.onrender.com
-      - key: CREDIT_SERVICE_URL
-        value: https://sonaralabs-credit.onrender.com
       - key: ADMIN_SERVICE_URL
         value: https://sonaralabs-admin.onrender.com
       - key: PROFILE_SERVICE_URL
@@ -90,6 +88,14 @@ services:
         sync: false   # örn: Sonaralabs <noreply@yourdomain.com>
       - key: APP_URL
         sync: false   # Vercel URL'in
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false   # Vercel URL'in — Stripe success/cancel redirect için
+      - key: INITIAL_CREDIT_BALANCE
+        value: 100
 
   # ── GENERATION ─────────────────────────────────────────────────────────────
   - type: web
@@ -131,8 +137,8 @@ services:
         value: sonaralabs-audio
       - key: MINIO_PUBLIC_URL
         sync: false   # B2 public URL: https://f005.backblazeb2.com/file/sonaralabs-audio
-      - key: CREDIT_SERVICE_URL
-        value: https://sonaralabs-credit.onrender.com
+      - key: AUTH_SERVICE_URL
+        value: https://sonaralabs-auth.onrender.com
 
   # ── UPLOAD ─────────────────────────────────────────────────────────────────
   - type: web
@@ -187,31 +193,6 @@ services:
         sync: false
       - key: INTERNAL_JWT_SECRET
         sync: false
-
-  # ── CREDIT ─────────────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-credit
-    runtime: docker
-    dockerfilePath: ./services/credit/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3005
-      - key: NODE_ENV
-        value: production
-      - key: MONGO_URI
-        sync: false
-      - key: INTERNAL_JWT_SECRET
-        sync: false
-      - key: INITIAL_CREDIT_BALANCE
-        value: 100
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: FRONTEND_URL
-        sync: false   # Vercel URL'in — Stripe success/cancel redirect için
 
   # ── ADMIN ──────────────────────────────────────────────────────────────────
   - type: web

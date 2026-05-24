@@ -34,7 +34,7 @@ app.use(express.json({ limit: "15mb" }));
 const {
   PORT = "3002", MONGO_URI, INTERNAL_JWT_SECRET, REDIS_URL = "redis://localhost:6379",
   JOB_TIMEOUT_MS = "300000",
-  CREDIT_SERVICE_URL = "http://credit:3005",
+  AUTH_SERVICE_URL = "http://auth:3001",
 } = process.env;
 
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
@@ -131,14 +131,14 @@ function notifyUser(payload: NotifyJobPayload) {
 }
 
 async function spendCredit(userId: string, amount: number, jobId: string, reason: string) {
-  await axios.post(`${CREDIT_SERVICE_URL}/spend`, {
+  await axios.post(`${AUTH_SERVICE_URL}/credits/spend`, {
     userId, amount, reason, relatedId: jobId, relatedModel: "Generation",
   }, { headers: { "x-internal-token": makeInternalToken() } });
 }
 
 async function earnCredit(userId: string, amount: number, relatedId: string) {
   try {
-    await axios.post(`${CREDIT_SERVICE_URL}/earn`, {
+    await axios.post(`${AUTH_SERVICE_URL}/credits/earn`, {
       userId, amount, reason: "queue_failure_refund", relatedId, relatedModel: "Generation",
     }, { headers: { "x-internal-token": makeInternalToken() } });
   } catch {
