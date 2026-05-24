@@ -376,7 +376,7 @@ app.post("/tracks/:id/like", async (c) => {
     // Single transaction: attempt INSERT; if conflict (already liked) DELETE instead.
     // The CTE returns 1 row if an insert happened, 0 rows if it conflicted.
     // The UPDATE adjusts like_count in the same statement — no separate SELECT needed.
-    const { rows } = await pool.query<{ like_count: number; liked: boolean }>(`
+    const { rows } = await pool.query<{ like_count: number; liked: boolean; title: string }>(`
       WITH attempt AS (
         INSERT INTO track_likes (user_id, track_id)
         VALUES ($1, $2)
@@ -400,16 +400,31 @@ app.post("/tracks/:id/like", async (c) => {
           0
         )
         WHERE id = $2
-        RETURNING like_count
+        RETURNING like_count, title
       )
       SELECT
         u.like_count,
+        u.title,
         (SELECT COUNT(*) FROM attempt) > 0 AS liked
       FROM updated u
     `, [userId, id]);
 
     if (!rows.length) return c.json({ success: false, error: "Track not found" }, 404);
-    return c.json({ success: true, data: { liked: rows[0].liked, likeCount: rows[0].like_count } });
+    const { liked, like_count, title } = rows[0];
+
+    if (liked) {
+      let username = userId;
+      try {
+        const res = await fetch(`${PROFILE_SERVICE_URL}/internal/profile/${userId}`, {
+          headers: { "x-internal-token": makeInternalToken() },
+        });
+        const pd = await res.json() as { data?: { username?: string } };
+        username = pd.data?.username ?? userId;
+      } catch { /* use userId as fallback */ }
+      fanOutFeedEvent(userId, username, "liked", "track", id, title).catch(() => {});
+    }
+
+    return c.json({ success: true, data: { liked, likeCount: like_count } });
   } catch (err) {
     if ((err as Error).message === "No internal token")
       return c.json({ success: false, error: "Unauthorized" }, 401);

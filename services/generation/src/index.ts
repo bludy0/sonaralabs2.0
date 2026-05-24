@@ -196,26 +196,28 @@ worker.on("failed", async (job, err) => {
   if (!job) return;
   const { generationId, userId } = job.data;
 
-  const anyErr       = err as any;
-  const infraError   = isInfrastructureError(anyErr);
-  const userFacingMsg = infraError
-    ? providerErrorMessage(anyErr)
-    : err.message;
+  const anyErr        = err as any;
+  const infraError    = isInfrastructureError(anyErr);
+  const userFacingMsg = infraError ? providerErrorMessage(anyErr) : err.message;
 
-  await Generation.findByIdAndUpdate(generationId, {
-    status: "failed", failedAt: new Date(), failReason: userFacingMsg,
-  });
+  try {
+    await Generation.findByIdAndUpdate(generationId, {
+      status: "failed", failedAt: new Date(), failReason: userFacingMsg,
+    });
 
-  // Infrastructure hatalarında krediyi geri ver
-  if (infraError) {
-    const gen = await Generation.findById(generationId).select("creditCost").lean();
-    if (gen?.creditCost) {
-      await earnCredit(userId, gen.creditCost, generationId);
-      logger.info(`[generation] Refunded credits for job ${job.id}`, { credits: gen.creditCost });
+    if (infraError) {
+      const gen = await Generation.findById(generationId).select("creditCost").lean();
+      if (gen?.creditCost) {
+        await earnCredit(userId, gen.creditCost, generationId);
+        logger.info(`[generation] Refunded credits for job ${job.id}`, { credits: gen.creditCost });
+      }
     }
+
+    await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: userFacingMsg });
+  } catch (handlerErr) {
+    logger.error(`[generation] Failed handler error for job ${job.id}`, { message: String(handlerErr) });
   }
 
-  await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: userFacingMsg });
   logger.error(`[generation] Job ${job.id} failed`, { infraError, message: err.message });
 });
 
@@ -338,6 +340,9 @@ app.post("/analyze-image", async (req, res) => {
     }
     if (imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
       return res.status(413).json({ success: false, error: "Image too large. Maximum 10 MB" });
+    }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) {
+      return res.status(400).json({ success: false, error: "imageBase64 is not valid base64" });
     }
 
     const refId = `img-${Date.now()}`;

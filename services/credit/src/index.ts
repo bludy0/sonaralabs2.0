@@ -45,9 +45,9 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     const userId  = session.metadata?.userId;
     const credits = parseInt(session.metadata?.credits ?? "0");
 
-    // Metadata eksikse log at — Stripe tekrar denemesi için yine 200 döner
     if (!userId || credits <= 0) {
       logger.error("[webhook] checkout.session.completed: missing/invalid metadata", { sessionId: session.id, userId, credits });
+      return res.status(400).json({ error: "Invalid session metadata" });
     } else {
       try {
         const user = await User.findByIdAndUpdate(

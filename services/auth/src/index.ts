@@ -324,10 +324,15 @@ app.post("/register", async (req, res) => {
         { sub: String(user._id), role: user.role, _internal: true },
         INTERNAL_JWT_SECRET!, { expiresIn: "5m" }
       );
-      axios.post(`${CREDIT_SERVICE_URL}/earn`,
-        { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
-        { headers: { "x-internal-token": internalToken } }
-      ).catch(err => logger.warn("[auth] Credit earn log failed:", { message: String(err) }));
+      const grantCredit = () =>
+        axios.post(`${CREDIT_SERVICE_URL}/earn`,
+          { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
+          { headers: { "x-internal-token": internalToken } }
+        );
+      grantCredit()
+        .catch(() => setTimeout(() => grantCredit().catch(err =>
+          logger.error("[auth] Register bonus failed after retry", { userId: String(user._id), message: String(err) })
+        ), 5_000));
     }
 
     res.status(201).json({
@@ -362,11 +367,10 @@ app.get("/verify-email", async (req, res) => {
         error: "Geçersiz veya süresi dolmuş onay linki." });
     }
 
-    // Onayla ve token'ı temizle
-    user.isEmailVerified   = true;
-    user.emailVerifyToken  = undefined as any;
-    user.emailVerifyExpires = undefined as any;
-    await user.save();
+    await User.findByIdAndUpdate(user._id, {
+      $set:   { isEmailVerified: true },
+      $unset: { emailVerifyToken: 1, emailVerifyExpires: 1 },
+    });
 
     // Otomatik giriş yaptır
     const accessToken  = makeAccessToken(String(user._id), user.role);
@@ -582,12 +586,11 @@ app.post("/reset-password", async (req, res) => {
       return res.status(400).json({ success: false, error: "Geçersiz veya süresi dolmuş link." });
     }
 
-    user.passwordHash         = await bcrypt.hash(newPassword, 12);
-    user.passwordResetToken   = undefined as any;
-    user.passwordResetExpires = undefined as any;
-    user.failedLoginAttempts  = 0;
-    user.lockoutUntil         = undefined as any;
-    await user.save();
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await User.findByIdAndUpdate(user._id, {
+      $set:   { passwordHash: newHash, failedLoginAttempts: 0 },
+      $unset: { passwordResetToken: 1, passwordResetExpires: 1, lockoutUntil: 1 },
+    });
 
     // Tüm oturumları sonlandır
     await RefreshToken.deleteMany({ userId: user._id });

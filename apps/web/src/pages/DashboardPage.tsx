@@ -29,6 +29,13 @@ interface DailyStatRow {
   credits: number;
 }
 
+interface CreditPackage {
+  id: string;
+  credits: number;
+  price: number;  // cents
+  label: string;
+}
+
 
 const statusDotColor: Record<string, string> = {
   done: "var(--success)",
@@ -80,6 +87,10 @@ export default function DashboardPage() {
   const [dailyStats, setDailyStats]       = useState<DailyStatRow[]>([]);
   const [loading, setLoading]             = useState(true);
   const [purchaseBanner, setPurchaseBanner] = useState<"success" | "cancelled" | null>(null);
+  const [packages, setPackages]           = useState<CreditPackage[]>([]);
+  const [packagesUnavailable, setPackagesUnavailable] = useState(false);
+  const [purchasing, setPurchasing]       = useState<string | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin";
 
@@ -135,8 +146,50 @@ export default function DashboardPage() {
       }
     }
 
+    async function loadPackages() {
+      try {
+        const res = await api.get("/api/credits/packages");
+        const pkgs: CreditPackage[] = res.data?.data ?? res.data?.packages ?? [];
+        setPackages(pkgs);
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 503) {
+          setPackagesUnavailable(true);
+        }
+      }
+    }
+
     load();
+    loadPackages();
   }, [isAdmin]);
+
+  async function handlePurchase(packageId: string) {
+    setPurchasing(packageId);
+    setPurchaseError(null);
+    try {
+      const origin = window.location.origin;
+      const res = await api.post("/api/credits/purchase", {
+        packageId,
+        successUrl: `${origin}/dashboard?purchase=success`,
+        cancelUrl:  `${origin}/dashboard?purchase=cancelled`,
+      });
+      const checkoutUrl: string = res.data?.data?.checkoutUrl ?? res.data?.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      } else {
+        setPurchaseError("Could not initiate checkout. Please try again.");
+      }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 503) {
+        setPurchaseError("Payment system is not available yet.");
+      } else {
+        setPurchaseError("Purchase failed. Please try again.");
+      }
+    } finally {
+      setPurchasing(null);
+    }
+  }
 
   const doneCount = historyItems.filter(i => i.status === "done").length;
   const recentItems = historyItems.slice(0, 5);
@@ -333,44 +386,87 @@ export default function DashboardPage() {
         >
           Buy Credits
         </p>
-        <div
-          className="rounded-lg p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5"
-          style={{ background: "var(--bg-card)", border: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}
-        >
-          {/* Icon */}
+
+        {purchaseError && (
           <div
-            className="w-12 h-12 rounded-full flex items-center justify-center text-xl shrink-0"
-            style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)" }}
+            className="mb-4 flex items-center justify-between rounded-lg px-4 py-3 text-sm"
+            style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}
           >
-            ✉
+            <span>{purchaseError}</span>
+            <button onClick={() => setPurchaseError(null)} className="ml-4" style={{ color: "var(--error)" }}>✕</button>
           </div>
+        )}
 
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold mb-1" style={{ color: "var(--text-1)" }}>
-              Kredi satın almak için iletişime geçin
-            </p>
-            <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-              Ödeme sistemi henüz aktif değil. Kredi almak veya fiyat bilgisi için
-              doğrudan bize yazabilirsiniz — en kısa sürede dönüş yapacağız.
-            </p>
-          </div>
-
-          <a
-            href="mailto:yunuseaslan427@gmail.com?subject=Sonaralabs%20Kredi%20Talebi&body=Merhaba%2C%0A%0ASonaralabs%20hesab%C4%B1m%20i%C3%A7in%20kredi%20sat%C4%B1n%20almak%20istiyorum.%0A%0AKullan%C4%B1c%C4%B1%20email%3A%20"
-            className="shrink-0 px-5 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-all"
-            style={{
-              background: "var(--accent)",
-              color: "var(--accent-on)",
-              boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.boxShadow = "0px 0px 28px color-mix(in srgb, var(--accent) 50%, transparent)")}
-            onMouseLeave={e => (e.currentTarget.style.boxShadow = "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)")}
+        {packagesUnavailable || packages.length === 0 ? (
+          <div
+            className="rounded-lg p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5"
+            style={{ background: "var(--bg-card)", border: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}
           >
-            İletişime Geç →
-          </a>
-        </div>
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center text-xl shrink-0"
+              style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)" }}
+            >
+              ✦
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold mb-1" style={{ color: "var(--text-1)" }}>
+                Credit purchases coming soon
+              </p>
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
+                The payment system is not yet active. Contact us if you need credits.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {packages.map(pkg => {
+              const isBuying = purchasing === pkg.id;
+              const dollars = (pkg.price / 100).toFixed(2);
+              return (
+                <div
+                  key={pkg.id}
+                  className="rounded-lg p-5 flex flex-col gap-4"
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "1px solid color-mix(in srgb, var(--accent) 12%, transparent)",
+                  }}
+                >
+                  <div>
+                    <p
+                      className="text-2xl font-bold font-mono"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {pkg.credits}
+                    </p>
+                    <p
+                      className="text-[10px] font-bold tracking-[0.2em] uppercase mt-0.5"
+                      style={{ color: "var(--text-3)" }}
+                    >
+                      credits
+                    </p>
+                  </div>
+                  <p className="text-xl font-bold" style={{ color: "var(--text-1)" }}>
+                    ${dollars}
+                  </p>
+                  <button
+                    onClick={() => handlePurchase(pkg.id)}
+                    disabled={!!purchasing}
+                    className="w-full py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: isBuying ? "color-mix(in srgb, var(--accent) 60%, transparent)" : "var(--accent)",
+                      color: "var(--accent-on)",
+                      boxShadow: "0px 0px 16px color-mix(in srgb, var(--accent) 20%, transparent)",
+                    }}
+                    onMouseEnter={e => { if (!purchasing) (e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 24px color-mix(in srgb, var(--accent) 40%, transparent)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 16px color-mix(in srgb, var(--accent) 20%, transparent)"; }}
+                  >
+                    {isBuying ? "Redirecting…" : "Buy Now"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Admin section — daily stats table */}
