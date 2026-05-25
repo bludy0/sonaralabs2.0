@@ -8,7 +8,8 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import axios from "axios";
 import nodemailer from "nodemailer";
-import { UserJwtPayload, InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
+import Stripe from "stripe";
+import { UserJwtPayload, InternalJwtPayload, SpendCreditPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
@@ -23,7 +24,6 @@ const {
   INTERNAL_JWT_SECRET,
   ACCESS_TOKEN_TTL    = "15m",
   REFRESH_TOKEN_TTL_DAYS = "7",
-  CREDIT_SERVICE_URL  = "http://credit:3005",
   // Email
   SMTP_HOST           = "",
   SMTP_PORT           = "465",
@@ -241,6 +241,28 @@ const refreshTokenSchema = new mongoose.Schema({
 refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 const RefreshToken = mongoose.model("RefreshToken", refreshTokenSchema);
 
+const creditLogSchema = new mongoose.Schema({
+  userId:       { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  amount:       { type: Number, required: true },
+  type:         { type: String, enum: ["earn", "spend", "refund"], required: true },
+  reason:       String,
+  relatedId:    String,
+  relatedModel: String,
+  balanceAfter: Number,
+}, { timestamps: true });
+const CreditLog = mongoose.model("CreditLog", creditLogSchema);
+
+// ── STRIPE ────────────────────────────────────────────────────────────────────
+const stripeClient = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" })
+  : null;
+
+const CREDIT_PACKAGES = [
+  { id: "pack_100",  credits: 100,  price: 499,  label: "100 credits" },
+  { id: "pack_500",  credits: 500,  price: 1999, label: "500 credits" },
+  { id: "pack_1200", credits: 1200, price: 3999, label: "1200 credits" },
+] as const;
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -317,17 +339,15 @@ app.post("/register", async (req, res) => {
       logger.error("[auth] Email gönderilemedi:", { message: String(err) })
     );
 
-    // Kayıt bonusu: default 100 kredi. Sıfırlamak için INITIAL_CREDIT_BALANCE=0 set et.
+    // Kayıt bonusu — direkt DB, HTTP round-trip yok
     const INITIAL_CREDIT = parseInt(process.env.INITIAL_CREDIT_BALANCE ?? "100");
     if (INITIAL_CREDIT > 0) {
-      const internalToken = jwt.sign(
-        { sub: String(user._id), role: user.role, _internal: true },
-        INTERNAL_JWT_SECRET!, { expiresIn: "5m" }
-      );
-      axios.post(`${CREDIT_SERVICE_URL}/earn`,
-        { userId: String(user._id), amount: INITIAL_CREDIT, reason: "register_bonus" },
-        { headers: { "x-internal-token": internalToken } }
-      ).catch(err => logger.warn("[auth] Credit earn log failed:", { message: String(err) }));
+      User.findByIdAndUpdate(user._id, { $inc: { creditBalance: INITIAL_CREDIT } }, { new: true })
+        .then(updated => updated && CreditLog.create({
+          userId: user._id, amount: INITIAL_CREDIT, type: "earn",
+          reason: "register_bonus", balanceAfter: updated.creditBalance,
+        }))
+        .catch(err => logger.error("[auth] Register bonus failed", { userId: String(user._id), message: String(err) }));
     }
 
     res.status(201).json({
@@ -362,11 +382,10 @@ app.get("/verify-email", async (req, res) => {
         error: "Geçersiz veya süresi dolmuş onay linki." });
     }
 
-    // Onayla ve token'ı temizle
-    user.isEmailVerified   = true;
-    user.emailVerifyToken  = undefined as any;
-    user.emailVerifyExpires = undefined as any;
-    await user.save();
+    await User.findByIdAndUpdate(user._id, {
+      $set:   { isEmailVerified: true },
+      $unset: { emailVerifyToken: 1, emailVerifyExpires: 1 },
+    });
 
     // Otomatik giriş yaptır
     const accessToken  = makeAccessToken(String(user._id), user.role);
@@ -582,12 +601,11 @@ app.post("/reset-password", async (req, res) => {
       return res.status(400).json({ success: false, error: "Geçersiz veya süresi dolmuş link." });
     }
 
-    user.passwordHash         = await bcrypt.hash(newPassword, 12);
-    user.passwordResetToken   = undefined as any;
-    user.passwordResetExpires = undefined as any;
-    user.failedLoginAttempts  = 0;
-    user.lockoutUntil         = undefined as any;
-    await user.save();
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await User.findByIdAndUpdate(user._id, {
+      $set:   { passwordHash: newHash, failedLoginAttempts: 0 },
+      $unset: { passwordResetToken: 1, passwordResetExpires: 1, lockoutUntil: 1 },
+    });
 
     // Tüm oturumları sonlandır
     await RefreshToken.deleteMany({ userId: user._id });
@@ -767,6 +785,186 @@ app.get("/internal/users/:id", async (req, res) => {
   }
 });
 
+// ── CREDIT ROUTES (credit servisi buraya taşındı) ─────────────────────────────
+
+// Webhook: raw body — MUST be before express.json() middleware.
+// Not: express.json() yukarıda zaten çalışıyor, bu route için raw body override.
+app.post("/credits/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const sig           = req.headers["stripe-signature"] as string;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!stripeClient || !webhookSecret)
+    return res.status(503).json({ error: "Webhook not configured" });
+
+  let event: Stripe.Event;
+  try {
+    event = stripeClient.webhooks.constructEvent(req.body as Buffer, sig, webhookSecret);
+  } catch (err) {
+    logger.error("[webhook] Signature failed", { message: String(err) });
+    return res.status(400).json({ error: "Invalid signature" });
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const userId  = session.metadata?.userId;
+    const credits = parseInt(session.metadata?.credits ?? "0");
+
+    if (!userId || credits <= 0) {
+      logger.error("[webhook] Missing/invalid metadata", { sessionId: session.id });
+      return res.status(400).json({ error: "Invalid session metadata" });
+    }
+    try {
+      const user = await User.findByIdAndUpdate(
+        userId, { $inc: { creditBalance: credits } }, { new: true, select: "creditBalance" }
+      );
+      if (user) {
+        await CreditLog.create({
+          userId, amount: credits, type: "earn",
+          reason: `stripe_purchase:${session.metadata?.packageId}`,
+          relatedId: session.id, relatedModel: "stripe_session",
+          balanceAfter: user.creditBalance,
+        });
+        logger.info(`[webhook] Added ${credits} credits to ${userId}`);
+      } else {
+        logger.error("[webhook] User not found", { userId });
+      }
+    } catch (err) {
+      logger.error("[webhook] Failed to add credits", { message: String(err) });
+      return res.status(500).json({ error: "Failed to process payment" });
+    }
+  }
+  res.json({ received: true });
+});
+
+app.get("/credits/packages", (_req, res) => {
+  res.json({ success: true, data: CREDIT_PACKAGES });
+});
+
+// ── credit helper ─────────────────────────────────────────────────────────────
+function getPayload(req: express.Request): InternalJwtPayload {
+  const token = req.headers["x-internal-token"] as string;
+  if (!token) throw new Error("No internal token");
+  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+}
+
+app.get("/credits/balance", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const user = await User.findById(userId).select("creditBalance");
+    if (!user) return res.status(404).json({ success: false, error: "User not found" });
+    res.json({ success: true, data: { creditBalance: user.creditBalance } } as ApiResponse);
+  } catch { res.status(401).json({ success: false, error: "Unauthorized" }); }
+});
+
+app.get("/credits/history", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const page  = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const [logs, total] = await Promise.all([
+      CreditLog.find({ userId }).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      CreditLog.countDocuments({ userId }),
+    ]);
+    res.json({ success: true, data: { logs, total, page, pages: Math.ceil(total / limit) } } as ApiResponse);
+  } catch { res.status(401).json({ success: false, error: "Unauthorized" }); }
+});
+
+// POST /credits/spend — INTERNAL: generation/upload çağırır (atomik)
+app.post("/credits/spend", async (req, res) => {
+  try {
+    getPayload(req);
+    const { userId, amount, reason, relatedId, relatedModel } = req.body as SpendCreditPayload;
+    if (!userId || !amount || amount <= 0)
+      return res.status(400).json({ success: false, error: "Invalid payload" });
+
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, creditBalance: { $gte: amount } },
+      { $inc: { creditBalance: -amount } },
+      { new: true, select: "creditBalance" }
+    );
+    if (!updated) return res.status(422).json({ success: false, error: "Insufficient credits" });
+
+    await CreditLog.create({
+      userId, amount: -amount, type: "spend",
+      reason, relatedId, relatedModel, balanceAfter: updated.creditBalance,
+    });
+    res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
+  } catch (err) {
+    logger.error("spend error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// POST /credits/earn — INTERNAL: register bonus, refund için
+app.post("/credits/earn", async (req, res) => {
+  try {
+    getPayload(req);
+    const { userId, amount, reason } = req.body;
+    if (!userId || !amount || amount <= 0)
+      return res.status(400).json({ success: false, error: "Invalid payload" });
+
+    const updated = await User.findByIdAndUpdate(
+      userId, { $inc: { creditBalance: amount } }, { new: true, select: "creditBalance" }
+    );
+    if (!updated) return res.status(404).json({ success: false, error: "User not found" });
+
+    await CreditLog.create({
+      userId, amount, type: "earn",
+      reason: reason || "bonus", balanceAfter: updated.creditBalance,
+    });
+    res.json({ success: true, data: { newBalance: updated.creditBalance } } as ApiResponse);
+  } catch (err) {
+    logger.error("earn error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
+// POST /credits/purchase — Stripe Checkout
+app.post("/credits/purchase", async (req, res) => {
+  if (!stripeClient)
+    return res.status(503).json({ success: false, error: "Payment system not configured" });
+  try {
+    const { sub: userId } = getPayload(req);
+    const { packageId, successUrl, cancelUrl } = req.body as {
+      packageId: string; successUrl?: string; cancelUrl?: string;
+    };
+    const pkg = CREDIT_PACKAGES.find(p => p.id === packageId);
+    if (!pkg) return res.status(400).json({ success: false, error: "Invalid package" });
+
+    const FRONTEND     = process.env.FRONTEND_URL ?? "http://localhost:5173";
+    const safeSuccess  = successUrl?.startsWith(FRONTEND) ? successUrl : `${FRONTEND}/dashboard?purchase=success`;
+    const safeCancel   = cancelUrl?.startsWith(FRONTEND)  ? cancelUrl  : `${FRONTEND}/dashboard?purchase=cancelled`;
+
+    const session = await stripeClient.checkout.sessions.create({
+      mode: "payment",
+      line_items: [{
+        price_data: {
+          currency: "usd", unit_amount: pkg.price,
+          product_data: { name: `Sonaralabs — ${pkg.label}`, description: `${pkg.credits} AI generation credits` },
+        },
+        quantity: 1,
+      }],
+      metadata: { userId, packageId: pkg.id, credits: String(pkg.credits) },
+      success_url: safeSuccess,
+      cancel_url:  safeCancel,
+    });
+    res.json({ success: true, data: { checkoutUrl: session.url, sessionId: session.id } });
+  } catch (err) {
+    logger.error("[purchase] error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Failed to create checkout session" });
+  }
+});
+
+// GET /internal/credit-logs — admin için
+app.get("/internal/credit-logs", async (req, res) => {
+  try {
+    getPayload(req);
+    const userId = req.query.userId as string;
+    const logs = await CreditLog.find({ userId }).sort({ createdAt: -1 }).limit(10);
+    res.json({ success: true, data: logs } as ApiResponse);
+  } catch { res.status(401).json({ success: false, error: "Unauthorized" }); }
+});
+
+// ── HEALTH ────────────────────────────────────────────────────────────────────
 // Health check
 app.get("/health", (_, res) => res.json({
   status: "ok", service: "auth", emailEnabled: EMAIL_ENABLED,

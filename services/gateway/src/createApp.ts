@@ -21,15 +21,12 @@ export interface AppDeps {
   clientUrl:         string;
   incrementRateKey:  (key: string, windowMs: number) => Promise<number>;
   serviceUrls: {
-    auth:         string;
-    generation:   string;
-    upload:       string;
-    library:      string;
-    credit:       string;
-    admin:        string;
-    notification: string;
-    profile:      string;
-    social:       string;
+    auth:       string;
+    generation: string;
+    upload:     string;
+    library:    string;
+    admin:      string;
+    social:     string;
   };
   rateLimits: {
     general:    number;
@@ -209,16 +206,17 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.library, "/collections" + c.req.path.replace("/api/collections", "")));
 
   // ── Credits ───────────────────────────────────────────────────────────────
-  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/packages"));
-  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/webhook"));
+  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/packages"));
+  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/webhook"));
   app.post("/api/credits/earn",  (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.post("/api/credits/spend", (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.all ("/api/credits/*", requireAuth, generalLimiter, (c) =>
-    proxyTo(c, serviceUrls.credit, c.req.path.replace("/api/credits", "") || "/"));
+    proxyTo(c, serviceUrls.auth, "/credits" + (c.req.path.replace("/api/credits", "") || "/")));
 
   // ── Notification ──────────────────────────────────────────────────────────
-  app.all("/api/notify/*", requireAuth, generalLimiter, (c) =>
-    proxyTo(c, serviceUrls.notification, c.req.path.replace("/api/notify", "") || "/"));
+  // /api/notify/stream → generation servisi (SSE notification taşındı)
+  app.all("/api/notify/*", requireAuth, (c) =>
+    proxyTo(c, serviceUrls.generation, c.req.path.replace("/api/notify", "") || "/"));
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   app.all("/api/admin/*", requireAuth, requireAdmin, (c) =>
@@ -229,10 +227,10 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.auth, c.req.path.replace("/api/users", "") || "/"));
 
   // ── Profile ───────────────────────────────────────────────────────────────
-  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me/avatar"));
-  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.profile, `/${c.req.param("username")}`));
+  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me/avatar"));
+  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.social, `/profile/${c.req.param("username")}`));
 
   // ── Projects ──────────────────────────────────────────────────────────────
   app.get("/api/projects/share/:token", generalLimiter, (c) =>

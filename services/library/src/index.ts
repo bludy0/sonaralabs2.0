@@ -95,13 +95,15 @@ app.get("/", async (req, res) => {
     let generations = genRes.status === "fulfilled" ? genRes.value.data.data : [];
     let uploads     = upRes.status  === "fulfilled" ? upRes.value.data.data  : [];
 
-    // Birleştir ve sırala
-    const items = [
-      ...generations.map((g: any) => ({ ...g, _type: "generation" })),
-      ...uploads.map((u: any)     => ({ ...u, _type: "upload"     })),
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    type LibItem = Record<string, unknown> & { _type: string; createdAt: string; isFavorited?: boolean };
 
-    const filtered = items.filter((i: any) => {
+    // Birleştir ve sırala
+    const items: LibItem[] = [
+      ...generations.map((g: Record<string, unknown>) => ({ ...g, _type: "generation" })),
+      ...uploads.map((u: Record<string, unknown>)     => ({ ...u, _type: "upload"     })),
+    ].sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
+
+    const filtered = items.filter((i) => {
       if (favOnly && !i.isFavorited) return false;
       if (typeFilter && typeFilter !== "all" && i._type !== typeFilter) return false;
       if (q) {
@@ -276,9 +278,9 @@ app.get("/projects", async (req, res) => {
     const { sub: userId } = getPayload(req);
     const projects = await DawProject.aggregate([
       { $match: { userId: new mongoose.Types.ObjectId(userId) } },
-      { $addFields: { trackCount: { $size: { $ifNull: ["$tracks", []] } } } },
       { $project: { _id: 1, name: 1, bpm: 1, isPublic: 1, shareToken: 1,
-                    createdAt: 1, updatedAt: 1, trackCount: 1 } },
+                    createdAt: 1, updatedAt: 1,
+                    trackCount: { $size: { $ifNull: ["$tracks", []] } } } },
       { $sort: { updatedAt: -1 } },
     ]);
     res.json({ success: true, data: projects } as ApiResponse);

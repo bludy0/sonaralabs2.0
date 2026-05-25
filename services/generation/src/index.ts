@@ -34,8 +34,7 @@ app.use(express.json({ limit: "15mb" }));
 const {
   PORT = "3002", MONGO_URI, INTERNAL_JWT_SECRET, REDIS_URL = "redis://localhost:6379",
   JOB_TIMEOUT_MS = "300000",
-  CREDIT_SERVICE_URL       = "http://credit:3005",
-  NOTIFICATION_SERVICE_URL = "http://notification:3007",
+  AUTH_SERVICE_URL = "http://auth:3001",
 } = process.env;
 
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
@@ -106,25 +105,40 @@ function makeInternalToken(): string {
   return jwt.sign({ sub: "generation-service", role: "user", _internal: true }, INTERNAL_JWT_SECRET!, { expiresIn: "5m" });
 }
 
-async function notifyUser(payload: NotifyJobPayload) {
-  try {
-    await axios.post(`${NOTIFICATION_SERVICE_URL}/internal/notify`, payload, {
-      headers: { "x-internal-token": makeInternalToken() },
-    });
-  } catch (err) {
-    logger.warn("[generation] Notification failed", { message: String(err) });
+// ── SSE BAĞLANTI YÖNETİMİ (notification servisi buraya taşındı) ──────────────
+// userId → Set<Response>  (bir kullanıcının birden fazla sekmesi desteklenir)
+const sseConnections = new Map<string, Set<express.Response>>();
+
+function addSseConn(userId: string, res: express.Response) {
+  if (!sseConnections.has(userId)) sseConnections.set(userId, new Set());
+  sseConnections.get(userId)!.add(res);
+}
+
+function removeSseConn(userId: string, res: express.Response) {
+  sseConnections.get(userId)?.delete(res);
+  if (sseConnections.get(userId)?.size === 0) sseConnections.delete(userId);
+}
+
+function notifyUser(payload: NotifyJobPayload) {
+  const { userId, ...event } = payload;
+  const data = `data: ${JSON.stringify({ type: "status", ...event })}\n\n`;
+  const conns = sseConnections.get(userId);
+  if (!conns) return;
+  for (const res of conns) {
+    try { res.write(data); }
+    catch { removeSseConn(userId, res); }
   }
 }
 
 async function spendCredit(userId: string, amount: number, jobId: string, reason: string) {
-  await axios.post(`${CREDIT_SERVICE_URL}/spend`, {
+  await axios.post(`${AUTH_SERVICE_URL}/credits/spend`, {
     userId, amount, reason, relatedId: jobId, relatedModel: "Generation",
   }, { headers: { "x-internal-token": makeInternalToken() } });
 }
 
 async function earnCredit(userId: string, amount: number, relatedId: string) {
   try {
-    await axios.post(`${CREDIT_SERVICE_URL}/earn`, {
+    await axios.post(`${AUTH_SERVICE_URL}/credits/earn`, {
       userId, amount, reason: "queue_failure_refund", relatedId, relatedModel: "Generation",
     }, { headers: { "x-internal-token": makeInternalToken() } });
   } catch {
@@ -196,26 +210,28 @@ worker.on("failed", async (job, err) => {
   if (!job) return;
   const { generationId, userId } = job.data;
 
-  const anyErr       = err as any;
-  const infraError   = isInfrastructureError(anyErr);
-  const userFacingMsg = infraError
-    ? providerErrorMessage(anyErr)
-    : err.message;
+  const anyErr        = err as any;
+  const infraError    = isInfrastructureError(anyErr);
+  const userFacingMsg = infraError ? providerErrorMessage(anyErr) : err.message;
 
-  await Generation.findByIdAndUpdate(generationId, {
-    status: "failed", failedAt: new Date(), failReason: userFacingMsg,
-  });
+  try {
+    await Generation.findByIdAndUpdate(generationId, {
+      status: "failed", failedAt: new Date(), failReason: userFacingMsg,
+    });
 
-  // Infrastructure hatalarında krediyi geri ver
-  if (infraError) {
-    const gen = await Generation.findById(generationId).select("creditCost").lean();
-    if (gen?.creditCost) {
-      await earnCredit(userId, gen.creditCost, generationId);
-      logger.info(`[generation] Refunded credits for job ${job.id}`, { credits: gen.creditCost });
+    if (infraError) {
+      const gen = await Generation.findById(generationId).select("creditCost").lean();
+      if (gen?.creditCost) {
+        await earnCredit(userId, gen.creditCost, generationId);
+        logger.info(`[generation] Refunded credits for job ${job.id}`, { credits: gen.creditCost });
+      }
     }
+
+    await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: userFacingMsg });
+  } catch (handlerErr) {
+    logger.error(`[generation] Failed handler error for job ${job.id}`, { message: String(handlerErr) });
   }
 
-  await notifyUser({ userId, jobId: job.id!, status: "failed", failReason: userFacingMsg });
   logger.error(`[generation] Job ${job.id} failed`, { infraError, message: err.message });
 });
 
@@ -338,6 +354,9 @@ app.post("/analyze-image", async (req, res) => {
     }
     if (imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
       return res.status(413).json({ success: false, error: "Image too large. Maximum 10 MB" });
+    }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) {
+      return res.status(400).json({ success: false, error: "imageBase64 is not valid base64" });
     }
 
     const refId = `img-${Date.now()}`;
@@ -762,13 +781,49 @@ app.get("/capabilities", (_, res) => {
   });
 });
 
+// ── SSE STREAM (notification servisi buraya taşındı) ─────────────────────────
+// GET /stream — frontend EventSource ile bağlanır
+// Gateway: /api/notify/stream → buraya proxy edilir (requireAuth → internalToken header)
+app.get("/stream", (req, res) => {
+  try {
+    const payload = getPayload(req);
+    const userId  = payload.sub;
+
+    res.setHeader("Content-Type",    "text/event-stream");
+    res.setHeader("Cache-Control",   "no-cache");
+    res.setHeader("Connection",      "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    addSseConn(userId, res);
+    logger.info(`[generation/sse] connected: ${userId} (users: ${sseConnections.size})`);
+
+    const ping = setInterval(() => {
+      try { res.write(": ping\n\n"); }
+      catch { clearInterval(ping); }
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(ping);
+      removeSseConn(userId, res);
+      logger.info(`[generation/sse] disconnected: ${userId}`);
+    });
+  } catch {
+    res.status(401).end();
+  }
+});
+
 app.get("/health", (_, res) => res.json({
   status: "ok", service: "generation",
+  sse: {
+    connectedUsers:    sseConnections.size,
+    totalConnections:  [...sseConnections.values()].reduce((s, c) => s + c.size, 0),
+  },
   providers: {
     music: {
       beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
       sonauto:   Boolean(process.env.SONAUTO_API_KEY),
-      lyria:     false, // not yet — Gemini Audio API stabil değil
+      lyria:     false,
     },
     sfx: {
       elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),

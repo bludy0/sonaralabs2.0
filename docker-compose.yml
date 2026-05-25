@@ -128,11 +128,8 @@ services:
       GENERATION_SERVICE_URL: http://generation:3002
       UPLOAD_SERVICE_URL: http://upload:3003
       LIBRARY_SERVICE_URL: http://library:3004
-      CREDIT_SERVICE_URL: http://credit:3005
       ADMIN_SERVICE_URL: http://admin:3006
-      NOTIFICATION_SERVICE_URL: http://notification:3007
-      PROFILE_SERVICE_URL:      http://profile:3008
-      SOCIAL_SERVICE_URL:       http://social:3009
+      SOCIAL_SERVICE_URL: http://social:3009
       # Redis (rate limit store)
       REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
       # CORS
@@ -158,6 +155,8 @@ services:
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
       INTERNAL_TOKEN_TTL: ${INTERNAL_TOKEN_TTL:-5m}
       INITIAL_CREDIT_BALANCE: ${INITIAL_CREDIT_BALANCE:-100}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
     depends_on:
       mongo:
         condition: service_healthy
@@ -192,8 +191,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: sonaralabs-audio
       # Internal service URLs
-      CREDIT_SERVICE_URL: http://credit:3005
-      NOTIFICATION_SERVICE_URL: http://notification:3007
+      AUTH_SERVICE_URL: http://auth:3001
     depends_on:
       mongo:
         condition: service_healthy
@@ -248,21 +246,6 @@ services:
       upload:
         condition: service_started
 
-  credit:
-    build:
-      context: .
-      dockerfile: services/credit/Dockerfile
-    restart: unless-stopped
-    networks: [sonaralabs]
-    environment:
-      PORT: 3005
-      NODE_ENV: development
-      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
-      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-    depends_on:
-      mongo:
-        condition: service_healthy
-
   admin:
     build:
       context: .
@@ -278,40 +261,6 @@ services:
       mongo:
         condition: service_healthy
 
-  notification:
-    build:
-      context: .
-      dockerfile: services/notification/Dockerfile
-    restart: unless-stopped
-    networks: [sonaralabs]
-    environment:
-      PORT: 3007
-      NODE_ENV: development
-      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  profile:
-    build:
-      context: .
-      dockerfile: services/profile/Dockerfile
-    restart: unless-stopped
-    networks: [sonaralabs]
-    environment:
-      PORT: 3008
-      NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
-      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   social:
     build:
       context: .
@@ -321,17 +270,22 @@ services:
     environment:
       PORT: 3009
       NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sonaralabs}:${POSTGRES_PASS:-sonaralabs_dev}@postgres:5432/sonaralabs
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
       REDIS_URL: redis://:${REDIS_PASSWORD:-sonaralabs_redis_dev}@redis:6379
-      PROFILE_SERVICE_URL: http://profile:3008
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: false
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_AVATARS: sonaralabs-avatars
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
-      profile:
-        condition: service_started
+      minio:
+        condition: service_healthy
 
   frontend:
     build:

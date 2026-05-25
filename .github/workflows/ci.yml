@@ -86,10 +86,7 @@ jobs:
           - generation
           - upload
           - library
-          - credit
           - admin
-          - notification
-          - profile
           - social
     steps:
       - uses: actions/checkout@v4
@@ -121,8 +118,6 @@ jobs:
       INTERNAL_JWT_SECRET: ci_internal_secret_do_not_use_in_prod
       MONGO_ROOT_USER: root
       MONGO_ROOT_PASS: rootpass
-      POSTGRES_USER: sonaralabs
-      POSTGRES_PASS: sonaralabs_dev
       CLIENT_URL: http://localhost:5173
 
     steps:
@@ -146,8 +141,8 @@ jobs:
       - name: Start infrastructure (Docker Compose)
         run: |
           docker compose up -d \
-            mongo redis postgres minio minio-init \
-            auth generation upload library credit admin notification profile social gateway
+            mongo redis minio minio-init \
+            auth generation upload library admin social gateway
         timeout-minutes: 5
 
       - name: Wait for gateway to be healthy
@@ -207,7 +202,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          for svc in gateway auth generation upload library credit admin notification profile social; do
+          for svc in gateway auth generation upload library admin social; do
             echo "=== Deploying $svc ==="
             railway redeploy --service "$svc" --yes || echo "WARN: $svc redeploy failed (check Railway dashboard)"
           done
