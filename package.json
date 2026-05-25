@@ -18,10 +18,8 @@
   "devDependencies": {
     "@playwright/test": "^1.49.1",
     "@types/bcryptjs": "^2.4.6",
-    "@types/pg": "^8.20.0",
     "bcryptjs": "^2.4.3",
     "mongoose": "^8.23.0",
-    "pg": "^8.20.0",
     "serve": "^14.2.4",
     "tsx": "^4.21.0",
     "turbo": "^2.3.0",

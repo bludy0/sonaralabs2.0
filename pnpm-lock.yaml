@@ -14,18 +14,12 @@ importers:
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
-      '@types/pg':
-        specifier: ^8.20.0
-        version: 8.20.0
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
       mongoose:
         specifier: ^8.23.0
         version: 8.23.0
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
       serve:
         specifier: ^14.2.4
         version: 14.2.6
