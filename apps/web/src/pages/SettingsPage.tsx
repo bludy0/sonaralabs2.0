@@ -433,7 +433,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div style={{ maxWidth: 740, margin: "0 auto", padding: "32px 24px", color: C.text1 }}>
+    <div style={{ maxWidth: 1040, margin: "0 auto", padding: "32px 24px", color: C.text1 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 32 }}>{t.settings.title}</h1>
 
       {/* ── Görünüm ─────────────────────────────────────────────────────── */}

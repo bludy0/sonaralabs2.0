@@ -407,6 +407,75 @@ app.get("/history", async (req, res) => {
   }
 });
 
+// GET /stats — kullanıcının kişisel üretim istatistikleri (dashboard grafikleri için)
+app.get("/stats", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    const uid = new mongoose.Types.ObjectId(userId);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      total, byStatus, byProvider, byType, topStyles, daily, totals,
+    ] = await Promise.all([
+      Generation.countDocuments({ userId: uid }),
+      Generation.aggregate([
+        { $match: { userId: uid } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      Generation.aggregate([
+        { $match: { userId: uid, provider: { $ne: null } } },
+        { $group: { _id: "$provider", count: { $sum: 1 } } },
+      ]),
+      Generation.aggregate([
+        { $match: { userId: uid } },
+        { $group: { _id: "$type", count: { $sum: 1 } } },
+      ]),
+      Generation.aggregate([
+        { $match: { userId: uid, status: "done", style: { $ne: null } } },
+        { $group: { _id: "$style", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 8 },
+      ]),
+      Generation.aggregate([
+        { $match: { userId: uid, createdAt: { $gte: thirtyDaysAgo } } },
+        { $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+          credits: { $sum: { $ifNull: ["$creditCost", 0] } },
+        }},
+        { $sort: { _id: 1 } },
+      ]),
+      Generation.aggregate([
+        { $match: { userId: uid } },
+        { $group: {
+          _id: null,
+          creditsSpent: { $sum: { $ifNull: ["$creditCost", 0] } },
+          totalDuration: { $sum: { $ifNull: ["$duration", 0] } },
+        }},
+      ]),
+    ]);
+
+    const toMap = (rows: Array<{ _id: string; count: number }>) =>
+      rows.reduce<Record<string, number>>((acc, r) => { acc[r._id ?? "unknown"] = r.count; return acc; }, {});
+
+    res.json({
+      success: true,
+      data: {
+        total,
+        byStatus:   toMap(byStatus),
+        byProvider: toMap(byProvider),
+        byType:     toMap(byType),
+        topStyles,
+        daily,
+        creditsSpent:  totals[0]?.creditsSpent ?? 0,
+        totalDuration: totals[0]?.totalDuration ?? 0,
+      },
+    } as ApiResponse);
+  } catch {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
 // DELETE /:id — kullanıcı kendi başarısız/tamamlanmış üretimini siler
 app.delete("/:id", async (req, res) => {
   try {

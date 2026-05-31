@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { NavLink, Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useT } from "../store/useI18nStore";
+import { SonarLogo } from "./SonarLogo";
 
 const SIDEBAR_MIN     = 52;   // sadece ikonlar
 const SIDEBAR_DEFAULT = 220;
@@ -59,6 +60,7 @@ export default function Layout() {
   }, []);
 
   const NAV_ITEMS = [
+    { to: "/dashboard", label: t.nav.dashboard, icon: "dashboard"   },
     { to: "/generate", label: t.nav.generate, icon: "graphic_eq"    },
     { to: "/library",  label: t.nav.library,  icon: "library_music" },
     { to: "/studio",   label: t.nav.studio,   icon: "piano"         },
@@ -103,12 +105,10 @@ export default function Layout() {
             onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={e => (e.currentTarget.style.opacity = "0.9")}
           >
-            <img src="/SONARALABS.png" alt="Sonaralabs" style={{ height: 32, width: "auto", flexShrink: 0 }} />
-            {!collapsed && (
-              <p className="font-black tracking-tight uppercase" style={{ fontSize: "var(--fs-md)", color: "var(--text-1)", whiteSpace: "nowrap" }}>
-                Sonaralabs
-              </p>
-            )}
+            <SonarLogo
+              size={32}
+              variant={collapsed ? "icon" : "full"}
+            />
           </div>
         </Link>
 

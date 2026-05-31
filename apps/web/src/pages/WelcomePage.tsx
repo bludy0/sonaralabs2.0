@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useFixedTheme } from "../hooks/useFixedTheme";
 import Balatro from "../components/Balatro";
+import { SonarLogo } from "../components/SonarLogo";
 
 // ── Static data ───────────────────────────────────────────────────────────────
 const BARS = [
@@ -102,6 +103,14 @@ export default function WelcomePage() {
   const [mockTyped,    setMockTyped]    = useState("");
   const [mockStatus,   setMockStatus]   = useState<"typing"|"generating"|"done">("typing");
   const [mockProgress, setMockProgress] = useState(0);
+
+  // ── Easter egg: logoya 3 kez tıklayınca dönüş yönü tersine döner ──────────────
+  const [logoReverse, setLogoReverse] = useState(false);
+  const logoClicks = useRef(0);
+  const handleLogoClick = () => {
+    logoClicks.current += 1;
+    if (logoClicks.current % 3 === 0) setLogoReverse(r => !r);
+  };
 
   // (parallax kaldırıldı)
 
@@ -357,12 +366,14 @@ export default function WelcomePage() {
         {/* ════════════════════════════════ NAVBAR ══════════════════════════ */}
         <div className="wu-nav-wrap">
           <nav className="wu-nav">
-            {/* Logo */}
-            <div className="flex items-center gap-2 shrink-0" style={{ position: "relative", zIndex: 1 }}>
-              <img src="/SONARALABS.png" alt="Sonaralabs" className="h-8 w-auto" />
-              <span className="text-sm font-black tracking-tight hidden sm:block" style={{ color: "var(--text-1)" }}>
-                SONARALABS
-              </span>
+            {/* Logo — döner; 3 tık easter egg'i yönü çevirir */}
+            <div
+              className="flex items-center shrink-0"
+              style={{ position: "relative", zIndex: 1, cursor: "pointer" }}
+              onClick={handleLogoClick}
+              title="3 kez tıkla 😉"
+            >
+              <SonarLogo size={30} variant="full" animated reverse={logoReverse} />
             </div>
 
             {/* Center links */}
@@ -1041,11 +1052,8 @@ export default function WelcomePage() {
         <footer style={{ borderTop: "1px solid color-mix(in srgb, var(--text-3) 8%, transparent)" }}>
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6">
             {/* Logo */}
-            <div className="flex items-center gap-2">
-              <img src="/SONARALABS.png" alt="Sonaralabs" className="h-7 w-auto" />
-              <p className="text-xs font-black tracking-wider uppercase" style={{ color: "var(--text-2)" }}>
-                SONARALABS
-              </p>
+            <div className="flex items-center">
+              <SonarLogo size={26} variant="full" />
             </div>
 
             <p className="text-[11px] text-center" style={{ color: "var(--text-3)" }}>
