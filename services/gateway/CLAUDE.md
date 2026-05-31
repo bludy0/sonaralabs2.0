@@ -1,5 +1,9 @@
 # gateway — CLAUDE.md
 
+> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
+> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
+> PROJECT-GUIDE.md ve kaynak kod esastır.
+
 Port: 3000 | Tüm `/api/*` isteklerinin tek giriş noktası.
 
 ## Sorumluluk

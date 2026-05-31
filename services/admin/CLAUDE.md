@@ -1,5 +1,9 @@
 # admin-service — CLAUDE.md
 
+> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
+> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
+> PROJECT-GUIDE.md ve kaynak kod esastır.
+
 Port: 3006 | Prefix: /api/admin/*
 Collection erişimi: tüm servislerden HTTP ile okuma — hiçbir collection'a doğrudan yazmaz.
 

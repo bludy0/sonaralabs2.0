@@ -1,5 +1,9 @@
 # generation-service — CLAUDE.md
 
+> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
+> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
+> PROJECT-GUIDE.md ve kaynak kod esastır.
+
 Port: 3002 | Prefix: `/api/generate/*`
 Collection sahibi: `generations`
 
