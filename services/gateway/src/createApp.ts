@@ -145,7 +145,16 @@ export function createApp(deps: AppDeps): Hono {
     allowHeaders: ["Content-Type", "Authorization"],
   }));
 
-  app.all("/internal/*", (c) => c.json({ success: false, error: "Forbidden" }, 403));
+  // Block service-to-service /internal/* routes from ever being reached by a client.
+  // Matching only "/internal/*" is insufficient: prefix-stripping catch-alls like
+  // app.all("/api/generate/*") would forward "/api/generate/internal/generations"
+  // to a downstream service's /internal route WITH a valid internal token (IDOR).
+  // So reject "/internal" appearing as a path segment anywhere.
+  app.use("*", async (c, next) => {
+    if (/(^|\/)internal(\/|$)/.test(c.req.path))
+      return c.json({ success: false, error: "Forbidden" }, 403);
+    await next();
+  });
   app.get("/health",     (c) => c.json({ status: "ok", service: "gateway" }));
 
   // ── API Docs ──────────────────────────────────────────────────────────────

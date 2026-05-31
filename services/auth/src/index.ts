@@ -12,7 +12,12 @@ import Stripe from "stripe";
 import { UserJwtPayload, InternalJwtPayload, SpendCreditPayload, ApiResponse } from "@sonaralabs/types";
 
 const app = express();
-app.use(express.json({ limit: "16kb" }));
+// Stripe webhook needs the raw, unparsed body for signature verification —
+// skip JSON parsing for that path so the route-level express.raw() gets the stream.
+app.use((req, res, next) => {
+  if (req.path === "/credits/webhook") return next();
+  express.json({ limit: "16kb" })(req, res, next);
+});
 app.use(cookieParser());
 
 // ── ENV ───────────────────────────────────────────────────────────────────────
@@ -787,8 +792,8 @@ app.get("/internal/users/:id", async (req, res) => {
 
 // ── CREDIT ROUTES (credit servisi buraya taşındı) ─────────────────────────────
 
-// Webhook: raw body — MUST be before express.json() middleware.
-// Not: express.json() yukarıda zaten çalışıyor, bu route için raw body override.
+// Webhook: raw body — global JSON parser skips this path (see middleware above),
+// so express.raw() here receives the untouched body Stripe signature check needs.
 app.post("/credits/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const sig           = req.headers["stripe-signature"] as string;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
