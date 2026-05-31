@@ -50,6 +50,7 @@ const generationSchema = new mongoose.Schema({
   audioUrl:   String,
   duration:   Number,
   creditCost: Number,
+  style:      String,
   jobId:      String,
   failReason: String,
 }, { timestamps: true });
@@ -82,9 +83,9 @@ describe("getMusicCreditCost — normal üretim", () => {
     ["lyria",    15, 2],
     ["lyria",    30, 3],
     ["lyria",    60, 5],
-    ["stability",15, 2],
-    ["stability",30, 3],
-    ["stability",60, 5],
+    ["sonauto",  15, 5],   // sonauto flat 5 (her süre)
+    ["sonauto",  30, 5],
+    ["sonauto",  60, 5],
   ] as [MusicProvider, number, number][])(
     "%s %ds → %d kredi",
     (provider, duration, expected) => {
@@ -104,7 +105,7 @@ describe("getMusicCreditCost — retry (yarı fiyat, Math.ceil)", () => {
     ["beatoven", 60, 4],   // ceil(8/2) = 4
     ["lyria",    15, 1],   // ceil(2/2) = 1
     ["lyria",    30, 2],   // ceil(3/2) = 2
-    ["stability",60, 3],   // ceil(5/2) = 3
+    ["sonauto",  60, 3],   // ceil(5/2) = 3
   ] as [MusicProvider, number, number][])(
     "retry %s %ds → %d kredi",
     (provider, duration, expected) => {
@@ -205,6 +206,77 @@ describe("Generation document lifecycle", () => {
     const myItems = await Generation.find({ userId }).sort({ createdAt: -1 });
     expect(myItems).toHaveLength(2);
     expect(myItems.every(i => String(i.userId) === String(userId))).toBe(true);
+  });
+});
+
+// ── GET /stats aggregation mantığı ────────────────────────────────────────────
+// index.ts'deki /stats endpoint'i bu aggregate pipeline'larını kullanır.
+// HTTP katmanı yerine pipeline'ları doğrudan model üzerinde doğrularız.
+
+describe("GET /stats aggregations", () => {
+  const userId = new mongoose.Types.ObjectId();
+  const other  = new mongoose.Types.ObjectId();
+
+  beforeEach(async () => {
+    await Generation.insertMany([
+      { userId, provider: "beatoven", status: "done",   type: "music", duration: 30, creditCost: 5, style: "epic"  },
+      { userId, provider: "beatoven", status: "done",   type: "music", duration: 15, creditCost: 3, style: "epic"  },
+      { userId, provider: "sonauto",  status: "failed",  type: "music", duration: 30, creditCost: 5, style: "calm"  },
+      { userId, provider: "sonauto",  status: "done",    type: "sfx",   duration: 0,  creditCost: 1, style: "calm"  },
+      // başka kullanıcının kaydı — sonuçlara karışmamalı
+      { userId: other, provider: "beatoven", status: "done", type: "music", duration: 60, creditCost: 8, style: "epic" },
+    ]);
+  });
+
+  it("byStatus / byProvider yalnızca o kullanıcıyı sayar", async () => {
+    const uid = userId;
+    const [byStatus, byProvider] = await Promise.all([
+      Generation.aggregate([{ $match: { userId: uid } }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+      Generation.aggregate([{ $match: { userId: uid, provider: { $ne: null } } }, { $group: { _id: "$provider", count: { $sum: 1 } } }]),
+    ]);
+    const toMap = (rows: any[]) => rows.reduce((a, r) => (a[r._id] = r.count, a), {} as Record<string, number>);
+    expect(toMap(byStatus)).toEqual({ done: 3, failed: 1 });
+    expect(toMap(byProvider)).toEqual({ beatoven: 2, sonauto: 2 });
+  });
+
+  it("topStyles done üretimleri sayar, çoktan aza sıralar", async () => {
+    const topStyles = await Generation.aggregate([
+      { $match: { userId, status: "done", style: { $ne: null } } },
+      { $group: { _id: "$style", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }, { $limit: 8 },
+    ]);
+    expect(topStyles[0]).toMatchObject({ _id: "epic", count: 2 });
+    expect(topStyles.find(s => s._id === "calm")).toMatchObject({ count: 1 });
+  });
+
+  it("totals: harcanan kredi ve toplam süre ($ifNull ile null-safe)", async () => {
+    const totals = await Generation.aggregate([
+      { $match: { userId } },
+      { $group: { _id: null,
+        creditsSpent:  { $sum: { $ifNull: ["$creditCost", 0] } },
+        totalDuration: { $sum: { $ifNull: ["$duration", 0] } },
+      } },
+    ]);
+    expect(totals[0].creditsSpent).toBe(5 + 3 + 5 + 1);   // 14
+    expect(totals[0].totalDuration).toBe(30 + 15 + 30 + 0); // 75
+  });
+});
+
+// ── Internal endpoint scope (IDOR sertleştirmesi) ─────────────────────────────
+// Internal endpoint'ler userId'yi token sub'ından alır; bir kullanıcının kaydı
+// başka userId ile sorgulandığında bulunamaz (yatay yetki yükseltme engellenir).
+
+describe("internal endpoint userId scoping", () => {
+  it("başka kullanıcının üretimi token sub ile bulunamaz", async () => {
+    const owner   = new mongoose.Types.ObjectId();
+    const attacker = new mongoose.Types.ObjectId();
+    const gen = await Generation.create({
+      userId: owner, provider: "beatoven", status: "done", type: "music", duration: 30, creditCost: 5,
+    });
+    // token sub = attacker → owner'ın kaydına erişemez
+    expect(await Generation.findOne({ _id: gen._id, userId: attacker })).toBeNull();
+    // token sub = owner → erişebilir
+    expect(await Generation.findOne({ _id: gen._id, userId: owner })).not.toBeNull();
   });
 });
 
