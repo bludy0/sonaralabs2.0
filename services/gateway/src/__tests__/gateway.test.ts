@@ -42,10 +42,7 @@ function makeTestApp(overrides: Partial<AppDeps> = {}) {
       generation:   "http://generation:3002",
       upload:       "http://upload:3003",
       library:      "http://library:3004",
-      credit:       "http://credit:3005",
       admin:        "http://admin:3006",
-      notification: "http://notification:3007",
-      profile:      "http://profile:3008",
       social:       "http://social:3009",
     },
     rateLimits: { general: 30, generation: 3, upload: 10, auth: 10 },
@@ -172,12 +169,16 @@ describe("Admin rol kontrolü", () => {
 // ── Internal path koruması ────────────────────────────────────────────────────
 
 describe("/internal/* path koruması", () => {
+  // "internal" path segment'i her yerde engellenir (prefix-stripping catch-all'lar
+  // /api/generate/internal/... gibi yolları downstream'e geçiremesin diye).
   function isInternalPath(path: string) {
-    return path.startsWith("/internal/") || path === "/internal";
+    return /(^|\/)internal(\/|$)/.test(path);
   }
 
   it("/internal/users/:id engellenir",                () => { expect(isInternalPath("/internal/users/abc123")).toBe(true); });
   it("/internal engellenir",                          () => { expect(isInternalPath("/internal")).toBe(true); });
+  it("/api/generate/internal/generations engellenir", () => { expect(isInternalPath("/api/generate/internal/generations")).toBe(true); });
+  it("/api/auth/internal/users/x engellenir",         () => { expect(isInternalPath("/api/auth/internal/users/x")).toBe(true); });
   it("/api/auth/login engellenmez",                   () => { expect(isInternalPath("/api/auth/login")).toBe(false); });
   it("/api/internalize gibi benzer path'ler geçer",   () => { expect(isInternalPath("/api/internalize")).toBe(false); });
 });
@@ -208,6 +209,19 @@ describe("HTTP — /internal/* engellemesi", () => {
   it("GET /internal/users/abc123 → 403", async () => {
     const app = makeTestApp();
     const res  = await app.request("/internal/users/abc123");
+    expect(res.status).toBe(403);
+  });
+
+  // IDOR regresyonu: catch-all proxy üzerinden downstream /internal'a ulaşılamaz.
+  it("GET /api/generate/internal/generations?userId=x → 403", async () => {
+    const app = makeTestApp();
+    const res = await app.request("/api/generate/internal/generations?userId=victim");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /api/auth/internal/users/victim → 403", async () => {
+    const app = makeTestApp();
+    const res = await app.request("/api/auth/internal/users/victim");
     expect(res.status).toBe(403);
   });
 });

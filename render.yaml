@@ -37,14 +37,8 @@ services:
         value: https://sonaralabs-upload.onrender.com
       - key: LIBRARY_SERVICE_URL
         value: https://sonaralabs-library.onrender.com
-      - key: CREDIT_SERVICE_URL
-        value: https://sonaralabs-credit.onrender.com
       - key: ADMIN_SERVICE_URL
         value: https://sonaralabs-admin.onrender.com
-      - key: NOTIFICATION_SERVICE_URL
-        value: https://sonaralabs-notification.onrender.com
-      - key: PROFILE_SERVICE_URL
-        value: https://sonaralabs-profile.onrender.com
       - key: SOCIAL_SERVICE_URL
         value: https://sonaralabs-social.onrender.com
       - key: REDIS_URL
@@ -92,6 +86,14 @@ services:
         sync: false   # örn: Sonaralabs <noreply@yourdomain.com>
       - key: APP_URL
         sync: false   # Vercel URL'in
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false   # Vercel URL'in — Stripe success/cancel redirect için
+      - key: INITIAL_CREDIT_BALANCE
+        value: 100
 
   # ── GENERATION ─────────────────────────────────────────────────────────────
   - type: web
@@ -133,10 +135,8 @@ services:
         value: sonaralabs-audio
       - key: MINIO_PUBLIC_URL
         sync: false   # B2 public URL: https://f005.backblazeb2.com/file/sonaralabs-audio
-      - key: CREDIT_SERVICE_URL
-        value: https://sonaralabs-credit.onrender.com
-      - key: NOTIFICATION_SERVICE_URL
-        value: https://sonaralabs-notification.onrender.com
+      - key: AUTH_SERVICE_URL
+        value: https://sonaralabs-auth.onrender.com
 
   # ── UPLOAD ─────────────────────────────────────────────────────────────────
   - type: web
@@ -192,31 +192,6 @@ services:
       - key: INTERNAL_JWT_SECRET
         sync: false
 
-  # ── CREDIT ─────────────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-credit
-    runtime: docker
-    dockerfilePath: ./services/credit/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3005
-      - key: NODE_ENV
-        value: production
-      - key: MONGO_URI
-        sync: false
-      - key: INTERNAL_JWT_SECRET
-        sync: false
-      - key: INITIAL_CREDIT_BALANCE
-        value: 100
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: FRONTEND_URL
-        sync: false   # Vercel URL'in — Stripe success/cancel redirect için
-
   # ── ADMIN ──────────────────────────────────────────────────────────────────
   - type: web
     name: sonaralabs-admin
@@ -234,38 +209,23 @@ services:
       - key: INTERNAL_JWT_SECRET
         sync: false
 
-  # ── NOTIFICATION ───────────────────────────────────────────────────────────
+  # ── SOCIAL (profile absorbed — MongoDB only) ──────────────────────────────
   - type: web
-    name: sonaralabs-notification
+    name: sonaralabs-social
     runtime: docker
-    dockerfilePath: ./services/notification/Dockerfile
+    dockerfilePath: ./services/social/Dockerfile
     dockerContext: .
     plan: free
     envVars:
       - key: PORT
-        value: 3007
+        value: 3009
       - key: NODE_ENV
         value: production
+      - key: MONGO_URI
+        sync: false
       - key: INTERNAL_JWT_SECRET
         sync: false
       - key: REDIS_URL
-        sync: false
-
-  # ── PROFILE ────────────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-profile
-    runtime: docker
-    dockerfilePath: ./services/profile/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3008
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false   # PostgreSQL bağlantı string'i
-      - key: INTERNAL_JWT_SECRET
         sync: false
       - key: MINIO_ENDPOINT
         sync: false
@@ -281,24 +241,3 @@ services:
         value: sonaralabs-avatars
       - key: MINIO_PUBLIC_URL
         sync: false
-
-  # ── SOCIAL ─────────────────────────────────────────────────────────────────
-  - type: web
-    name: sonaralabs-social
-    runtime: docker
-    dockerfilePath: ./services/social/Dockerfile
-    dockerContext: .
-    plan: free
-    envVars:
-      - key: PORT
-        value: 3009
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false   # PostgreSQL bağlantı string'i
-      - key: INTERNAL_JWT_SECRET
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: PROFILE_SERVICE_URL
-        value: https://sonaralabs-profile.onrender.com

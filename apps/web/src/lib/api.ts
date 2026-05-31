@@ -43,7 +43,9 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        await api.post("/api/auth/refresh");
+        // Timeout şart: refresh isteği takılırsa isRefreshing hiç sıfırlanmaz ve
+        // sonraki tüm 401 isteği failedQueue'da sonsuza dek asılı kalır.
+        await api.post("/api/auth/refresh", null, { timeout: 15000 });
         processQueue(null);
         return api(originalReq);
       } catch (refreshError) {

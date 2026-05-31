@@ -90,7 +90,7 @@ app.get("/stats", async (_req, res) => {
       },
     } as ApiResponse);
   } catch (err) {
-    logger.error("admin stats error", err);
+    logger.error("admin stats error", { message: String(err) });
     res.status(500).json({ success: false, error: "Failed to fetch stats" });
   }
 });

@@ -1,5 +1,5 @@
 export interface Translations {
-  nav:       { generate: string; library: string; studio: string; explore: string; feed: string; settings: string; admin: string; signOut: string; credits: string };
+  nav:       { dashboard: string; generate: string; library: string; studio: string; explore: string; feed: string; settings: string; admin: string; signOut: string; credits: string };
   auth: {
     login: string; register: string; email: string; password: string; confirmPassword: string;
     loginBtn: string; registerBtn: string; noAccount: string; hasAccount: string;
@@ -54,6 +54,7 @@ export interface Translations {
 
 export const en: Translations = {
   nav: {
+    dashboard: "Dashboard",
     generate:  "Generate",
     library:   "Library",
     studio:    "Studio",

@@ -21,15 +21,12 @@ export interface AppDeps {
   clientUrl:         string;
   incrementRateKey:  (key: string, windowMs: number) => Promise<number>;
   serviceUrls: {
-    auth:         string;
-    generation:   string;
-    upload:       string;
-    library:      string;
-    credit:       string;
-    admin:        string;
-    notification: string;
-    profile:      string;
-    social:       string;
+    auth:       string;
+    generation: string;
+    upload:     string;
+    library:    string;
+    admin:      string;
+    social:     string;
   };
   rateLimits: {
     general:    number;
@@ -101,6 +98,12 @@ export function createApp(deps: AppDeps): Hono {
     await next();
   };
 
+  // Upstream istek için zaman aşımı. Bir downstream servis yavaşlar/takılırsa
+  // istemci isteği sonsuza dek askıda kalmasın diye fetch abort edilir.
+  // SSE/stream route'ları uzun ömürlüdür → onlara timeout uygulanmaz.
+  const PROXY_TIMEOUT_MS = parseInt(process.env.PROXY_TIMEOUT_MS ?? "30000");
+  const isStreamPath = (p: string) => /\/(stream|sse)$/.test(p);
+
   // ── Proxy helper ──────────────────────────────────────────────────────────
   async function proxyTo(c: Context, baseUrl: string, overridePath?: string): Promise<Response> {
     const reqUrl  = new URL(c.req.url);
@@ -119,17 +122,22 @@ export function createApp(deps: AppDeps): Hono {
     let bodyPayload: ArrayBuffer | undefined;
     if (hasBody) bodyPayload = await c.req.arrayBuffer();
 
+    const signal = isStreamPath(path) ? undefined : AbortSignal.timeout(PROXY_TIMEOUT_MS);
+
     try {
-      const upstream = await fetch(forward, { method: c.req.method, headers, body: bodyPayload });
+      const upstream = await fetch(forward, { method: c.req.method, headers, body: bodyPayload, signal });
       return new Response(upstream.body, {
         status:     upstream.status,
         statusText: upstream.statusText,
         headers:    new Headers(upstream.headers),
       });
-    } catch {
-      return new Response(JSON.stringify({ success: false, error: "Service unavailable" }), {
-        status: 502, headers: { "content-type": "application/json" },
-      });
+    } catch (err) {
+      // AbortSignal.timeout → TimeoutError (DOMException). Diğer ağ hataları → 502.
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      return new Response(
+        JSON.stringify({ success: false, error: timedOut ? "Gateway timeout" : "Service unavailable" }),
+        { status: timedOut ? 504 : 502, headers: { "content-type": "application/json" } },
+      );
     }
   }
 
@@ -148,7 +156,16 @@ export function createApp(deps: AppDeps): Hono {
     allowHeaders: ["Content-Type", "Authorization"],
   }));
 
-  app.all("/internal/*", (c) => c.json({ success: false, error: "Forbidden" }, 403));
+  // Block service-to-service /internal/* routes from ever being reached by a client.
+  // Matching only "/internal/*" is insufficient: prefix-stripping catch-alls like
+  // app.all("/api/generate/*") would forward "/api/generate/internal/generations"
+  // to a downstream service's /internal route WITH a valid internal token (IDOR).
+  // So reject "/internal" appearing as a path segment anywhere.
+  app.use("*", async (c, next) => {
+    if (/(^|\/)internal(\/|$)/.test(c.req.path))
+      return c.json({ success: false, error: "Forbidden" }, 403);
+    await next();
+  });
   app.get("/health",     (c) => c.json({ status: "ok", service: "gateway" }));
 
   // ── API Docs ──────────────────────────────────────────────────────────────
@@ -209,16 +226,17 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.library, "/collections" + c.req.path.replace("/api/collections", "")));
 
   // ── Credits ───────────────────────────────────────────────────────────────
-  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/packages"));
-  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.credit, "/webhook"));
+  app.get ("/api/credits/packages", generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/packages"));
+  app.post("/api/credits/webhook",  generalLimiter, (c) => proxyTo(c, serviceUrls.auth, "/credits/webhook"));
   app.post("/api/credits/earn",  (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.post("/api/credits/spend", (c) => c.json({ success: false, error: "Forbidden" }, 403));
   app.all ("/api/credits/*", requireAuth, generalLimiter, (c) =>
-    proxyTo(c, serviceUrls.credit, c.req.path.replace("/api/credits", "") || "/"));
+    proxyTo(c, serviceUrls.auth, "/credits" + (c.req.path.replace("/api/credits", "") || "/")));
 
   // ── Notification ──────────────────────────────────────────────────────────
-  app.all("/api/notify/*", requireAuth, generalLimiter, (c) =>
-    proxyTo(c, serviceUrls.notification, c.req.path.replace("/api/notify", "") || "/"));
+  // /api/notify/stream → generation servisi (SSE notification taşındı)
+  app.all("/api/notify/*", requireAuth, (c) =>
+    proxyTo(c, serviceUrls.generation, c.req.path.replace("/api/notify", "") || "/"));
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   app.all("/api/admin/*", requireAuth, requireAdmin, (c) =>
@@ -229,10 +247,10 @@ export function createApp(deps: AppDeps): Hono {
     proxyTo(c, serviceUrls.auth, c.req.path.replace("/api/users", "") || "/"));
 
   // ── Profile ───────────────────────────────────────────────────────────────
-  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me"));
-  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.profile, "/me/avatar"));
-  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.profile, `/${c.req.param("username")}`));
+  app.get ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.put ("/api/profile/me",        requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me"));
+  app.post("/api/profile/me/avatar", requireAuth, generalLimiter, (c) => proxyTo(c, serviceUrls.social, "/profile/me/avatar"));
+  app.get ("/api/profile/:username",              generalLimiter, (c) => proxyTo(c, serviceUrls.social, `/profile/${c.req.param("username")}`));
 
   // ── Projects ──────────────────────────────────────────────────────────────
   app.get("/api/projects/share/:token", generalLimiter, (c) =>

@@ -67,13 +67,12 @@ const uploadSchema = new mongoose.Schema({
 const Upload = mongoose.model("Upload", uploadSchema);
 
 // ── MULTER (disk storage — heap'e yüklemez, MinIO'ya stream edilir) ──────────
-const ALLOWED_MIMES = ["audio/wav", "audio/mpeg", "audio/ogg", "audio/mp3"];
+const ALLOWED_MIMES = ["audio/wav", "audio/mpeg", "audio/ogg"];
 
 // VULN-15: Derive file extension from MIME type — never trust originalname
 const MIME_TO_EXT: Record<string, string> = {
   "audio/wav":  ".wav",
   "audio/mpeg": ".mp3",
-  "audio/mp3":  ".mp3",
   "audio/ogg":  ".ogg",
 };
 
@@ -183,7 +182,9 @@ app.delete("/:id", async (req, res) => {
 
     // MinIO'dan sil
     const key = doc.audioUrl!.split(`/${MINIO_BUCKET}/`)[1];
-    if (key) await minioClient.removeObject(MINIO_BUCKET, key).catch(() => {});
+    if (key) await minioClient.removeObject(MINIO_BUCKET, key).catch(e =>
+      logger.warn("[upload] MinIO removeObject failed — file may be orphaned", { key, message: String(e) })
+    );
 
     // Quota iade et (atomik)
     await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -doc.fileSize! } });
@@ -237,7 +238,9 @@ app.delete("/internal/uploads/:id", async (req, res) => {
     if (!doc) return res.status(404).json({ success: false, error: "Upload not found" });
 
     const key = doc.audioUrl!.split(`/${MINIO_BUCKET}/`)[1];
-    if (key) await minioClient.removeObject(MINIO_BUCKET, key).catch(() => {});
+    if (key) await minioClient.removeObject(MINIO_BUCKET, key).catch(e =>
+      logger.warn("[upload] MinIO removeObject failed — file may be orphaned", { key, message: String(e) })
+    );
 
     await Upload.deleteOne({ _id: doc._id });
     await User.findByIdAndUpdate(userId, { $inc: { storageUsed: -doc.fileSize! } });

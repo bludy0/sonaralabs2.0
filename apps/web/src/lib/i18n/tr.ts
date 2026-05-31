@@ -2,6 +2,7 @@ import type { Translations } from "./en";
 
 export const tr: Translations = {
   nav: {
+    dashboard: "Panel",
     generate:  "Üret",
     library:   "Kütüphane",
     studio:    "Stüdyo",

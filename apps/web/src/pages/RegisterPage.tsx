@@ -5,6 +5,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { api } from "../lib/api";
 import { useT } from "../store/useI18nStore";
 import { useFixedTheme } from "../hooks/useFixedTheme";
+import { SonarLogo } from "../components/SonarLogo";
 
 export default function RegisterPage() {
   useFixedTheme();
@@ -136,9 +137,7 @@ export default function RegisterPage() {
 
       <div className="relative w-full max-w-sm rounded-lg p-8 space-y-7" style={{ background: "var(--bg-card)" }}>
         <div>
-          <p className="text-[9px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
-            AI_CORE_v2.0
-          </p>
+          <SonarLogo size={40} variant="full" animated style={{ marginBottom: 8 }} />
           <h1 className="text-2xl font-bold uppercase leading-none" style={{ letterSpacing: "-0.01em", color: "var(--text-1)" }}>
             {t.auth.register}
           </h1>

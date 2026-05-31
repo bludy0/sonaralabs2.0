@@ -18,11 +18,8 @@ const {
   GENERATION_SERVICE_URL   = "http://generation:3002",
   UPLOAD_SERVICE_URL       = "http://upload:3003",
   LIBRARY_SERVICE_URL      = "http://library:3004",
-  CREDIT_SERVICE_URL       = "http://credit:3005",
-  ADMIN_SERVICE_URL        = "http://admin:3006",
-  NOTIFICATION_SERVICE_URL = "http://notification:3007",
-  PROFILE_SERVICE_URL      = "http://profile:3008",
-  SOCIAL_SERVICE_URL       = "http://social:3009",
+  ADMIN_SERVICE_URL  = "http://admin:3006",
+  SOCIAL_SERVICE_URL  = "http://social:3009",
 } = process.env;
 
 if (!ACCESS_JWT_SECRET || !INTERNAL_JWT_SECRET) {
@@ -60,15 +57,12 @@ const app = createApp({
   clientUrl:         CLIENT_URL,
   incrementRateKey,
   serviceUrls: {
-    auth:         AUTH_SERVICE_URL,
-    generation:   GENERATION_SERVICE_URL,
-    upload:       UPLOAD_SERVICE_URL,
-    library:      LIBRARY_SERVICE_URL,
-    credit:       CREDIT_SERVICE_URL,
-    admin:        ADMIN_SERVICE_URL,
-    notification: NOTIFICATION_SERVICE_URL,
-    profile:      PROFILE_SERVICE_URL,
-    social:       SOCIAL_SERVICE_URL,
+    auth:       AUTH_SERVICE_URL,
+    generation: GENERATION_SERVICE_URL,
+    upload:     UPLOAD_SERVICE_URL,
+    library:    LIBRARY_SERVICE_URL,
+    admin:      ADMIN_SERVICE_URL,
+    social:     SOCIAL_SERVICE_URL,
   },
   rateLimits: {
     general:    parseInt(RATE_LIMIT_GENERAL),
