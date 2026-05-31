@@ -130,17 +130,22 @@ function notifyUser(payload: NotifyJobPayload) {
   }
 }
 
+// Kredi servisi (auth) çağrıları istek yolundadır; timeout'suz kalırsa auth
+// yavaşladığında /generate isteği askıda kalır. AI provider çağrılarının uzun
+// timeout'larını etkilememek için global default yerine inline timeout kullanılır.
+const CREDIT_HTTP_TIMEOUT_MS = parseInt(process.env.INTERNAL_HTTP_TIMEOUT_MS ?? "10000");
+
 async function spendCredit(userId: string, amount: number, jobId: string, reason: string) {
   await axios.post(`${AUTH_SERVICE_URL}/credits/spend`, {
     userId, amount, reason, relatedId: jobId, relatedModel: "Generation",
-  }, { headers: { "x-internal-token": makeInternalToken() } });
+  }, { headers: { "x-internal-token": makeInternalToken() }, timeout: CREDIT_HTTP_TIMEOUT_MS });
 }
 
 async function earnCredit(userId: string, amount: number, relatedId: string) {
   try {
     await axios.post(`${AUTH_SERVICE_URL}/credits/earn`, {
       userId, amount, reason: "queue_failure_refund", relatedId, relatedModel: "Generation",
-    }, { headers: { "x-internal-token": makeInternalToken() } });
+    }, { headers: { "x-internal-token": makeInternalToken() }, timeout: CREDIT_HTTP_TIMEOUT_MS });
   } catch {
     logger.warn("[generation] Credit refund failed", { relatedId });
   }

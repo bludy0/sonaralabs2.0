@@ -98,6 +98,12 @@ export function createApp(deps: AppDeps): Hono {
     await next();
   };
 
+  // Upstream istek için zaman aşımı. Bir downstream servis yavaşlar/takılırsa
+  // istemci isteği sonsuza dek askıda kalmasın diye fetch abort edilir.
+  // SSE/stream route'ları uzun ömürlüdür → onlara timeout uygulanmaz.
+  const PROXY_TIMEOUT_MS = parseInt(process.env.PROXY_TIMEOUT_MS ?? "30000");
+  const isStreamPath = (p: string) => /\/(stream|sse)$/.test(p);
+
   // ── Proxy helper ──────────────────────────────────────────────────────────
   async function proxyTo(c: Context, baseUrl: string, overridePath?: string): Promise<Response> {
     const reqUrl  = new URL(c.req.url);
@@ -116,17 +122,22 @@ export function createApp(deps: AppDeps): Hono {
     let bodyPayload: ArrayBuffer | undefined;
     if (hasBody) bodyPayload = await c.req.arrayBuffer();
 
+    const signal = isStreamPath(path) ? undefined : AbortSignal.timeout(PROXY_TIMEOUT_MS);
+
     try {
-      const upstream = await fetch(forward, { method: c.req.method, headers, body: bodyPayload });
+      const upstream = await fetch(forward, { method: c.req.method, headers, body: bodyPayload, signal });
       return new Response(upstream.body, {
         status:     upstream.status,
         statusText: upstream.statusText,
         headers:    new Headers(upstream.headers),
       });
-    } catch {
-      return new Response(JSON.stringify({ success: false, error: "Service unavailable" }), {
-        status: 502, headers: { "content-type": "application/json" },
-      });
+    } catch (err) {
+      // AbortSignal.timeout → TimeoutError (DOMException). Diğer ağ hataları → 502.
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      return new Response(
+        JSON.stringify({ success: false, error: timedOut ? "Gateway timeout" : "Service unavailable" }),
+        { status: timedOut ? 504 : 502, headers: { "content-type": "application/json" } },
+      );
     }
   }
 

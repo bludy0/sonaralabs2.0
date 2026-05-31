@@ -6,6 +6,10 @@ import jwt from "jsonwebtoken";
 import axios from "axios";
 import { InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
 
+// Servisler-arası HTTP çağrıları timeout'suz kalırsa bir downstream takıldığında
+// bu servisin isteği de askıda kalır. Tüm axios çağrılarına ortak timeout uygula.
+axios.defaults.timeout = parseInt(process.env.INTERNAL_HTTP_TIMEOUT_MS ?? "10000");
+
 const app = express();
 app.use(express.json({ limit: "3mb" }));
 
