@@ -1,5 +1,9 @@
 # library-service — CLAUDE.md
 
+> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
+> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
+> PROJECT-GUIDE.md ve kaynak kod esastır.
+
 Port: 3004 | Prefix: /api/library/*, /api/collections/*
 Collection sahibi: `collections`
 Not: generations ve uploads collection'larına doğrudan erişmez — HTTP ile ilgili servisten alır.

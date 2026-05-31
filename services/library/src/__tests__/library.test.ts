@@ -216,13 +216,17 @@ describe("DAW Projects CRUD", () => {
 describe("Internal token", () => {
   const secret = process.env.INTERNAL_JWT_SECRET!;
 
-  it("library servis tokenı üretir ve doğrulanır", () => {
+  it("internal token, adına işlem yapılan kullanıcının id'sini taşır", () => {
+    // library, downstream çağrılarda token sub'ına gerçek userId koyar — böylece
+    // generation/upload userId'yi query yerine token'dan alır (IDOR savunması).
+    const userId = "507f1f77bcf86cd799439011";
     const token = jwt.sign(
-      { sub: "library-service", role: "user", _internal: true },
+      { sub: userId, role: "user", _internal: true },
       secret,
       { expiresIn: "5m" }
     );
     const payload = jwt.verify(token, secret) as any;
     expect(payload._internal).toBe(true);
+    expect(payload.sub).toBe(userId);
   });
 });

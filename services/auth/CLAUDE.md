@@ -1,5 +1,9 @@
 # auth-service — CLAUDE.md
 
+> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
+> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
+> PROJECT-GUIDE.md ve kaynak kod esastır.
+
 Port: 3001 | Prefix: /api/auth/*, /api/users/*
 Collection sahibi: `users`
 

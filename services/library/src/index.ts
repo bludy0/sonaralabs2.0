@@ -69,9 +69,12 @@ function getPayload(req: express.Request): InternalJwtPayload {
   return payload;
 }
 
-function internalToken(): string {
+// Internal token, adına işlem yapılan KULLANICININ id'sini taşır. Böylece
+// generation/upload internal endpoint'leri userId'yi token sub'ından alır;
+// query param'a güvenmez (IDOR savunması — defense in depth).
+function internalToken(userId: string): string {
   return jwt.sign(
-    { sub: "library-service", role: "user", _internal: true },
+    { sub: userId, role: "user", _internal: true },
     INTERNAL_JWT_SECRET!,
     { expiresIn: "5m" }
   );
@@ -83,7 +86,7 @@ function internalToken(): string {
 app.get("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const headers = { "x-internal-token": internalToken() };
+    const headers = { "x-internal-token": internalToken(userId) };
     const page       = parseInt(req.query.page as string) || 1;
     const limit      = parseInt(req.query.limit as string) || 20;
     const favOnly    = req.query.favorites === "true";
@@ -92,8 +95,8 @@ app.get("/", async (req, res) => {
 
     // limit=200: tüm itemlar in-memory çekilip sayfalanır (her servis max 200)
     const [genRes, upRes] = await Promise.allSettled([
-      axios.get(`${GENERATION_SERVICE_URL}/internal/generations?userId=${userId}&limit=200`, { headers }),
-      axios.get(`${UPLOAD_SERVICE_URL}/internal/uploads?userId=${userId}&limit=200`, { headers }),
+      axios.get(`${GENERATION_SERVICE_URL}/internal/generations?limit=200`, { headers }),
+      axios.get(`${UPLOAD_SERVICE_URL}/internal/uploads?limit=200`, { headers }),
     ]);
 
     let generations = genRes.status === "fulfilled" ? genRes.value.data.data : [];
@@ -143,12 +146,12 @@ app.patch("/:model/:id/favorite", async (req, res) => {
     const { sub: userId } = getPayload(req);
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const { model, id } = req.params;
-    const headers = { "x-internal-token": internalToken() };
+    const headers = { "x-internal-token": internalToken(userId) };
 
     if (model === "generation") {
-      await axios.patch(`${GENERATION_SERVICE_URL}/internal/generations/${id}/favorite?userId=${userId}`, {}, { headers });
+      await axios.patch(`${GENERATION_SERVICE_URL}/internal/generations/${id}/favorite`, {}, { headers });
     } else if (model === "upload") {
-      await axios.patch(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}/favorite?userId=${userId}`, {}, { headers });
+      await axios.patch(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}/favorite`, {}, { headers });
     } else {
       return res.status(400).json({ success: false, error: "Invalid model. Use generation or upload." });
     }
@@ -165,12 +168,12 @@ app.delete("/:model/:id", async (req, res) => {
     const { sub: userId } = getPayload(req);
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
     const { model, id } = req.params;
-    const headers = { "x-internal-token": internalToken() };
+    const headers = { "x-internal-token": internalToken(userId) };
 
     if (model === "upload") {
-      await axios.delete(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}?userId=${userId}`, { headers });
+      await axios.delete(`${UPLOAD_SERVICE_URL}/internal/uploads/${id}`, { headers });
     } else if (model === "generation") {
-      await axios.delete(`${GENERATION_SERVICE_URL}/internal/generations/${id}?userId=${userId}`, { headers });
+      await axios.delete(`${GENERATION_SERVICE_URL}/internal/generations/${id}`, { headers });
     } else {
       return res.status(400).json({ success: false, error: "Model must be 'generation' or 'upload'." });
     }

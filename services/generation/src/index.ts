@@ -568,8 +568,8 @@ app.post("/:id/retry", async (req, res) => {
 // PATCH /internal/generations/:id/favorite
 app.patch("/internal/generations/:id/favorite", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
+    // userId, internal token'ın sub'ından alınır — query param'a güvenilmez (IDOR).
+    const { sub: userId } = getPayload(req);
     const gen = await Generation.findOne({ _id: req.params.id, userId });
     if (!gen) return res.status(404).json({ success: false, error: "Not found" });
     const updated = await Generation.findByIdAndUpdate(
@@ -584,8 +584,7 @@ app.patch("/internal/generations/:id/favorite", async (req, res) => {
 // DELETE /internal/generations/:id — for library service
 app.delete("/internal/generations/:id", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
+    const { sub: userId } = getPayload(req);
     const result = await Generation.findOneAndDelete({ _id: req.params.id, userId });
     if (!result) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, message: "Deleted" } as ApiResponse);
@@ -597,8 +596,7 @@ app.delete("/internal/generations/:id", async (req, res) => {
 // GET /internal/generations — for library service
 app.get("/internal/generations", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
+    const { sub: userId } = getPayload(req);
     const limit  = Math.min(200, parseInt(req.query.limit as string) || 50);
     const type   = req.query.type as GenerationType | undefined;
     // Library şu an sadece "done" gösteriyor; status parametresi eklenerek genişletilebilir

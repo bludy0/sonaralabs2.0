@@ -199,8 +199,8 @@ app.delete("/:id", async (req, res) => {
 // PATCH /internal/uploads/:id/favorite — library servisi için favori toggle
 app.patch("/internal/uploads/:id/favorite", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
+    // userId, internal token'ın sub'ından alınır — query param'a güvenilmez (IDOR).
+    const { sub: userId } = getPayload(req);
     const doc = await Upload.findOne({ _id: req.params.id, userId });
     if (!doc) return res.status(404).json({ success: false, error: "Not found" });
     const updated = await Upload.findByIdAndUpdate(
@@ -217,8 +217,7 @@ app.patch("/internal/uploads/:id/favorite", async (req, res) => {
 // GET /internal/uploads — library servisi için
 app.get("/internal/uploads", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
+    const { sub: userId } = getPayload(req);
     const limit = Math.min(200, parseInt(req.query.limit as string) || 50);
     const uploads = await Upload.find({ userId }).sort({ createdAt: -1 }).limit(limit);
     res.json({ success: true, data: uploads } as ApiResponse);
@@ -230,10 +229,7 @@ app.get("/internal/uploads", async (req, res) => {
 // DELETE /internal/uploads/:id — library servisi için (userId query param olarak gelir)
 app.delete("/internal/uploads/:id", async (req, res) => {
   try {
-    getPayload(req);
-    const userId = req.query.userId as string;
-    if (!userId) return res.status(400).json({ success: false, error: "userId required" });
-
+    const { sub: userId } = getPayload(req);
     const doc = await Upload.findOne({ _id: req.params.id, userId });
     if (!doc) return res.status(404).json({ success: false, error: "Upload not found" });
 
