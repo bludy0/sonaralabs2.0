@@ -339,8 +339,9 @@ app.post("/register", async (req, res) => {
       emailVerifyExpires: new Date(Date.now() + VERIFY_TOKEN_TTL_MS),
     });
 
-    // Email gönder (SMTP yoksa console'a yazar)
-    await sendVerificationEmail(email, verifyToken).catch(err =>
+    // Email gönder (SMTP yoksa console'a yazar). FIRE-AND-FORGET: yanıtı bekletme —
+    // yavaş/takılı SMTP register isteğini askıda bırakır (gateway 30s'de 504'ler).
+    void sendVerificationEmail(email, verifyToken).catch(err =>
       logger.error("[auth] Email gönderilemedi:", { message: String(err) })
     );
 
@@ -448,7 +449,8 @@ app.post("/resend-verification", async (req, res) => {
     user.emailVerifyExpires = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
     await user.save();
 
-    await sendVerificationEmail(email, verifyToken).catch(err =>
+    // Fire-and-forget — yavaş SMTP yanıtı bekletmesin (bkz. register).
+    void sendVerificationEmail(email, verifyToken).catch(err =>
       logger.error("[auth] Resend email hatası:", { message: String(err) })
     );
 
@@ -571,7 +573,8 @@ app.post("/forgot-password", async (req, res) => {
       passwordResetExpires: new Date(Date.now() + RESET_TOKEN_TTL_MS),
     });
 
-    await sendPasswordResetEmail(email, resetToken).catch(err =>
+    // Fire-and-forget — yavaş SMTP yanıtı bekletmesin (bkz. register).
+    void sendPasswordResetEmail(email, resetToken).catch(err =>
       logger.error("[auth] Reset email gönderilemedi:", { message: String(err) })
     );
 
