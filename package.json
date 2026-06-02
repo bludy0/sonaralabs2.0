@@ -6,6 +6,8 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "start": "bash scripts/dev.sh",
+    "stop": "bash scripts/stop.sh",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
