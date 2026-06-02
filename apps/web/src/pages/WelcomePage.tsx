@@ -96,8 +96,9 @@ const MOCK_PROMPTS = [
 export default function WelcomePage() {
   useFixedTheme("cyber-red");
 
-  const user     = useAuthStore(s => s.user);
-  const navigate = useNavigate();
+  const user      = useAuthStore(s => s.user);
+  const isLoading = useAuthStore(s => s.isLoading);
+  const navigate  = useNavigate();
 
   const [mockIdx,      setMockIdx]      = useState(0);
   const [mockTyped,    setMockTyped]    = useState("");
@@ -144,6 +145,9 @@ export default function WelcomePage() {
     return () => clearInterval(typeTimer);
   }, [mockIdx]);
 
+  // Session doğrulaması bitmeden (isLoading) redirect kararı verme — aksi halde
+  // persist edilmiş eski user ile landing yerine dashboard'a, oradan da login'e düşer.
+  if (isLoading) return null;
   if (user) return <Navigate to="/dashboard" replace />;
 
   return (

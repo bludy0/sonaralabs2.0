@@ -45,10 +45,12 @@ function AdminRoute() {
 
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const { user, fetchMe } = useAuthStore();
+  const fetchMe = useAuthStore(s => s.fetchMe);
 
   useEffect(() => {
-    if (!user) fetchMe();
+    // Persist edilmiş user olsa bile session'ı her boot'ta cookie ile doğrula —
+    // aksi halde ölü cookie ile "giriş yapmış" sanılıp yanlış redirect olur.
+    fetchMe();
   }, []);
 
   return (

@@ -30,7 +30,9 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      isLoading: false,
+      // Boot'ta her zaman fetchMe ile session doğrulanır; doğrulama bitene kadar
+      // route'lar (ProtectedRoute / WelcomePage) karar vermesin diye true başlar.
+      isLoading: true,
 
       login: async (email, password) => {
         set({ isLoading: true });
