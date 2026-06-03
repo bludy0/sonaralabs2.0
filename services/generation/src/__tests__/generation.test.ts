@@ -28,6 +28,7 @@ jest.mock("redis", () => ({
 
 import { getMusicCreditCost, getSFXCreditCost } from "@sonaralabs/types";
 import type { MusicProvider, SFXProvider } from "@sonaralabs/types";
+import { buildGameMusicPrompt } from "../providers/stableaudio";
 
 // ── Image validation helpers (index.ts'den) ───────────────────────────────────
 const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -294,5 +295,86 @@ describe("makeInternalToken", () => {
     const payload = jwt.verify(token, secret) as any;
     expect(payload._internal).toBe(true);
     expect(payload.sub).toBe("generation-service");
+  });
+});
+
+// ── Stable Audio: oyun müziği prompt optimizasyonu ─────────────────────────────
+describe("buildGameMusicPrompt", () => {
+  it("kullanıcı promptu + tür + mood + oyun çerçevesini birleştirir", () => {
+    const p = buildGameMusicPrompt("dungeon crawl", "chiptune", "heroic");
+    expect(p).toContain("dungeon crawl");
+    expect(p.toLowerCase()).toContain("chiptune");        // tür betimlemesi
+    expect(p.toLowerCase()).toContain("heroic");          // mood betimlemesi
+    expect(p).toContain("video game soundtrack");         // oyun çerçevesi (suffix)
+    expect(p).toContain("seamless loop");
+  });
+
+  it("promptta zaten geçen tür kelimesini tekrarlamaz", () => {
+    const p = buildGameMusicPrompt("ambient soft pads", "ambient", "calm");
+    const ambientCount = (p.toLowerCase().match(/ambient/g) || []).length;
+    expect(ambientCount).toBe(1);                         // tür betimlemesi eklenmedi
+  });
+
+  it("bilinmeyen tür/mood ile çökmeden prompt + suffix döner", () => {
+    const p = buildGameMusicPrompt("test track", "no-such-style", "no-such-mood");
+    expect(p).toContain("test track");
+    expect(p).toContain("video game soundtrack");
+  });
+
+  it("çıktıyı 500 karaktere kısaltır", () => {
+    const p = buildGameMusicPrompt("a".repeat(900), "orchestral", "epic");
+    expect(p.length).toBeLessThanOrEqual(500);
+  });
+});
+
+// ── Export: format haritası + SSRF guard (index.ts mantığının kopyası) ─────────
+const EXPORT_FORMATS: Record<string, { ext: string }> = {
+  wav: { ext: "wav" }, mp3: { ext: "mp3" }, ogg: { ext: "ogg" }, flac: { ext: "flac" }, aac: { ext: "m4a" },
+};
+function isOwnAudioUrl(u: string, base: string, bucket: string): boolean {
+  try {
+    const url = new URL(u);
+    const b   = new URL(base);
+    return url.host === b.host && url.pathname.startsWith(`/${bucket}/`);
+  } catch { return false; }
+}
+
+describe("export format haritası", () => {
+  it("wav/mp3/ogg/flac/aac desteklenir, bilinmeyen reddedilir", () => {
+    for (const f of ["wav", "mp3", "ogg", "flac", "aac"]) expect(EXPORT_FORMATS[f]).toBeDefined();
+    expect(EXPORT_FORMATS["exe"]).toBeUndefined();
+    expect(EXPORT_FORMATS["wav"].ext).toBe("wav");
+    expect(EXPORT_FORMATS["aac"].ext).toBe("m4a");
+  });
+});
+
+describe("export SSRF guard (isOwnAudioUrl)", () => {
+  const base = "http://localhost:9000";
+  const bucket = "sonaralabs-audio";
+
+  it("kendi MinIO bucket URL'sini kabul eder", () => {
+    expect(isOwnAudioUrl("http://localhost:9000/sonaralabs-audio/music/x.wav", base, bucket)).toBe(true);
+  });
+  it("yabancı host'u reddeder", () => {
+    expect(isOwnAudioUrl("http://evil.example.com/sonaralabs-audio/x.wav", base, bucket)).toBe(false);
+  });
+  it("farklı bucket'ı reddeder", () => {
+    expect(isOwnAudioUrl("http://localhost:9000/secret-bucket/x.wav", base, bucket)).toBe(false);
+  });
+  it("geçersiz URL'i reddeder", () => {
+    expect(isOwnAudioUrl("not-a-url", base, bucket)).toBe(false);
+  });
+});
+
+// ── ZeroGPU kota hata tespiti (providerErrorMessage mantığı) ───────────────────
+function isQuotaError(msg: string): boolean {
+  return /quota|zerogpu/i.test(msg);
+}
+describe("ZeroGPU kota hatası tespiti", () => {
+  it("kota aşımı mesajını tanır", () => {
+    expect(isQuotaError('StableAudio: space error {"error": "You have exceeded your free ZeroGPU quota (60s requested vs. 0s left)"}')).toBe(true);
+  });
+  it("normal sağlayıcı hatasını kota saymaz", () => {
+    expect(isQuotaError("StableAudio: submit failed (HTTP 502)")).toBe(false);
   });
 });

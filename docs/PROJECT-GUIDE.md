@@ -19,7 +19,7 @@ Workstation) düzenler, ve diğer kullanıcılarla sosyal olarak paylaşır.
 müzik loopu üretip export edebilmeli.
 
 Üç ana yetenek katmanı:
-1. **Üretim** — Beatoven / Sonauto (müzik), ElevenLabs (SFX), Gemini (görüntü→prompt, MIDI, mastering önerisi)
+1. **Üretim** — Stable Audio (müzik, HF ZeroGPU ücretsiz; Beatoven/Sonauto geçici kapalı), ElevenLabs (SFX), Gemini (görüntü→prompt, MIDI, mastering önerisi)
 2. **DAW Studio** — tarayıcı içi çok kanallı düzenleyici (Web Audio API, MIDI piano roll, efektler, export)
 3. **Sosyal** — profil, public track yayını, beğeni, takip, aktivite feed'i
 
@@ -86,7 +86,7 @@ sonaralabs2.0/
  +email)  +Gemini)                                  MinIO)
 
 Altyapı: MongoDB 7 (Atlas) | Redis 7 + BullMQ | MinIO (dev) / Backblaze B2 (prod)
-AI:      Beatoven · Sonauto · ElevenLabs · Gemini (Flash/vision/midi/mastering)
+AI:      Stable Audio (HF ZeroGPU) · ElevenLabs · Gemini (Flash/vision/midi/mastering) · Beatoven/Sonauto (kapalı)
 Ödeme:   Stripe Checkout (auth servisinde)
 ```
 
@@ -128,7 +128,7 @@ engeller — **IDOR koruması** (en son commit'te eklendi).
 | POST /api/generate, /sfx, /analyze-image | 3 | 1 dk | userId |
 | POST /api/upload | 10 | 1 dk | userId |
 | /api/auth/* (public) | 10 | 15 dk | gerçek bağlantı IP'si |
-| POST /api/generate/export/ogg | 3 | 1 dk | userId |
+| POST /api/generate/export(/file) | 3 | 1 dk | userId |
 
 IP, `getConnInfo` ile gerçek soket adresinden alınır — `X-Forwarded-For`
 client tarafından sahte set edilebilir, rate-limit key olarak kullanılmaz (VULN-06).
@@ -191,7 +191,8 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 - `POST /analyze-image` → Gemini Flash görüntü→prompt (1 kredi, hata olursa iade)
 - `POST /midi` → Gemini ile MIDI melodi üret (1 kredi, max 32 nota)
 - `POST /master` → Gemini mastering önerileri (kredisiz, DAW Studio kullanır)
-- `POST /export/ogg` → server-side FFmpeg WAV→OGG (multer memory, 25MB)
+- `POST /export` → `{ audioUrl, format }` (MinIO kaynağı → FFmpeg). Format: wav/mp3/ogg/flac/aac. SSRF guard: yalnızca kendi MinIO/bucket URL'leri (`isOwnAudioUrl`)
+- `POST /export/file` → multipart `wav` + `format` (editörde kırpılmış buffer → FFmpeg dönüşümü, 25MB)
 - `GET /history` → üretim geçmişi (sayfalı, status/type filtre)
 - `GET /stats` → kişisel dashboard istatistikleri (aggregate'ler)
 - `GET /capabilities` → hangi provider'lar aktif (frontend disable için, 60s cache)
@@ -201,8 +202,17 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 - internal: `GET/DELETE /internal/generations`, `PATCH /internal/generations/:id/favorite`
 
 **Provider Pattern** (`providers/`): `IMusicProvider` arayüzü, `Map`'te kayıt.
-Aktif: `beatoven`, `sonauto`. `lyria` kapalı (Gemini Audio API hazır değil).
+Çalışan: **`stableaudio`** — Stability AI'ın `stabilityai/stable-audio-3` HF Space'i,
+Gradio `/call` REST API + SSE ile, HF **ZeroGPU** günlük ücretsiz kotasından (HF token gerekir,
+ek ücret yok). `prompt` style/mood ile zenginleştirilir (`buildGameMusicPrompt`).
+`beatoven`/`sonauto` map'te kayıtlı ama .env key'leri geçersiz → frontend'de "Geçici olarak
+kapalı". `lyria` kapalı (Gemini Lyria-3 erişilebilir ama ücretsiz kota = 0, billing ister).
 SFX: `ElevenLabsProvider`. Yeni provider = yeni dosya + map'e 1 satır.
+
+> ⚠️ **ZeroGPU limiti:** ücretsiz kota ~210 GPU-sn/gün, çağrı başına ~60sn rezerve →
+> **günde ~3-4 üretim, tüm site için paylaşımlı** (tek HF token). Çok kullanıcılı üretim için
+> HF PRO, kullanıcı-başına token veya ücretli API gerekir. Kota dolunca space `error` döner →
+> `providerErrorMessage` net "Günlük ücretsiz GPU kotası doldu" mesajı verir, kredi iade edilir.
 
 **BullMQ:** kuyruk `generation`, `{ attempts: 1, removeOnComplete: 100, removeOnFail: 200 }`,
 worker concurrency 3, lock = `JOB_TIMEOUT_MS + 10s`. Retry manueldir.
@@ -251,7 +261,9 @@ JWT payload'lar, `ApiResponse<T>`, generation/SFX request tipleri, SSE event'ler
 social tipleri (`UserProfile`, `PublicTrack`, `FeedEvent`), ve **kredi maliyet tabloları**:
 
 ```
-MUSIC_CREDIT_COST   beatoven: 15→3 30→5 60→8 | lyria: 15→2 30→3 60→5 | sonauto: hep 5 (flat, ~95s üretir)
+MUSIC_CREDIT_COST   stableaudio: hep 1 (flat) | beatoven: 15→3 30→5 60→8 | lyria: 15→2 30→3 60→5 | sonauto: hep 5
+MusicStyle (18)     ambient action adventure puzzle horror platformer orchestral chiptune synthwave fantasy boss racing scifi lofi medieval cyberpunk western jrpg
+MusicMood (12)      tense calm epic mysterious cheerful heroic melancholic dark energetic dreamy playful triumphant
 SFX_CREDIT_COST     elevenlabs: 1
 getMusicCreditCost(provider, duration, isRetry)  → retry = Math.ceil(base/2)
 ```
@@ -282,7 +294,7 @@ Tarayıcıda çalışan tam bir **çok kanallı DAW**, React paketi olarak `apps
 - **Engine** (`src/engine/`): `AudioEngine`, `SynthEngine`, `SamplerEngine`, `AutomationEngine`, `TrackNode`, `instruments.ts`
 - **Efektler** (`engine/effects/`): EQ, Reverb, Delay, Chorus, Compressor, Limiter
 - **UI** (`src/components/`): Timeline (audio/midi clip'ler), PianoRoll (MIDI), Mixer (channel/master strip), EffectsChain panelleri, LoopEditor + WaveformView, AutomationLane, Mastering paneli, Transport
-- **Export** (`src/lib/`): `exportMix`, `exportMp3` (lamejs), `renderMixWorker` (web worker), OGG export gateway üzerinden FFmpeg'e gider
+- **Export** (`src/lib/`): `exportMix`, `exportMp3` (lamejs), `renderMixWorker` (web worker). AudioEditor + kuyruk kartı: WAV (client-side) + MP3/OGG/FLAC (`/export` veya `/export/file` üzerinden gateway→FFmpeg)
 - **State:** `useDAWStore`, `useAudioEngine` (zustand)
 - Projeler library servisinin `daw_projects` collection'ında saklanır (serialize edilmiş track'ler, max 2MB).
 - AI yardımcıları: `/api/generate/midi` (MIDI üret), `/api/generate/master` (mastering önerisi)
@@ -309,7 +321,9 @@ ACCESS_JWT_SECRET / REFRESH_JWT_SECRET / INTERNAL_JWT_SECRET   # 3 ayrı 64+ byt
 MONGO_URI / REDIS_URL
 MINIO_ENDPOINT / _PORT / _ACCESS_KEY / _SECRET_KEY / _BUCKET / _PUBLIC_URL / _USE_SSL
 STORAGE_QUOTA_BYTES=524288000  MAX_FILE_SIZE_BYTES=52428800
-GEMINI_API_KEY / BEATOVEN_API_KEY / SONAUTO_API_KEY / ELEVENLABS_API_KEY
+HUGGINGFACE_API_KEY (Stable Audio/ZeroGPU, zorunlu) / GEMINI_API_KEY / ELEVENLABS_API_KEY
+BEATOVEN_API_KEY / SONAUTO_API_KEY (opsiyonel; geçerli key gelince frontend'de açılır)
+STABLE_AUDIO_SPACE_URL (opsiyonel override, varsayılan stabilityai/stable-audio-3)
 STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
 SMTP_HOST/_PORT/_SECURE/_USER/_PASS  EMAIL_FROM  APP_URL
 CLIENT_URL / FRONTEND_URL            # CORS + redirect güvenliği
@@ -369,7 +383,7 @@ göre değişenler:
 | `profile` servisi :3008 | **social** servisine taşındı |
 | PostgreSQL kullanımı | **kaldırıldı** — her şey MongoDB |
 | Gateway: `http-proxy-middleware` | **Hono** + native `fetch` proxy |
-| Provider: Beatoven + Lyria | **Beatoven + Sonauto** aktif, Lyria kapalı, **ElevenLabs SFX** eklendi |
+| Provider: Beatoven + Lyria | **Stable Audio (HF ZeroGPU, ücretsiz)** aktif; Beatoven/Sonauto key geçersiz→kapalı; Lyria ücretli→kapalı; **ElevenLabs SFX** |
 | Sadece müzik üretimi | + **SFX, MIDI, mastering, görüntü analizi, DAW Studio** |
 | Ödeme yok (stub) | **Stripe Checkout** aktif (auth servisinde) |
 | Email yok | **nodemailer** + onay/reset/bildirim mailleri |

@@ -19,12 +19,13 @@ export interface Translations {
     sessionExpired: string; emailNotVerified: string; resendVerification: string; resendSent: string; resendFailed: string; accountLocked: string; passwordMismatch: string; passwordWeak: string;
   };
   generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string; imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxGenerate: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string;
-    sonautoNote: string; queueJobs: string;
+    sonautoNote: string; stableaudioNote: string; providerClosed: string; providerComingSoon: string; queueJobs: string;
     // GenerationCard statuses & labels
     statusQueued: string; statusProcessing: string; statusSuccess: string; statusFailed: string;
     pipelineQueued: string; pipelineAiWork: string; pipelineComplete: string;
     waitingInQueue: string; aiSynthesis: string; generationComplete: string; generationFailedStatus: string; finalizing: string;
     retrying: string; remove: string; removing: string; openEditor: string;
+    downloadBtn: string; downloading: string; downloadFormat: string; downloadFailed: string;
   };
   library:   { title: string; search: string; upload: string; all: string; uploads: string; generations: string; favorites: string; empty: string; noMatches: string; addToStudio: string; download: string; delete: string; favorite: string; unfavorite: string; publish: string; unpublish: string; sortNewest: string; sortOldest: string; sortLongest: string; sortShortest: string; filterAll: string; filterDone: string; filterProcessing: string; filterFailed: string; filterGenerated: string; filterUploaded: string; confirmDelete: string; loadError: string; uploadSuccess: string; uploadFailed: string; addedToCollection: string; collectionError: string; removeError: string; renameError: string; deleteCollectionError: string; loadCollectionError: string; newCollectionError: string };
   dashboard: { title: string; totalGen: string; credits: string; storage: string; history: string; creditLog: string; noHistory: string; earned: string; spent: string; refunded: string; creditBalance: string; completed: string };
@@ -167,6 +168,9 @@ export const en: Translations = {
     generationFailed: "Generation failed.",
     sfxFailed:        "SFX generation failed.",
     sonautoNote:      "Sonauto always generates ~95s of audio. The selected duration is stored as metadata only.",
+    stableaudioNote:  "Stable Audio (free, via Hugging Face). Uses a daily free GPU quota — may queue at busy times.",
+    providerClosed:      "Temporarily unavailable",
+    providerComingSoon:  "Coming soon",
     queueJobs:        "jobs",
     // GenerationCard
     statusQueued:     "QUEUED",
@@ -185,6 +189,10 @@ export const en: Translations = {
     remove:           "Remove",
     removing:         "Removing…",
     openEditor:       "Open Editor",
+    downloadBtn:      "Download",
+    downloading:      "Downloading",
+    downloadFormat:   "Download format",
+    downloadFailed:   "Download failed.",
   },
   library: {
     title:       "My Library",

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
+import { api } from "../lib/api";
 
 interface AudioEditorProps {
   audioUrl: string;
   onClose: () => void;
 }
 
-type ExportFormat = "wav" | "ogg" | "mp3";
+type ExportFormat = "wav" | "mp3" | "ogg" | "flac";
 
 // ---------------------------------------------------------------------------
 // WAV encoder
@@ -153,14 +154,10 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
   // Export
   // -------------------------------------------------------------------------
   const handleExport = async () => {
-    if (exportFormat !== "wav") {
-      setExportStub(`${exportFormat.toUpperCase()} export coming soon. Downloading as WAV instead.`);
-    } else {
-      setExportStub(null);
-    }
-
+    setExportStub(null);
     setIsExporting(true);
     try {
+      // 1) Kaynağı çöz + kullanıcı trim'ini uygula → işlenmiş WAV blob (client-side)
       const audioCtx = new AudioContext();
       const response = await fetch(audioUrl);
       const arrayBuffer = await response.arrayBuffer();
@@ -187,16 +184,34 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
       }
 
       const wavBlob = audioBufferToWav(trimmed);
-      const url = URL.createObjectURL(wavBlob);
+      await audioCtx.close();
+
+      // 2) WAV → doğrudan indir; diğer formatlar → backend FFmpeg dönüşümü
+      let blob: Blob = wavBlob;
+      if (exportFormat !== "wav") {
+        const fd = new FormData();
+        fd.append("wav", wavBlob, "edit.wav");
+        fd.append("format", exportFormat);
+        // FormData boundary'sini tarayıcı ayarlasın diye fetch (axios json default'unu atlar)
+        const res = await fetch(`${api.defaults.baseURL || ""}/api/generate/export/file`, {
+          method: "POST",
+          credentials: "include",
+          body: fd,
+        });
+        if (!res.ok) throw new Error(`export failed (${res.status})`);
+        blob = await res.blob();
+      }
+
+      // 3) İndir
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `sonaralabs-export.wav`;
+      a.download = `sonaralabs-export.${exportFormat}`;
       a.click();
       URL.revokeObjectURL(url);
-
-      await audioCtx.close();
     } catch (err) {
       console.error("Export failed:", err);
+      setExportStub("Export failed. Please try again.");
     } finally {
       setIsExporting(false);
     }
@@ -394,7 +409,7 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
             </span>
 
             <div className="flex items-center gap-2 mb-3">
-              {(["wav", "ogg", "mp3"] as ExportFormat[]).map((fmt) => (
+              {(["wav", "mp3", "ogg", "flac"] as ExportFormat[]).map((fmt) => (
                 <button
                   key={fmt}
                   onClick={() => { setExportFormat(fmt); setExportStub(null); }}

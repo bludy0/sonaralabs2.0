@@ -17,15 +17,51 @@ import { toast } from "../lib/toast";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STYLES: MusicStyle[]            = ["ambient", "action", "puzzle", "horror", "platformer"];
-const MOODS:  MusicMood[]             = ["tense", "calm", "epic", "mysterious", "cheerful"];
+// Tür (genre) seçenekleri — oyun müziğine yönelik. value = MusicStyle slug.
+const STYLES: { value: MusicStyle; label: string }[] = [
+  { value: "ambient",    label: "Ambient" },
+  { value: "action",     label: "Action" },
+  { value: "adventure",  label: "Adventure" },
+  { value: "puzzle",     label: "Puzzle" },
+  { value: "horror",     label: "Horror" },
+  { value: "platformer", label: "Platformer" },
+  { value: "orchestral", label: "Orchestral" },
+  { value: "chiptune",   label: "Chiptune (8-bit)" },
+  { value: "synthwave",  label: "Synthwave" },
+  { value: "fantasy",    label: "Fantasy / RPG" },
+  { value: "boss",       label: "Boss Battle" },
+  { value: "racing",     label: "Racing" },
+  { value: "scifi",      label: "Sci-Fi" },
+  { value: "lofi",       label: "Lo-Fi" },
+  { value: "medieval",   label: "Medieval" },
+  { value: "cyberpunk",  label: "Cyberpunk" },
+  { value: "western",    label: "Western" },
+  { value: "jrpg",       label: "JRPG" },
+];
+const MOODS: { value: MusicMood; label: string }[] = [
+  { value: "tense",       label: "Tense" },
+  { value: "calm",        label: "Calm" },
+  { value: "epic",        label: "Epic" },
+  { value: "mysterious",  label: "Mysterious" },
+  { value: "cheerful",    label: "Cheerful" },
+  { value: "heroic",      label: "Heroic" },
+  { value: "melancholic", label: "Melancholic" },
+  { value: "dark",        label: "Dark" },
+  { value: "energetic",   label: "Energetic" },
+  { value: "dreamy",      label: "Dreamy" },
+  { value: "playful",     label: "Playful" },
+  { value: "triumphant",  label: "Triumphant" },
+];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
 
-interface Capabilities { music: { beatoven: boolean; sonauto: boolean; lyria?: boolean }; }
-const ALL_PROVIDERS: { value: MusicProvider; label: string; badge?: string; comingSoon?: boolean }[] = [
-  { value: "beatoven", label: "Beatoven" },
-  { value: "sonauto",  label: "Sonauto"  },
-  { value: "lyria",    label: "Lyria",    badge: "SOON", comingSoon: true },
+interface Capabilities { music: { beatoven: boolean; sonauto: boolean; stableaudio?: boolean; lyria?: boolean }; }
+// closed: API'si şu an kullanılamıyor (örn. geçersiz key) → "Geçici olarak kapalı".
+// Geçerli key gelince ilgili satırdan `closed: true` kaldır.
+const ALL_PROVIDERS: { value: MusicProvider; label: string; comingSoon?: boolean; closed?: boolean }[] = [
+  { value: "stableaudio", label: "Stable Audio" },
+  { value: "beatoven",    label: "Beatoven", closed: true },
+  { value: "sonauto",     label: "Sonauto",  closed: true },
+  { value: "lyria",       label: "Lyria",    comingSoon: true },
 ];
 
 const MAX_IMAGE_BYTES     = 10 * 1024 * 1024;
@@ -51,7 +87,7 @@ export default function GeneratePage() {
   const [style, setStyle]       = useState<MusicStyle>("ambient");
   const [mood, setMood]         = useState<MusicMood>("calm");
   const [duration, setDuration] = useState<GenerationDuration>(30);
-  const [provider, setProvider] = useState<MusicProvider>("beatoven");
+  const [provider, setProvider] = useState<MusicProvider>("stableaudio");
 
   const [sfxPrompt, setSfxPrompt]     = useState("");
   const [sfxDuration, setSfxDuration] = useState<number | "">("");
@@ -66,10 +102,15 @@ export default function GeneratePage() {
   const [formError,     setFormError]     = useState<string | null>(null);
   const [capabilities,  setCapabilities]  = useState<Capabilities | null>(null);
 
-  // Lyria her zaman listede kalır (comingSoon=true), diğerleri capabilities'e göre filtrelenir
-  const availableProviders = capabilities
-    ? ALL_PROVIDERS.filter(p => p.comingSoon || capabilities.music[p.value as keyof typeof capabilities.music])
-    : ALL_PROVIDERS;
+  // Provider durumu: ok = seçilebilir | closed = geçici kapalı | soon = yakında.
+  // Tüm provider'lar listede görünür; kullanılamayanlar disabled + etiketli olur.
+  type ProviderStatus = "ok" | "closed" | "soon";
+  const providerStatus = (p: typeof ALL_PROVIDERS[number]): ProviderStatus => {
+    if (p.comingSoon) return "soon";
+    if (p.closed)     return "closed";
+    if (capabilities && !capabilities.music[p.value as keyof typeof capabilities.music]) return "closed";
+    return "ok";
+  };
 
   const creditCost = CREDIT_COST[provider]?.[duration] ?? 0;
 
@@ -85,14 +126,15 @@ export default function GeneratePage() {
       .catch(() => {}); // hata olursa tüm provider'lar gösterilir
   }, []);
 
-  // Eğer seçili provider coming-soon veya mevcut değilse birinciye geç
+  // Seçili provider kullanılamıyorsa (kapalı/yakında) ilk kullanılabilir olana geç
   useEffect(() => {
-    const current = availableProviders.find(p => p.value === provider);
-    if (!current || current.comingSoon) {
-      const first = availableProviders.find(p => !p.comingSoon);
+    const current = ALL_PROVIDERS.find(p => p.value === provider);
+    if (!current || providerStatus(current) !== "ok") {
+      const first = ALL_PROVIDERS.find(p => providerStatus(p) === "ok");
       if (first) setProvider(first.value);
     }
-  }, [availableProviders, provider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities, provider]);
 
   // ── Image handling ─────────────────────────────────────────────────────────
 
@@ -377,14 +419,14 @@ export default function GeneratePage() {
                     label={t.generate.style}
                     value={style}
                     onChange={v => setStyle(v as MusicStyle)}
-                    options={STYLES.map(s => ({ value: s, label: s }))}
+                    options={STYLES.map(s => ({ value: s.value, label: s.label }))}
                   />
                   <SelectField
                     id="mood-select"
                     label={t.generate.mood}
                     value={mood}
                     onChange={v => setMood(v as MusicMood)}
-                    options={MOODS.map(m => ({ value: m, label: m }))}
+                    options={MOODS.map(m => ({ value: m.value, label: m.label }))}
                   />
                   <SelectField
                     id="duration-select"
@@ -398,11 +440,13 @@ export default function GeneratePage() {
                     label={t.generate.provider}
                     value={provider}
                     onChange={v => setProvider(v as MusicProvider)}
-                    options={availableProviders.map(p => ({
-                      value: p.value,
-                      label: p.comingSoon ? `${p.label} — Coming Soon` : p.label,
-                      disabled: p.comingSoon,
-                    }))}
+                    options={ALL_PROVIDERS.map(p => {
+                      const st = providerStatus(p);
+                      const suffix = st === "soon"   ? ` — ${t.generate.providerComingSoon}`
+                                   : st === "closed" ? ` — ${t.generate.providerClosed}`
+                                   : "";
+                      return { value: p.value, label: `${p.label}${suffix}`, disabled: st !== "ok" };
+                    })}
                   />
                 </div>
 
@@ -412,6 +456,15 @@ export default function GeneratePage() {
                     style={{ background: "color-mix(in srgb, var(--accent) 6%, transparent)", color: "var(--text-3)" }}
                   >
                     {t.generate.sonautoNote}
+                  </p>
+                )}
+
+                {provider === "stableaudio" && (
+                  <p
+                    className="text-[10px] rounded px-3 py-2 leading-relaxed"
+                    style={{ background: "color-mix(in srgb, var(--accent) 6%, transparent)", color: "var(--text-3)" }}
+                  >
+                    {t.generate.stableaudioNote}
                   </p>
                 )}
 

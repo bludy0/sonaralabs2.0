@@ -115,6 +115,9 @@ export const tr: Translations = {
     generationFailed: "Üretim başarısız.",
     sfxFailed:        "Efekt üretimi başarısız.",
     sonautoNote:      "Sonauto her zaman ~95s ses üretir. Seçilen süre yalnızca meta veri olarak kaydedilir.",
+    stableaudioNote:  "Stable Audio (ücretsiz, Hugging Face üzerinden). Günlük ücretsiz GPU kotası kullanır — yoğunlukta kuyruğa girebilir.",
+    providerClosed:      "Geçici olarak kapalı",
+    providerComingSoon:  "Yakında",
     queueJobs:        "iş",
     // GenerationCard
     statusQueued:     "KUYRUKTA",
@@ -133,6 +136,10 @@ export const tr: Translations = {
     remove:           "Kaldır",
     removing:         "Kaldırılıyor…",
     openEditor:       "Editörde Aç",
+    downloadBtn:      "İndir",
+    downloading:      "İndiriliyor",
+    downloadFormat:   "İndirme formatı",
+    downloadFailed:   "İndirme başarısız.",
   },
   library: {
     title:       "Kütüphanem",

@@ -365,7 +365,7 @@ export default function WelcomePage() {
         }
       `}</style>
 
-      <div style={{ background: "var(--bg-page)", color: "var(--text-1)", overflowX: "hidden" }}>
+      <div lang="en" style={{ background: "var(--bg-page)", color: "var(--text-1)", overflowX: "hidden" }}>
 
         {/* ════════════════════════════════ NAVBAR ══════════════════════════ */}
         <div className="wu-nav-wrap">

@@ -20,7 +20,9 @@ import {
 } from "@sonaralabs/types";
 import { BeatovenProvider }  from "./providers/beatoven";
 import { SonautoProvider }   from "./providers/sonauto";
+import { StableAudioProvider } from "./providers/stableaudio";
 import { ElevenLabsProvider } from "./providers/elevenlabs";
+import { ensureAudioBucket } from "./providers/minio-client";
 import { analyzeImageWithGemini } from "./providers/gemini-vision";
 import { GEMINI_MASTERING_CONFIG, GEMINI_MIDI_CONFIG } from "./providers/config";
 
@@ -49,7 +51,7 @@ const generationSchema = new mongoose.Schema({
   userId:            { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   type:              { type: String, enum: ["music", "sfx"], default: "music" },
   prompt:            { type: String, required: true },
-  provider:          { type: String, enum: ["beatoven", "lyria", "sonauto", "elevenlabs"] },
+  provider:          { type: String, enum: ["beatoven", "lyria", "sonauto", "stableaudio", "elevenlabs"] },
   status:            { type: String, enum: ["pending","processing","done","failed"], default: "pending" },
   audioUrl:          String,
   duration:          Number,   // music: seconds (15/30/60); sfx: seconds (float)
@@ -83,6 +85,7 @@ interface IMusicProvider {
 const musicProviders = new Map<MusicProvider, IMusicProvider>([
   ["beatoven",  new BeatovenProvider()],
   ["sonauto",   new SonautoProvider()],
+  ["stableaudio", new StableAudioProvider()],
 ]);
 
 const sfxProvider = new ElevenLabsProvider();
@@ -202,6 +205,10 @@ function isInfrastructureError(err: any): boolean {
 
 function providerErrorMessage(err: any): string {
   const status = err?.response?.status as number | undefined;
+  // Stable Audio (ZeroGPU) günlük ücretsiz kota bitti → net, eyleme yönelik mesaj
+  if (/quota|zerogpu/i.test(String(err?.message ?? ""))) {
+    return "Günlük ücretsiz GPU kotası doldu (Stable Audio) — kredileriniz iade edildi. 24 saat sonra sıfırlanır; daha fazlası için HF PRO veya farklı bir sağlayıcı.";
+  }
   if (status === 404) return "Sağlayıcı modeli bulunamadı — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
   if (status === 402) return "Müzik sağlayıcısının kredisi tükendi — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
   if (status === 401) return "Sağlayıcı API anahtarı geçersiz — kredileriniz iade edildi.";
@@ -260,14 +267,17 @@ function getPayload(req: express.Request): InternalJwtPayload {
 app.post("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const { prompt, provider, style, mood, duration } = req.body as GenerationRequest;
+    const { prompt, provider, style, mood, duration: reqDuration } = req.body as GenerationRequest;
 
-    if (!prompt || !provider || !style || !mood || !duration) {
+    if (!prompt || !provider || !style || !mood || !reqDuration) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
     if (!musicProviders.has(provider)) {
       return res.status(400).json({ success: false, error: `Unknown music provider: ${provider}` });
     }
+
+    // Stable Audio 15/30/60'ın hepsini destekler; clamp gerekmez.
+    const duration = reqDuration;
 
     const creditCost = getMusicCreditCost(provider, duration);
     const gen = await Generation.create({
@@ -609,45 +619,92 @@ app.get("/internal/generations", async (req, res) => {
   }
 });
 
-// POST /export/ogg — server-side WAV → OGG conversion via FFmpeg
-app.post("/export/ogg", (req, res, next) => {
-  // Run multer middleware first, then handle with async function
+// POST /export/file — yüklenen WAV (örn. editörde kırpılmış) → seçilen formata
+// FFmpeg dönüşümü. Multipart: alan "wav" (dosya) + "format" (wav|mp3|ogg|flac|aac).
+app.post("/export/file", (req, res) => {
   uploadMem.single("wav")(req, res, async (err) => {
-    if (err) {
-      return res.status(400).json({ error: "File upload error: " + err.message });
-    }
-    try {
-      getPayload(req);
-    } catch {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (err) return res.status(400).json({ error: "File upload error: " + err.message });
+    try { getPayload(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
     if (!req.file) return res.status(400).json({ error: "No WAV file provided" });
 
-    const tmpDir = os.tmpdir();
-    const id = randomUUID();
-    const wavPath = path.join(tmpDir, `${id}.wav`);
-    const oggPath = path.join(tmpDir, `${id}.ogg`);
+    const fmt = EXPORT_FORMATS[String(req.body?.format || "mp3").toLowerCase()];
+    if (!fmt) return res.status(400).json({ error: "Unsupported format" });
+
+    const tmpDir  = os.tmpdir();
+    const id      = randomUUID();
+    const inPath  = path.join(tmpDir, `${id}.wav`);
+    const outPath = path.join(tmpDir, `${id}.${fmt.ext}`);
 
     try {
-      await fs.promises.writeFile(wavPath, req.file.buffer);
-      // execFile (args array) — no shell, no injection risk even with unusual paths
-      await execFileAsync("ffmpeg", ["-i", wavPath, "-c:a", "libvorbis", "-q:a", "6", oggPath]);
+      await fs.promises.writeFile(inPath, req.file.buffer);
+      // execFile (args dizisi) — shell yok, enjeksiyon riski yok
+      await execFileAsync("ffmpeg", ["-y", "-i", inPath, ...fmt.args, outPath]);
 
-      const ogg = await fs.promises.readFile(oggPath);
-      res.setHeader("Content-Type", "audio/ogg");
-      res.setHeader("Content-Disposition", 'attachment; filename="export.ogg"');
-      res.send(ogg);
-    } catch (err) {
-      logger.error("[export/ogg]", { message: String(err) });
-      if (!res.headersSent) {
-        res.status(500).json({ error: "OGG conversion failed. Ensure ffmpeg is installed." });
-      }
+      const out = await fs.promises.readFile(outPath);
+      res.setHeader("Content-Type", fmt.ct);
+      res.setHeader("Content-Disposition", `attachment; filename="export.${fmt.ext}"`);
+      res.send(out);
+    } catch (e) {
+      logger.error("[export/file]", { message: String(e) });
+      if (!res.headersSent) res.status(500).json({ error: "Conversion failed. Ensure ffmpeg is installed." });
     } finally {
-      // Always clean up temp files regardless of success or error
-      fs.promises.unlink(wavPath).catch(() => {});
-      fs.promises.unlink(oggPath).catch(() => {});
+      fs.promises.unlink(inPath).catch(() => {});
+      fs.promises.unlink(outPath).catch(() => {});
     }
   });
+});
+
+// POST /export — kaynak (MinIO WAV) → seçilen formata FFmpeg dönüşümü
+// Body: { audioUrl, format }  | format ∈ wav | mp3 | ogg | flac | aac
+const EXPORT_FORMATS: Record<string, { ext: string; ct: string; args: string[] }> = {
+  wav:  { ext: "wav",  ct: "audio/wav",  args: ["-c:a", "pcm_s16le"] },
+  mp3:  { ext: "mp3",  ct: "audio/mpeg", args: ["-c:a", "libmp3lame", "-q:a", "2"] },
+  ogg:  { ext: "ogg",  ct: "audio/ogg",  args: ["-c:a", "libopus", "-b:a", "192k"] },
+  flac: { ext: "flac", ct: "audio/flac", args: ["-c:a", "flac"] },
+  aac:  { ext: "m4a",  ct: "audio/mp4",  args: ["-c:a", "aac", "-b:a", "192k"] },
+};
+
+/** SSRF koruması: yalnızca kendi MinIO/bucket URL'lerimizi indir. */
+function isOwnAudioUrl(u: string): boolean {
+  try {
+    const url    = new URL(u);
+    const base   = new URL(process.env.MINIO_PUBLIC_URL ?? `http://localhost:${process.env.MINIO_PORT || 9000}`);
+    const bucket = process.env.MINIO_BUCKET || "sonaralabs-audio";
+    return url.host === base.host && url.pathname.startsWith(`/${bucket}/`);
+  } catch { return false; }
+}
+
+app.post("/export", async (req, res) => {
+  try { getPayload(req); } catch { return res.status(401).json({ error: "Unauthorized" }); }
+
+  const { audioUrl, format } = req.body as { audioUrl?: string; format?: string };
+  const fmt = EXPORT_FORMATS[(format || "wav").toLowerCase()];
+  if (!fmt)                       return res.status(400).json({ error: "Unsupported format" });
+  if (!audioUrl)                  return res.status(400).json({ error: "No audioUrl" });
+  if (!isOwnAudioUrl(audioUrl))   return res.status(400).json({ error: "Invalid audioUrl" });
+
+  const tmpDir  = os.tmpdir();
+  const id      = randomUUID();
+  const srcPath = path.join(tmpDir, `${id}.src`);
+  const outPath = path.join(tmpDir, `${id}.${fmt.ext}`);
+
+  try {
+    const src = await axios.get<ArrayBuffer>(audioUrl, { responseType: "arraybuffer", timeout: 30_000 });
+    await fs.promises.writeFile(srcPath, Buffer.from(src.data));
+    // execFile (args dizisi) — shell yok, enjeksiyon riski yok
+    await execFileAsync("ffmpeg", ["-y", "-i", srcPath, ...fmt.args, outPath]);
+
+    const out = await fs.promises.readFile(outPath);
+    res.setHeader("Content-Type", fmt.ct);
+    res.setHeader("Content-Disposition", `attachment; filename="export.${fmt.ext}"`);
+    res.send(out);
+  } catch (err) {
+    logger.error("[export]", { message: String(err) });
+    if (!res.headersSent) res.status(500).json({ error: "Conversion failed. Ensure ffmpeg is installed." });
+  } finally {
+    fs.promises.unlink(srcPath).catch(() => {});
+    fs.promises.unlink(outPath).catch(() => {});
+  }
 });
 
 // POST /master — AI mastering assistant (Gemini)
@@ -841,6 +898,7 @@ app.get("/capabilities", (_, res) => {
     music: {
       beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
       sonauto:   Boolean(process.env.SONAUTO_API_KEY),
+      stableaudio: Boolean(process.env.HUGGINGFACE_API_KEY),
       lyria:     false,
     },
     sfx: {
@@ -895,6 +953,7 @@ app.get("/health", (_, res) => res.json({
     music: {
       beatoven:  Boolean(process.env.BEATOVEN_API_KEY),
       sonauto:   Boolean(process.env.SONAUTO_API_KEY),
+      stableaudio: Boolean(process.env.HUGGINGFACE_API_KEY),
       lyria:     false,
     },
     sfx: {
@@ -906,6 +965,9 @@ app.get("/health", (_, res) => res.json({
   },
 }));
 
-mongoose.connect(MONGO_URI!).then(() => {
+mongoose.connect(MONGO_URI!).then(async () => {
+  // Audio bucket'ı garantiye al (host dev'de docker init container çalışmaz)
+  await ensureAudioBucket().catch(e =>
+    logger.warn("[generation] MinIO bucket warning", { message: String(e) }));
   app.listen(PORT, () => logger.info(`[generation] Listening on :${PORT}`));
 }).catch(err => { logger.error("[generation] MongoDB failed", err); process.exit(1); });

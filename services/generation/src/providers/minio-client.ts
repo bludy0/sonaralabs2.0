@@ -27,11 +27,30 @@ export const minioClient = new Minio.Client({
   secretKey: MINIO_SECRET_KEY,
 });
 
+/**
+ * Audio bucket'ının var olduğundan ve anonim-download policy'sine sahip olduğundan
+ * emin olur. Docker'da `createbuckets` init container bunu yapar; host dev'de
+ * (scripts/dev.sh) yapılmaz — bu yüzden generation boot'ta çağrılır.
+ * Idempotent: bucket varsa yalnızca policy'yi (tekrar) uygular.
+ */
+export async function ensureAudioBucket(): Promise<void> {
+  const exists = await minioClient.bucketExists(MINIO_BUCKET).catch(() => false);
+  if (!exists) await minioClient.makeBucket(MINIO_BUCKET, "us-east-1");
+  const policy = {
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow", Principal: { AWS: ["*"] },
+      Action: ["s3:GetObject"], Resource: [`arn:aws:s3:::${MINIO_BUCKET}/*`],
+    }],
+  };
+  await minioClient.setBucketPolicy(MINIO_BUCKET, JSON.stringify(policy));
+}
+
 /** Üretilen audio dosyasını MinIO'ya yükler ve public URL döner */
 export async function uploadAudioBuffer(
   buffer: Buffer,
   folder: "music" | "sfx",
-  ext: "mp3" | "ogg" | "wav",
+  ext: "mp3" | "ogg" | "wav" | "flac",
   contentType: string,
 ): Promise<string> {
   const objectName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
