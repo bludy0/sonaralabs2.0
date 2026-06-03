@@ -45,10 +45,15 @@ export interface SpendCreditPayload {
 // ── GENERATION ───────────────────────────────────────────────────────────────
 
 export type GenerationStatus   = "pending" | "processing" | "done" | "failed";
-export type MusicProvider      = "beatoven" | "lyria" | "sonauto";
+export type MusicProvider      = "beatoven" | "lyria" | "sonauto" | "stableaudio";
 export type SFXProvider        = "elevenlabs";
-export type MusicStyle         = "ambient" | "action" | "puzzle" | "horror" | "platformer";
-export type MusicMood          = "tense" | "calm" | "epic" | "mysterious" | "cheerful";
+export type MusicStyle =
+  | "ambient" | "action" | "adventure" | "puzzle" | "horror" | "platformer"
+  | "orchestral" | "chiptune" | "synthwave" | "fantasy" | "boss" | "racing"
+  | "scifi" | "lofi" | "medieval" | "cyberpunk" | "western" | "jrpg";
+export type MusicMood =
+  | "tense" | "calm" | "epic" | "mysterious" | "cheerful" | "heroic"
+  | "melancholic" | "dark" | "energetic" | "dreamy" | "playful" | "triumphant";
 export type GenerationDuration = 15 | 30 | 60;
 
 export interface GenerationRequest {
@@ -154,6 +159,10 @@ export const MUSIC_CREDIT_COST: Record<MusicProvider, Record<number, number>> = 
    * Flat fiyat: her istekte 5 kredi.
    */
   sonauto:   { 15: 5,  30: 5,  60: 5  },
+  /**
+   * Stable Audio (HF Space / ZeroGPU) — ücretsiz (HF token kotası). Flat 1 kredi.
+   */
+  stableaudio: { 15: 1,  30: 1,  60: 1  },
 } as const;
 
 export const SFX_CREDIT_COST: Record<SFXProvider, number> = {

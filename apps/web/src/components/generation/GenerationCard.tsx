@@ -3,6 +3,11 @@ import { api } from "../../lib/api";
 import type { GenerationItem } from "../../store/useGenerationStore";
 import { waveformBars } from "../../lib/format";
 import { useT } from "../../store/useI18nStore";
+import { toast } from "../../lib/toast";
+
+// İndirilebilir dosya formatları (kaynak WAV → FFmpeg ile dönüştürülür)
+const DOWNLOAD_FORMATS = ["wav", "mp3", "ogg", "flac"] as const;
+type DownloadFormat = typeof DOWNLOAD_FORMATS[number];
 
 // ── Estimated processing durations (seconds) by provider + track length ───────
 const ESTIMATED_DURATION: Record<string, Record<number, number>> = {
@@ -24,6 +29,149 @@ function fmtTime(secs: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return m > 0 ? `${m}:${String(r).padStart(2, "0")}` : `${r}s`;
+}
+
+/** Her zaman m:ss biçimi (oynatıcı zaman göstergesi için). */
+function fmtClock(secs: number): string {
+  if (!isFinite(secs) || secs < 0) secs = 0;
+  const s = Math.floor(secs);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// ── Inline audio player (done kartı için) ─────────────────────────────────────
+function InlinePlayer({ src, bars }: { src: string; bars: number[] }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) {
+      // Aynı anda tek parça çalsın — sayfadaki diğer audio'ları durdur
+      document.querySelectorAll("audio").forEach(el => { if (el !== a) el.pause(); });
+      a.play().catch(() => {});
+    } else {
+      a.pause();
+    }
+  };
+
+  // Pointer X → 0–1 oran (sürüklenince anlık güncellenir)
+  const ratioAt = (clientX: number): number => {
+    const el = trackRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  };
+  const applySeek = (clientX: number) => {
+    const a = audioRef.current;
+    if (!a || !dur) return;
+    const time = ratioAt(clientX) * dur;
+    a.currentTime = time;
+    setCur(time); // anlık görsel geri bildirim (timeupdate'i bekleme)
+  };
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!dur) return;
+    e.preventDefault();
+    setDragging(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    applySeek(e.clientX);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (dragging) applySeek(e.clientX);
+  };
+  const endDrag = (e: React.PointerEvent) => {
+    if (!dragging) return;
+    setDragging(false);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+
+  const progress = dur ? cur / dur : 0;
+
+  return (
+    <div
+      className="flex items-center gap-3 rounded-lg p-2.5"
+      style={{ background: "var(--bg-mid)", border: "1px solid var(--bg-border)" }}
+    >
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={e => { if (!dragging) setCur(e.currentTarget.currentTime); }}
+        onLoadedMetadata={e => setDur(e.currentTarget.duration)}
+        onEnded={() => { setPlaying(false); setCur(0); }}
+      />
+      {/* Play / pause */}
+      <button
+        onClick={toggle}
+        className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-transform"
+        style={{ background: "var(--accent)", color: "var(--accent-on)" }}
+        onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.transform = "scale(1.08)")}
+        onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.transform = "scale(1)")}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 22 }}>
+          {playing ? "pause" : "play_arrow"}
+        </span>
+      </button>
+      {/* Seekable waveform — tıkla veya sürükle (scrub) */}
+      <div
+        ref={trackRef}
+        className="relative flex-1 flex items-center group"
+        style={{ height: 36, cursor: dragging ? "grabbing" : "pointer", touchAction: "none", userSelect: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        {/* Bars (geniş tutma alanı için dikeyde ortalı) */}
+        <div className="flex items-center gap-[2px] h-7 w-full" style={{ pointerEvents: "none" }}>
+          {bars.map((h, i) => {
+            const filled = i / bars.length <= progress;
+            return (
+              <div
+                key={i}
+                className="flex-1 rounded-full"
+                style={{
+                  height: `${h}%`,
+                  background: filled ? "var(--accent)" : "color-mix(in srgb, var(--text-3) 35%, transparent)",
+                  transition: dragging ? "none" : "background 0.1s linear",
+                }}
+              />
+            );
+          })}
+        </div>
+        {/* Playhead — ince çizgi + tutamaç (sürüklerken büyür) */}
+        <div
+          className="absolute top-0 bottom-0"
+          style={{ left: `${progress * 100}%`, pointerEvents: "none", transition: dragging ? "none" : "left 0.1s linear" }}
+        >
+          <div style={{ position: "absolute", top: 4, bottom: 4, width: 2, marginLeft: -1, borderRadius: 2, background: "var(--accent)" }} />
+          <div
+            style={{
+              position: "absolute", top: "50%", left: 0, width: 12, height: 12,
+              marginLeft: -6, marginTop: -6, borderRadius: "50%", background: "var(--accent)",
+              boxShadow: "0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)",
+              transform: dragging ? "scale(1.25)" : "scale(1)",
+              opacity: dragging ? 1 : 0.9,
+              transition: "transform 0.1s ease",
+            }}
+          />
+        </div>
+      </div>
+      {/* Time */}
+      <span
+        className="shrink-0 text-[9px] font-mono tabular-nums"
+        style={{ color: "var(--text-3)", minWidth: 62, textAlign: "right" }}
+      >
+        {fmtClock(cur)} / {fmtClock(dur)}
+      </span>
+    </div>
+  );
 }
 
 // ── Pipeline step indicators ──────────────────────────────────────────────────
@@ -241,9 +389,10 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
   ensureKeyframes();
   const t = useT();
 
-  const [retrying,  setRetrying]  = useState(false);
-  const [removing,  setRemoving]  = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [retrying,    setRetrying]    = useState(false);
+  const [removing,    setRemoving]    = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [dlFormat,    setDlFormat]    = useState<DownloadFormat>("wav");
 
   // Track elapsed seconds since creation (anchor = createdAt)
   const [elapsed, setElapsed] = useState(() =>
@@ -268,23 +417,33 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
   // so the ETA during processing is relative to actual AI work time
   const processingElapsed = Math.max(0, elapsed - 8);
 
-  async function handleExportOgg() {
+  async function handleDownload() {
     if (!item.audioUrl) return;
-    setExporting(true);
+    setDownloading(true);
     try {
-      const { data } = await api.post(
-        "/api/generate/export/ogg",
-        { audioUrl: item.audioUrl },
-        { responseType: "blob" }
-      );
-      const url = URL.createObjectURL(new Blob([data], { type: "audio/ogg" }));
+      let blob: Blob;
+      if (dlFormat === "wav") {
+        // Kaynak zaten WAV → doğrudan indir (sunucu/ffmpeg gerekmez)
+        blob = await (await fetch(item.audioUrl)).blob();
+      } else {
+        const { data } = await api.post(
+          "/api/generate/export",
+          { audioUrl: item.audioUrl, format: dlFormat },
+          { responseType: "blob" }
+        );
+        blob = new Blob([data]);
+      }
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${item._id}.ogg`;
+      a.download = `sonaralabs-${item._id}.${dlFormat}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch { /* silent */ }
-    finally  { setExporting(false); }
+    } catch {
+      toast(t.generate.downloadFailed, "error");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function handleRetry() {
@@ -443,55 +602,57 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
       {/* ── Done: waveform + action buttons ──────────────────────────────── */}
       {item.status === "done" && item.audioUrl && (
         <>
-          <div className="flex items-center gap-[2px] h-8">
-            {bars.map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-full"
-                style={{ height: `${h}%`, background: "var(--accent)" }}
-              />
-            ))}
-          </div>
+          {/* Inline oynatıcı — play/pause + tıklanabilir dalga formu + süre */}
+          <InlinePlayer src={item.audioUrl} bars={bars} />
+
+          {/* İkincil aksiyonlar — Editor / DAW */}
           <div className="flex gap-2">
             <button
               onClick={() => onOpenEditor(item.audioUrl!)}
-              className="flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100"
+              className="flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all duration-100 flex items-center justify-center gap-1"
               style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
               onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-border)")}
               onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-input)")}
             >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>tune</span>
               {t.generate.openEditor}
             </button>
             <button
               onClick={() => onOpenInStudio(item)}
               title="Open in DAW Studio"
-              className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 flex items-center gap-1"
+              className="flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all duration-100 flex items-center justify-center gap-1"
               style={{ background: "var(--bg-input)", color: "var(--accent)" }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
-                (e.currentTarget as HTMLButtonElement).style.color      = "var(--accent-on)";
-                (e.currentTarget as HTMLButtonElement).style.boxShadow  = "0px 0px 12px color-mix(in srgb, var(--accent) 30%, transparent)";
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-input)";
-                (e.currentTarget as HTMLButtonElement).style.color      = "var(--accent)";
-                (e.currentTarget as HTMLButtonElement).style.boxShadow  = "none";
-              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-border)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-input)")}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>piano</span>
               DAW
             </button>
+          </div>
+
+          {/* İndirme — format seçici + indir butonu */}
+          <div className="flex gap-2">
+            <select
+              value={dlFormat}
+              onChange={e => setDlFormat(e.target.value as DownloadFormat)}
+              aria-label={t.generate.downloadFormat}
+              className="rounded-lg px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer"
+              style={{ background: "var(--bg-input)", color: "var(--text-2)", border: "none" }}
+            >
+              {DOWNLOAD_FORMATS.map(f => (
+                <option key={f} value={f}>{f.toUpperCase()}</option>
+              ))}
+            </select>
             <button
-              onClick={handleExportOgg}
-              disabled={exporting}
-              title="Export as OGG"
-              className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-100 flex items-center gap-1 disabled:opacity-40"
-              style={{ background: "var(--bg-input)", color: "var(--text-2)" }}
-              onMouseEnter={e => !exporting && ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-border)")}
-              onMouseLeave={e =>              ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg-input)")}
+              onClick={handleDownload}
+              disabled={downloading}
+              className="flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all duration-100 flex items-center justify-center gap-1.5 disabled:opacity-40"
+              style={{ background: "var(--accent)", color: "var(--accent-on)" }}
+              onMouseEnter={e => !downloading && ((e.currentTarget as HTMLButtonElement).style.opacity = "0.9")}
+              onMouseLeave={e =>                ((e.currentTarget as HTMLButtonElement).style.opacity = "1")}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>download</span>
-              {exporting ? "…" : "OGG"}
+              {downloading ? `${t.generate.downloading}…` : `${t.generate.downloadBtn} ${dlFormat.toUpperCase()}`}
             </button>
           </div>
         </>

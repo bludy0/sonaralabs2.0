@@ -8,7 +8,8 @@ Port: 3002 | Prefix: `/api/generate/*`
 Collection sahibi: `generations`
 
 ## Sorumluluk
-- AI müzik üretimi (Beatoven + Lyria, Provider Pattern)
+- AI müzik üretimi (**Stable Audio** / HF ZeroGPU aktif; Beatoven/Sonauto key geçersiz→kapalı, Lyria ücretli→kapalı — Provider Pattern)
+- Format dönüşümü + indirme (`/export`, `/export/file` — FFmpeg: wav/mp3/ogg/flac/aac)
 - Görüntü analizi (Gemini Flash → müzik promptu)
 - BullMQ job kuyruğu ve worker
 - SSE durum akışı
@@ -21,6 +22,8 @@ POST  /api/generate                   ← müzik üretimi başlat
 GET   /api/generate/status/:jobId     ← SSE stream
 GET   /api/generate/history           ← üretim geçmişi
 POST  /api/generate/:id/retry         ← yeniden üret (yarı kredi)
+POST  /api/generate/export            ← { audioUrl, format } MinIO kaynağı → FFmpeg (SSRF guard)
+POST  /api/generate/export/file       ← multipart wav + format (editör kırpılmış buffer)
 
 GET   /internal/generations           ← library servisi kullanır
 ```
@@ -34,8 +37,10 @@ interface IMusicProvider {
   isAvailable(): Promise<boolean>;
 }
 
-// providers/BeatovenAdapter.ts → Beatoven REST API (async poll)
-// providers/LyriaAdapter.ts   → Gemini API (base64 audio)
+// providers/stableaudio.ts → stabilityai/stable-audio-3 HF Space (Gradio /call + SSE, ZeroGPU)
+//   prompt'u style/mood ile zenginleştirir (buildGameMusicPrompt)
+//   ⚠️ ücretsiz ZeroGPU kotası ~günde 3-4 üretim (tüm site paylaşımlı, tek HF token)
+// providers/beatoven.ts, sonauto.ts → kayıtlı ama .env key geçersiz (kapalı)
 // Yeni model = yeni adapter + map'e tek satır
 ```
 
@@ -139,12 +144,13 @@ req.on('close', () => clearInterval(interval));
 ## Kredi maliyetleri
 
 ```typescript
-const CREDIT_COSTS = {
-  'image-analyze': 1,
-  'beatoven-15': 3, 'beatoven-30': 5, 'beatoven-60': 8,
-  'lyria-15': 2,   'lyria-30': 3,   'lyria-60': 5,
+const MUSIC_CREDIT_COST = {
+  stableaudio: { 15: 1, 30: 1, 60: 1 },   // flat 1 (ücretsiz ZeroGPU)
+  beatoven:    { 15: 3, 30: 5, 60: 8 },
+  lyria:       { 15: 2, 30: 3, 60: 5 },
+  sonauto:     { 15: 5, 30: 5, 60: 5 },
 } as const;
-// retry = Math.ceil(normal / 2)
+// image-analyze = 1 | retry = Math.ceil(normal / 2)
 ```
 
 ## Desteklenen image formatları

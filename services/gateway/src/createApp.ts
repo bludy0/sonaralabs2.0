@@ -74,7 +74,7 @@ export function createApp(deps: AppDeps): Hono {
   const generationLimiter = rateLimiter(rateLimits.generation, 60_000,  "rl:generation:", userKey);
   const uploadLimiter     = rateLimiter(rateLimits.upload,     60_000,  "rl:upload:",     userKey);
   const authLimiter       = rateLimiter(rateLimits.auth,       900_000, "rl:auth:");
-  const oggExportLimiter  = rateLimiter(3,                     60_000,  "rl:ogg-export:", userKey);
+  const exportLimiter     = rateLimiter(3,                     60_000,  "rl:export:", userKey);
 
   // ── Auth middleware ───────────────────────────────────────────────────────
   const requireAuth: MiddlewareHandler = async (c, next) => {
@@ -208,7 +208,8 @@ export function createApp(deps: AppDeps): Hono {
   app.post("/api/generate/sfx",           requireAuth, generationLimiter, (c) => proxyTo(c, serviceUrls.generation, "/sfx"));
   app.post("/api/generate/analyze-image", requireAuth, generationLimiter, (c) => proxyTo(c, serviceUrls.generation, "/analyze-image"));
   app.post("/api/generate/midi",          requireAuth, generalLimiter,    (c) => proxyTo(c, serviceUrls.generation, "/midi"));
-  app.post("/api/generate/export/ogg",    requireAuth, oggExportLimiter,  (c) => proxyTo(c, serviceUrls.generation, "/export/ogg"));
+  app.post("/api/generate/export",        requireAuth, exportLimiter,     (c) => proxyTo(c, serviceUrls.generation, "/export"));
+  app.post("/api/generate/export/file",   requireAuth, exportLimiter,     (c) => proxyTo(c, serviceUrls.generation, "/export/file"));
   app.all ("/api/generate/*",             requireAuth, generalLimiter,    (c) =>
     proxyTo(c, serviceUrls.generation, c.req.path.replace("/api/generate", "") || "/"));
 

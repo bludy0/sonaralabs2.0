@@ -51,6 +51,71 @@ export const SONAUTO_CONFIG = {
   downloadAndStore:  true,
 } as const;
 
+export const STABLEAUDIO_CONFIG = {
+  /**
+   * Stable Audio — resmi HuggingFace Space (stabilityai/stable-audio-3, ZeroGPU).
+   * Gradio /call API: POST → event_id, GET SSE stream → WAV dosya URL'i.
+   * ÜCRETSİZ: ZeroGPU günlük kotası kullanılır; sadece geçerli bir HF token gerekir
+   * (HUGGINGFACE_API_KEY). Kart/satın alma yok.
+   */
+  spaceUrl:    "https://stabilityai-stable-audio-3.hf.space",
+  fn:          "infer",
+  /** /infer imzası: [variant, prompt, duration, steps, cfg_scale, sampler, seed] */
+  variant:     "small-music" as const, // hızlı; ZeroGPU kotasını korur
+  steps:       8,
+  cfgScale:    1.0,
+  sampler:     "pingpong" as const,
+  /** Space model max 380s; biz site seçenekleriyle (15/30/60) sınırlıyız. */
+  maxDuration: 60 as const,
+  outputFormat: "wav" as const,
+  contentType:  "audio/wav",
+  /** Tek istek timeout (ms) — ZeroGPU kuyruğu + üretim. */
+  timeoutMs:   180_000,
+  /** Her prompt'a eklenen oyun-müziği çerçevesi (Stable Audio bunlara iyi yanıt verir). */
+  promptSuffix: "video game soundtrack, instrumental, seamless loop, professionally produced, high quality stereo audio",
+} as const;
+
+/**
+ * Oyun-müziği için style (tür) → zengin Stable Audio betimlemesi.
+ * Yeni bir tür eklemek: MusicStyle'a ekle + buraya bir satır.
+ */
+export const STYLE_PROMPTS: Record<string, string> = {
+  ambient:    "ambient atmospheric soundscape, evolving synth pads, spacious reverb",
+  action:     "high-energy action music, driving percussion, fast tempo, intense",
+  adventure:  "adventurous orchestral score, sweeping heroic melodies, sense of exploration",
+  puzzle:     "playful minimal puzzle music, light plucks, curious and relaxed",
+  horror:     "dark horror ambience, dissonant strings, eerie drones, unsettling tension",
+  platformer: "upbeat platformer tune, bouncy rhythm, catchy chiptune-pop melody",
+  orchestral: "epic orchestral, cinematic strings, brass and timpani, choir",
+  chiptune:   "8-bit chiptune, retro arcade NES style, square and pulse waves",
+  synthwave:  "retro synthwave, analog synths, neon 80s outrun, gated drums",
+  fantasy:    "fantasy RPG soundtrack, Celtic flutes and harps, magical orchestral",
+  boss:       "intense boss battle theme, aggressive orchestral, war drums and choir, epic",
+  racing:     "fast-paced electronic racing music, energetic driving beat, adrenaline",
+  scifi:      "futuristic sci-fi score, pulsing synths, cosmic atmosphere, deep bass",
+  lofi:       "lo-fi chill beats, mellow keys, vinyl crackle, relaxed groove",
+  medieval:   "medieval folk, lute, fiddle and tin whistle, tavern atmosphere",
+  cyberpunk:  "dark cyberpunk, gritty industrial synths, dystopian neon city",
+  western:    "spaghetti western, twangy guitar, whistling, desert frontier",
+  jrpg:       "emotional JRPG theme, lush orchestral and piano, nostalgic melody",
+};
+
+/** Oyun-müziği için mood → zengin Stable Audio betimlemesi. */
+export const MOOD_PROMPTS: Record<string, string> = {
+  tense:       "tense, suspenseful, building dread",
+  calm:        "calm, peaceful, gentle and soothing",
+  epic:        "epic, grand, powerful and cinematic",
+  mysterious:  "mysterious, enigmatic, ethereal",
+  cheerful:    "cheerful, happy, bright and upbeat",
+  heroic:      "heroic, triumphant, uplifting and bold",
+  melancholic: "melancholic, emotional, bittersweet and reflective",
+  dark:        "dark, ominous, brooding and foreboding",
+  energetic:   "energetic, driving, high tempo and lively",
+  dreamy:      "dreamy, floating, soft and atmospheric",
+  playful:     "playful, whimsical, fun and quirky",
+  triumphant:  "triumphant, victorious, soaring and majestic",
+};
+
 // ── SFX ──────────────────────────────────────────────────────────────────────
 
 export const ELEVENLABS_CONFIG = {
