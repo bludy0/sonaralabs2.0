@@ -205,9 +205,9 @@ function isInfrastructureError(err: any): boolean {
 
 function providerErrorMessage(err: any): string {
   const status = err?.response?.status as number | undefined;
-  // Stable Audio (ZeroGPU) günlük ücretsiz kota bitti → net, eyleme yönelik mesaj
+  // Üretim kapasitesi (günlük kota) doldu → sunuma uygun, jenerik mesaj
   if (/quota|zerogpu/i.test(String(err?.message ?? ""))) {
-    return "Günlük ücretsiz GPU kotası doldu (Stable Audio) — kredileriniz iade edildi. 24 saat sonra sıfırlanır; daha fazlası için HF PRO veya farklı bir sağlayıcı.";
+    return "Müzik üretimi şu an yoğun — kredileriniz iade edildi. Lütfen kısa bir süre sonra tekrar deneyin.";
   }
   if (status === 404) return "Sağlayıcı modeli bulunamadı — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
   if (status === 402) return "Müzik sağlayıcısının kredisi tükendi — kredileriniz iade edildi. Farklı bir sağlayıcı deneyin.";
@@ -560,6 +560,10 @@ app.post("/:id/retry", async (req, res) => {
         duration: gen.duration, type: genType,
       });
       await Generation.findByIdAndUpdate(newGen._id, { jobId: job.id });
+      // Orijinal kayıt yalnızca eşzamanlılık kilidi için pending'e çekilmişti;
+      // gerçek retry newGen olarak çalışıyor → orijinali "failed"e geri al
+      // (aksi halde orijinal sonsuza dek "pending"de takılı kalır).
+      await revertOriginal();
       res.status(202).json({ success: true, data: { jobId: job.id, generationId: newGen._id, creditCost } } as ApiResponse);
     } catch {
       await Promise.all([

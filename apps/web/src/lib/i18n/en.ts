@@ -168,7 +168,7 @@ export const en: Translations = {
     generationFailed: "Generation failed.",
     sfxFailed:        "SFX generation failed.",
     sonautoNote:      "Sonauto always generates ~95s of audio. The selected duration is stored as metadata only.",
-    stableaudioNote:  "Stable Audio (free, via Hugging Face). Uses a daily free GPU quota — may queue at busy times.",
+    stableaudioNote:  "",
     providerClosed:      "Temporarily unavailable",
     providerComingSoon:  "Coming soon",
     queueJobs:        "jobs",

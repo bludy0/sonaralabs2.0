@@ -459,15 +459,6 @@ export default function GeneratePage() {
                   </p>
                 )}
 
-                {provider === "stableaudio" && (
-                  <p
-                    className="text-[10px] rounded px-3 py-2 leading-relaxed"
-                    style={{ background: "color-mix(in srgb, var(--accent) 6%, transparent)", color: "var(--text-3)" }}
-                  >
-                    {t.generate.stableaudioNote}
-                  </p>
-                )}
-
                 {formError && (
                   <p className="text-[11px] rounded px-3 py-2" style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
                     {formError}
