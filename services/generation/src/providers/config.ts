@@ -137,8 +137,11 @@ export const ELEVENLABS_CONFIG = {
 // ── IMAGE → PROMPT (Gemini Vision) ───────────────────────────────────────────
 
 export const GEMINI_VISION_CONFIG = {
-  /** Ücretsiz tier: 1500 istek/gün. Değiştirmek için buraya yaz. */
-  model:   "gemini-2.0-flash",
+  /**
+   * gemini-2.0-flash ücretsiz tier'dan kaldırıldı (free-tier limit 0 → 429).
+   * gemini-2.5-flash hâlâ ücretsiz tier'da ve görsel (vision) destekliyor.
+   */
+  model:   "gemini-2.5-flash",
   baseUrl: "https://generativelanguage.googleapis.com/v1beta",
   systemPrompt: `You are a game music director. Analyze this game screenshot.
 Interpret the scene's atmosphere, color palette, genre, and emotional tone.
@@ -149,7 +152,7 @@ No explanations, no labels — just the prompt.`,
 // ── MASTERING ASSISTANT (Gemini) ──────────────────────────────────────────────
 
 export const GEMINI_MASTERING_CONFIG = {
-  model:           "gemini-2.0-flash",
+  model:           "gemini-2.5-flash",
   baseUrl:         "https://generativelanguage.googleapis.com/v1beta",
   temperature:     0.3,
   maxOutputTokens: 1024,
@@ -158,7 +161,7 @@ export const GEMINI_MASTERING_CONFIG = {
 // ── MIDI GENERATION (Gemini) ──────────────────────────────────────────────────
 
 export const GEMINI_MIDI_CONFIG = {
-  model:           "gemini-2.0-flash",
+  model:           "gemini-2.5-flash",
   baseUrl:         "https://generativelanguage.googleapis.com/v1beta",
   temperature:     0.8,
   maxOutputTokens: 1024,

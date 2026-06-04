@@ -97,12 +97,6 @@ export default function RegisterPage() {
           }}
         />
         <div className="relative w-full max-w-sm rounded-lg p-8 space-y-6 text-center" style={{ background: "var(--bg-card)" }}>
-          <div
-            className="mx-auto w-14 h-14 rounded-full flex items-center justify-center text-2xl"
-            style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)" }}
-          >
-            ✉️
-          </div>
           <div>
             <p className="text-[9px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }}>
               AI_CORE_v2.0

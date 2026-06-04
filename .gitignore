@@ -42,3 +42,6 @@ scripts/seed-credentials.txt
 
 # ── Security Notes (never commit) ─────────────────────────────────────────────
 SECURITY-NOTES.md
+
+# ── Local project notes (never commit) ────────────────────────────────────────
+docs/PROJECT-NOTES.md

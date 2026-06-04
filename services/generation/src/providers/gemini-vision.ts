@@ -30,7 +30,10 @@ export async function analyzeImageWithGemini(
     },
   );
 
-  const text: string | undefined = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  // gemini-2.5-flash bir "thinking" modeli; bazen parts[0] boş kalıp metin
+  // sonraki part'ta gelebilir → tüm text part'larını birleştir.
+  const parts: Array<{ text?: string }> = res.data?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.map((p) => p.text ?? "").join("").trim();
   if (!text) throw new Error("Gemini Vision: empty response");
-  return text.trim();
+  return text;
 }

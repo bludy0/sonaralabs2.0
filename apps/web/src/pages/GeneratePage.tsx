@@ -121,6 +121,18 @@ export default function GeneratePage() {
     fetchHistory().catch(() => toast(t.generate.generationFailed, "error"));
   }, [fetchHistory]);
 
+  // ── Polling fallback ───────────────────────────────────────────────────────
+  // SSE birincil kanal; ama bir event kaçarsa (servis yeniden başlatma, ağ
+  // kesintisi, çoklu sekme) kart "kuyrukta" durumunda takılı kalabilir.
+  // Aktif (pending/processing) iş olduğu sürece geçmişi periyodik çekerek
+  // terminal duruma (done/failed) geçişi garanti altına alıyoruz.
+  const hasActiveJob = items.some(i => i.status === "pending" || i.status === "processing");
+  useEffect(() => {
+    if (!hasActiveJob) return;
+    const id = setInterval(() => { fetchHistory().catch(() => {}); }, 6000);
+    return () => clearInterval(id);
+  }, [hasActiveJob, fetchHistory]);
+
   useEffect(() => {
     api.get("/api/generate/capabilities")
       .then(r => setCapabilities(r.data.data ?? r.data))
