@@ -3,7 +3,6 @@ import { useDAWStore }  from '../../store/useDAWStore'
 import { C, alpha }    from '../../constants'
 import type { AudioClip as TAudioClip } from '../../types'
 
-const TRACK_H  = 72
 const PAD      = 3
 const HANDLE_W = 6
 
@@ -19,8 +18,8 @@ export function snapSeconds(secs: number, zoom: number, bpm: number): number {
 
 // ── Waveform canvas ───────────────────────────────────────────────────────────
 export const WaveformCanvas = memo(function WaveformCanvas({
-  buffer, color, width, height,
-}: { buffer: AudioBuffer; color: string; width: number; height: number }) {
+  buffer, color, width, height, trimStart = 0, trimEnd = 0,
+}: { buffer: AudioBuffer; color: string; width: number; height: number; trimStart?: number; trimEnd?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -30,16 +29,23 @@ export const WaveformCanvas = memo(function WaveformCanvas({
     if (!ctx2d) return
 
     const data = buffer.getChannelData(0)
-    const step = Math.max(1, Math.floor(data.length / width))
-    const mid  = height / 2
+    // Only render the visible (trimmed) slice of the buffer so the waveform
+    // matches what actually plays back.
+    const sr        = buffer.sampleRate
+    const startS    = Math.max(0, Math.floor(trimStart * sr))
+    const endS      = Math.min(data.length, Math.floor((trimEnd || buffer.duration) * sr))
+    const span      = Math.max(1, endS - startS)
+    const step      = Math.max(1, Math.floor(span / width))
+    const mid       = height / 2
 
     ctx2d.clearRect(0, 0, width, height)
     ctx2d.fillStyle = color + '55'
 
     for (let x = 0; x < width; x++) {
       let min = 0, max = 0
+      const base = startS + x * step
       for (let j = 0; j < step; j++) {
-        const v = data[x * step + j] ?? 0
+        const v = data[base + j] ?? 0
         if (v < min) min = v
         if (v > max) max = v
       }
@@ -49,7 +55,7 @@ export const WaveformCanvas = memo(function WaveformCanvas({
     }
     ctx2d.fillStyle = color + '30'
     ctx2d.fillRect(0, mid, width, 1)
-  }, [buffer, color, width, height])
+  }, [buffer, color, width, height, trimStart, trimEnd])
 
   return (
     <canvas
@@ -63,16 +69,19 @@ export const WaveformCanvas = memo(function WaveformCanvas({
 
 // ── Audio clip block ──────────────────────────────────────────────────────────
 export function AudioClipBlock({
-  clip, zoom, color, selected,
+  clip, zoom, color, selected, trackH = 72,
   onSelect, onMove, onTrimStart, onTrimEnd, onFadeIn, onFadeOut, onRemove, onRename,
 }: {
   clip:        TAudioClip
   zoom:        number
   color:       string
   selected:    boolean
+  trackH?:     number
   onSelect:    (e?: React.MouseEvent) => void
   onMove:      (newStart: number) => void
-  onTrimStart: (trimStart: number) => void
+  /** Left-edge trim: crops the start while keeping the rest anchored on the
+   *  timeline, so both the clip's startTime and trimStart move together. */
+  onTrimStart: (startTime: number, trimStart: number) => void
   onTrimEnd:   (trimEnd: number) => void
   onFadeIn:    (fadeIn: number) => void
   onFadeOut:   (fadeOut: number) => void
@@ -113,7 +122,13 @@ export function AudioClipBlock({
         const newStart = Math.max(0, snapSeconds(raw, zoom, bpm))
         isMultiSelected ? moveSelectedClips(clip.id, newStart) : onMove(newStart)
       } else if (type === 'trimL') {
-        onTrimStart(Math.max(0, Math.min(raw, (clip.trimEnd || clip.duration) - 0.05)))
+        // Crop from the left: move trimStart and startTime together so the
+        // remaining audio stays put on the timeline (right edge anchored).
+        const minTrim = Math.max(0, clip.trimStart - clip.startTime) // startTime can't go < 0
+        const maxTrim = (clip.trimEnd || clip.duration) - 0.05
+        const newTrim = Math.max(minTrim, Math.min(raw, maxTrim))
+        const delta   = newTrim - clip.trimStart
+        onTrimStart(Math.max(0, clip.startTime + delta), newTrim)
       } else if (type === 'trimR') {
         const clamped = Math.max(clip.trimStart + 0.05, Math.min(raw, clip.duration))
         onTrimEnd(clamped === clip.duration ? 0 : clamped)
@@ -139,7 +154,7 @@ export function AudioClipBlock({
       onContextMenu={e => { e.preventDefault(); onRemove() }}
       style={{
         position: 'absolute',
-        left: x, top: PAD, width: w, height: TRACK_H - PAD * 2,
+        left: x, top: PAD, width: w, height: trackH - PAD * 2,
         background: color + '1a',
         border: `1.5px solid ${selected ? color : color + '70'}`,
         borderRadius: 4, overflow: 'hidden', userSelect: 'none',
@@ -148,7 +163,8 @@ export function AudioClipBlock({
       }}
     >
       {clip.buffer && (
-        <WaveformCanvas buffer={clip.buffer} color={color} width={Math.round(w)} height={TRACK_H - PAD * 2} />
+        <WaveformCanvas buffer={clip.buffer} color={color} width={Math.round(w)} height={trackH - PAD * 2}
+          trimStart={clip.trimStart} trimEnd={clip.trimEnd} />
       )}
 
       {isRenaming ? (

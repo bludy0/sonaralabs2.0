@@ -17,6 +17,7 @@ export interface GenerationItem {
   creditCost: number;
   isFavorited: boolean;
   isImageGeneration: boolean;
+  isLoop?: boolean;
   failReason?: string;
   createdAt: string;
 }
@@ -31,6 +32,7 @@ interface GenerationState {
     style: MusicStyle;
     mood: MusicMood;
     duration: GenerationDuration;
+    loop: boolean;
   }) => Promise<{ jobId: string; generationId: string }>;
   generateSFX: (params: {
     prompt: string;
@@ -63,6 +65,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
         creditCost,
         isFavorited: false,
         isImageGeneration: false,
+        isLoop: params.loop,
         createdAt: new Date().toISOString(),
       };
 

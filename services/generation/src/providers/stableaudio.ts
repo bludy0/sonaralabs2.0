@@ -29,7 +29,7 @@ const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
  * Stable Audio için zengin, betimleyici bir prompt üretir. Boş/yinelenen parçalar
  * atlanır; çıktı ~500 karaktere kısaltılır (Stable Audio uzun prompt'ta zayıflar).
  */
-export function buildGameMusicPrompt(prompt: string, style: string, mood: string): string {
+export function buildGameMusicPrompt(prompt: string, style: string, mood: string, loop = true): string {
   const lower = prompt.toLowerCase();
   const parts = [prompt.trim()];
   const styleDesc = STYLE_PROMPTS[style];
@@ -38,6 +38,8 @@ export function buildGameMusicPrompt(prompt: string, style: string, mood: string
   if (styleDesc && !lower.includes(style)) parts.push(styleDesc);
   if (moodDesc  && !lower.includes(mood))  parts.push(moodDesc);
   parts.push(STABLEAUDIO_CONFIG.promptSuffix);
+  // Loop AÇIK → kusursuz döngü; KAPALI → giriş/bitişli tek parça
+  parts.push(loop ? STABLEAUDIO_CONFIG.loopSuffix : STABLEAUDIO_CONFIG.oneShotSuffix);
   return parts.filter(Boolean).join(". ").replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
@@ -68,14 +70,14 @@ export class StableAudioProvider {
     return Boolean(HF_API_KEY);
   }
 
-  async generate(prompt: string, duration: number, style: string, mood: string): Promise<string> {
+  async generate(prompt: string, duration: number, style: string, mood: string, loop = true): Promise<string> {
     if (!HF_API_KEY) throw new Error("HUGGINGFACE_API_KEY not set");
 
     const cfg  = STABLEAUDIO_CONFIG;
     const base = process.env.STABLE_AUDIO_SPACE_URL || cfg.spaceUrl;
     const auth = { Authorization: `Bearer ${HF_API_KEY}` };
     const dur  = Math.min(Math.max(Math.round(duration) || 30, 1), cfg.maxDuration);
-    const fullPrompt = buildGameMusicPrompt(prompt, style, mood);
+    const fullPrompt = buildGameMusicPrompt(prompt, style, mood, loop);
 
     // ── 1. Üretimi başlat → event_id ─────────────────────────────────────────
     const data = [cfg.variant, fullPrompt, dur, cfg.steps, cfg.cfgScale, cfg.sampler, 0];

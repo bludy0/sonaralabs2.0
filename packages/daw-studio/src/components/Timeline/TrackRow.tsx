@@ -6,8 +6,6 @@ import type { DAWTrack }   from '../../types'
 import { AudioClipBlock }  from './AudioClipBlock'
 import { MidiClipBlock }   from './MidiClipBlock'
 
-const TRACK_H = 72
-
 // MIME type used for BrowserPanel → TrackLane drag
 export const DND_ITEM_TYPE = 'application/x-daw-item'
 
@@ -25,6 +23,7 @@ export function TrackRow({ track, zoom }: Props) {
   const addMidiClip     = useDAWStore(s => s.addMidiClip)
   const removeMidiClip  = useDAWStore(s => s.removeMidiClip)
   const transport       = useDAWStore(s => s.transport)
+  const trackHeight     = useDAWStore(s => s.trackHeight)
   const [dragOver, setDragOver] = useState(false)
 
   // ── Click empty MIDI track area → create new clip ────────────────────────
@@ -85,7 +84,7 @@ export function TrackRow({ track, zoom }: Props) {
   return (
     <div
       style={{
-        height: TRACK_H, position: 'relative',
+        height: trackHeight, position: 'relative',
         borderBottom: `1px solid ${C.borderDim}`,
         cursor: track.type === 'midi' ? 'crosshair' : 'default',
         overflow: 'visible',
@@ -108,11 +107,11 @@ export function TrackRow({ track, zoom }: Props) {
 
       {track.type === 'audio' && track.clips.map(clip => (
         <AudioClipBlock
-          key={clip.id} clip={clip} zoom={zoom} color={track.color}
+          key={clip.id} clip={clip} zoom={zoom} color={track.color} trackH={trackHeight}
           selected={selectedClipIds.includes(clip.id)}
           onSelect={(e) => e?.shiftKey ? toggleClipSel(clip.id) : (selectClip(clip.id), selectTrack(track.id))}
           onMove={(s)       => moveClip(track.id, clip.id, s)}
-          onTrimStart={(t)  => updateClip(track.id, clip.id, { trimStart: t })}
+          onTrimStart={(st, t) => updateClip(track.id, clip.id, { startTime: st, trimStart: t })}
           onTrimEnd={(t)    => updateClip(track.id, clip.id, { trimEnd:   t })}
           onFadeIn={(t)     => updateClip(track.id, clip.id, { fadeIn:    t })}
           onFadeOut={(t)    => updateClip(track.id, clip.id, { fadeOut:   t })}
@@ -123,7 +122,7 @@ export function TrackRow({ track, zoom }: Props) {
 
       {track.type === 'midi' && track.clips.map(clip => (
         <MidiClipBlock
-          key={clip.id} clip={clip} zoom={zoom} color={track.color}
+          key={clip.id} clip={clip} zoom={zoom} color={track.color} trackH={trackHeight}
           selected={selectedClipIds.includes(clip.id)}
           onSelect={(e) => e?.shiftKey ? toggleClipSel(clip.id) : (selectClip(clip.id), selectTrack(track.id))}
           onRemove={() => { removeMidiClip(track.id, clip.id); selectClip(null) }}

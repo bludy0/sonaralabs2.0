@@ -87,6 +87,7 @@ export default function GeneratePage() {
   const [style, setStyle]       = useState<MusicStyle>("ambient");
   const [mood, setMood]         = useState<MusicMood>("calm");
   const [duration, setDuration] = useState<GenerationDuration>(30);
+  const [loop, setLoop]         = useState(true);   // kusursuz döngü (oyun loop'u) — varsayılan açık
   const [provider, setProvider] = useState<MusicProvider>("stableaudio");
 
   const [sfxPrompt, setSfxPrompt]     = useState("");
@@ -182,7 +183,7 @@ export default function GeneratePage() {
     const cleanPrompt = stripTags(prompt.trim())
     if (!cleanPrompt) { setFormError(t.generate.enterPrompt); return; }
     try {
-      await generate({ prompt: cleanPrompt, provider, style, mood, duration });
+      await generate({ prompt: cleanPrompt, provider, style, mood, duration, loop });
       updateCredit(-creditCost);
       setPrompt("");
     } catch (err) {
@@ -449,6 +450,36 @@ export default function GeneratePage() {
                     })}
                   />
                 </div>
+
+                {/* Loop toggle — kusursuz döngü üretimi (oyun loop'u) */}
+                <button
+                  type="button"
+                  onClick={() => setLoop(v => !v)}
+                  aria-pressed={loop}
+                  className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bg-border)" }}
+                >
+                  <span className="flex items-center gap-2 text-left">
+                    <span className="material-symbols-outlined" style={{ fontSize: 17, color: loop ? "var(--accent)" : "var(--text-3)" }}>repeat</span>
+                    <span>
+                      <span className="block text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+                        {t.generate.loop}
+                      </span>
+                      <span className="block text-[9px] tracking-wide" style={{ color: "var(--text-3)" }}>
+                        {loop ? t.generate.loopOn : t.generate.loopOff}
+                      </span>
+                    </span>
+                  </span>
+                  <span
+                    className="relative inline-block shrink-0 rounded-full transition-colors"
+                    style={{ width: 38, height: 21, background: loop ? "var(--accent)" : "color-mix(in srgb, var(--text-3) 30%, transparent)" }}
+                  >
+                    <span
+                      className="absolute rounded-full"
+                      style={{ width: 15, height: 15, top: 3, left: loop ? 20 : 3, background: "#fff", transition: "left 0.15s ease" }}
+                    />
+                  </span>
+                </button>
 
                 {provider === "sonauto" && (
                   <p

@@ -378,3 +378,20 @@ describe("ZeroGPU kota hatası tespiti", () => {
     expect(isQuotaError("StableAudio: submit failed (HTTP 502)")).toBe(false);
   });
 });
+
+describe("buildGameMusicPrompt — loop seçeneği", () => {
+  it("loop=true → kusursuz döngü ifadeleri eklenir", () => {
+    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", true);
+    expect(p.toLowerCase()).toContain("seamless loop");
+    expect(p.toLowerCase()).toContain("no intro");
+  });
+  it("loop=false → giriş/bitiş ifadesi, döngü ifadesi yok", () => {
+    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", false);
+    expect(p.toLowerCase()).toContain("intro");
+    expect(p.toLowerCase()).toContain("ending");
+    expect(p.toLowerCase()).not.toContain("seamless loop");
+  });
+  it("varsayılan (param yok) loop davranır", () => {
+    expect(buildGameMusicPrompt("x", "ambient", "calm").toLowerCase()).toContain("seamless loop");
+  });
+});

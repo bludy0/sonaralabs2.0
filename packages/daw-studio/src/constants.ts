@@ -88,6 +88,9 @@ export const DEFAULTS = {
   PIXELS_PER_SECOND:80,
   MIN_ZOOM:         20,
   MAX_ZOOM:         400,
+  TRACK_HEIGHT:     72,
+  MIN_TRACK_HEIGHT: 56,
+  MAX_TRACK_HEIGHT: 240,
   SNAP_GRID:        0.25,
   MAX_TRACKS:       16,
 } as const

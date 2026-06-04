@@ -8,6 +8,7 @@ import { TrackRow, DND_ITEM_TYPE } from './TrackRow'
 import { AutomationLaneView } from '../AutomationLane/AutomationLaneView'
 import { AutomationLaneHeader } from '../AutomationLane/AutomationLaneHeader'
 import { getAudioContext } from '../../engine/context'
+import { useDAWT } from '../../i18n'
 
 const HEADER_W = 240
 const RULER_H  = 28
@@ -17,9 +18,12 @@ export function Timeline() {
   const automationLanes = useDAWStore(s => s.automationLanes)
   const zoom            = useDAWStore(s => s.zoom)
   const setZoom         = useDAWStore(s => s.setZoom)
+  const trackHeight     = useDAWStore(s => s.trackHeight)
   const transport       = useDAWStore(s => s.transport)
   const addAudioTrack   = useDAWStore(s => s.addAudioTrack)
+  const addMidiTrack    = useDAWStore(s => s.addMidiTrack)
   const addClip         = useDAWStore(s => s.addClip)
+  const dt              = useDAWT()
   const { currentTime, seek } = useAudioEngine()
   const setLoop = useDAWStore(s => s.setLoop)
 
@@ -109,7 +113,7 @@ export function Timeline() {
   }, [zoom, themeVersion, transport.loopEnabled, transport.loopStart, transport.loopEnd])
 
   // ── Marquee handlers ──────────────────────────────────────────────────────
-  const TRACK_H_PX  = 72
+  const TRACK_H_PX  = trackHeight
   const LANE_H_PX   = 56
   const PAD_PX      = 4
 
@@ -215,7 +219,7 @@ export function Timeline() {
 
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup',   onUp)
-  }, [zoom, selectClipsInRect])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoom, trackHeight, selectClipsInRect])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep RULER_H accessible as local const for onScrollAreaMouseDown closure
   const RULER_H_PX = RULER_H
@@ -297,8 +301,8 @@ export function Timeline() {
         useDAWStore.getState().updateTrack(audioTracks[0].id, { name: payload.name })
       }
 
-      // Pick which audio track based on Y position (each track is 72px tall)
-      const TRACK_H_PX = 72
+      // Pick which audio track based on Y position
+      const TRACK_H_PX = useDAWStore.getState().trackHeight
       const containerRect = e.currentTarget.getBoundingClientRect()
       const relY = e.clientY - containerRect.top + (scrollRef.current?.scrollTop ?? 0) - RULER_H
       const all = useDAWStore.getState().tracks
@@ -390,7 +394,7 @@ export function Timeline() {
             const lanes = automationLanes.filter(l => l.trackId === t.id)
             return (
               <div key={t.id} style={{ flexShrink: 0 }}>
-                <TrackHeader track={t} />
+                <TrackHeader track={t} trackHeight={trackHeight} />
                 {lanes.map(lane => (
                   <AutomationLaneHeader key={lane.id} lane={lane} trackColor={t.color} />
                 ))}
@@ -399,11 +403,20 @@ export function Timeline() {
           })}
 
           {tracks.length === 0 && (
-            <div style={{ padding: '32px 16px', color: C.text3, fontSize: 12, textAlign: 'center', lineHeight: 1.6 }}>
-              <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>♫</div>
+            <div style={{ padding: '28px 16px 8px', color: C.text3, fontSize: 12, textAlign: 'center', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.4 }}>♫</div>
               Add a track to begin
             </div>
           )}
+
+          {/* Track ekle — her zaman erişilebilir (Audio + MIDI) */}
+          <div style={{
+            display: 'flex', gap: 6, padding: '10px 12px',
+            borderTop: tracks.length ? `1px solid ${alpha(C.text3, 12)}` : 'none',
+          }}>
+            <AddTrackBtn onClick={addAudioTrack} label={dt.addAudio} />
+            <AddTrackBtn onClick={addMidiTrack}  label={dt.addMidi}  accent />
+          </div>
         </div>
       </div>
 
@@ -504,8 +517,9 @@ export function Timeline() {
 
 const TRACK_DRAG_TYPE = 'application/x-daw-track'
 
-function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
+function TrackHeader({ track, trackHeight }: { track: import('../../types').DAWTrack; trackHeight: number }) {
   const updateTrack     = useDAWStore(s => s.updateTrack)
+  const setTrackHeight  = useDAWStore(s => s.setTrackHeight)
   const removeTrack     = useDAWStore(s => s.removeTrack)
   const selectTrack     = useDAWStore(s => s.selectTrack)
   const reorderTracks   = useDAWStore(s => s.reorderTracks)
@@ -539,6 +553,21 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
     if (fromId && fromId !== track.id) reorderTracks(fromId, track.id)
   }
 
+  // Drag the bottom edge to resize ALL track lanes (height is global).
+  function onResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const startY = e.clientY
+    const startH = trackHeight
+    const onMove = (mv: MouseEvent) => setTrackHeight(startH + (mv.clientY - startY))
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
     <div
       draggable
@@ -554,7 +583,7 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
       onDrop={onDrop}
       onClick={() => selectTrack(track.id)}
       style={{
-        height:      80,
+        height:      trackHeight,
         flexShrink:  0,
         display:     'flex',
         alignItems:  'stretch',
@@ -765,7 +794,57 @@ function TrackHeader({ track }: { track: import('../../types').DAWTrack }) {
           </div>
         </div>
       </div>
+
+      {/* Resize handle — drag to change height of all track lanes */}
+      <div
+        onMouseDown={onResizeMouseDown}
+        title="Drag to resize track height"
+        style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0, height: 6,
+          cursor: 'ns-resize', zIndex: 50,
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = alpha(C.accent, 30) }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      />
     </div>
+  )
+}
+
+function AddTrackBtn({ onClick, label, accent }: {
+  onClick: () => void
+  label:   string
+  accent?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={accent ? 'Add MIDI Track — instrument / piano roll' : 'Add Audio Track — audio clips'}
+      style={{
+        flex: 1,
+        padding: '7px 8px',
+        borderRadius: 4,
+        background: accent ? alpha(C.accent, 14) : C.bgHover,
+        color:      accent ? C.accent : C.text2,
+        border:     `1px solid ${accent ? alpha(C.accent, 38) : C.border}`,
+        fontSize:   11,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        cursor:     'pointer',
+        transition: 'all 0.1s',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.background = accent ? alpha(C.accent, 24) : C.bgDeep
+        el.style.borderColor = accent ? C.accent : alpha(C.text3, 40)
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLElement
+        el.style.background = accent ? alpha(C.accent, 14) : C.bgHover
+        el.style.borderColor = accent ? alpha(C.accent, 38) : C.border
+      }}
+    >
+      {label}
+    </button>
   )
 }
 

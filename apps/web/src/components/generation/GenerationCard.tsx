@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import type { GenerationItem } from "../../store/useGenerationStore";
-import { waveformBars } from "../../lib/format";
 import { useT } from "../../store/useI18nStore";
 import { toast } from "../../lib/toast";
 
@@ -39,7 +38,7 @@ function fmtClock(secs: number): string {
 }
 
 // ── Inline audio player (done kartı için) ─────────────────────────────────────
-function InlinePlayer({ src, bars }: { src: string; bars: number[] }) {
+function InlinePlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -118,50 +117,40 @@ function InlinePlayer({ src, bars }: { src: string; bars: number[] }) {
           {playing ? "pause" : "play_arrow"}
         </span>
       </button>
-      {/* Seekable waveform — tıkla veya sürükle (scrub) */}
+      {/* Seekable line bar — tıkla veya sürükle (scrub). Dalga formuna göre daha stabil. */}
       <div
         ref={trackRef}
-        className="relative flex-1 flex items-center group"
-        style={{ height: 36, cursor: dragging ? "grabbing" : "pointer", touchAction: "none", userSelect: "none" }}
+        className="relative flex-1 flex items-center"
+        style={{ height: 24, cursor: dragging ? "grabbing" : "pointer", touchAction: "none", userSelect: "none" }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        {/* Bars (geniş tutma alanı için dikeyde ortalı) */}
-        <div className="flex items-center gap-[2px] h-7 w-full" style={{ pointerEvents: "none" }}>
-          {bars.map((h, i) => {
-            const filled = i / bars.length <= progress;
-            return (
-              <div
-                key={i}
-                className="flex-1 rounded-full"
-                style={{
-                  height: `${h}%`,
-                  background: filled ? "var(--accent)" : "color-mix(in srgb, var(--text-3) 35%, transparent)",
-                  transition: dragging ? "none" : "background 0.1s linear",
-                }}
-              />
-            );
-          })}
-        </div>
-        {/* Playhead — ince çizgi + tutamaç (sürüklerken büyür) */}
+        {/* Track çizgisi */}
         <div
-          className="absolute top-0 bottom-0"
-          style={{ left: `${progress * 100}%`, pointerEvents: "none", transition: dragging ? "none" : "left 0.1s linear" }}
+          className="relative w-full rounded-full"
+          style={{ height: 4, background: "color-mix(in srgb, var(--text-3) 22%, transparent)", pointerEvents: "none" }}
         >
-          <div style={{ position: "absolute", top: 4, bottom: 4, width: 2, marginLeft: -1, borderRadius: 2, background: "var(--accent)" }} />
+          {/* Dolu kısım */}
           <div
-            style={{
-              position: "absolute", top: "50%", left: 0, width: 12, height: 12,
-              marginLeft: -6, marginTop: -6, borderRadius: "50%", background: "var(--accent)",
-              boxShadow: "0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)",
-              transform: dragging ? "scale(1.25)" : "scale(1)",
-              opacity: dragging ? 1 : 0.9,
-              transition: "transform 0.1s ease",
-            }}
+            className="absolute top-0 left-0 h-full rounded-full"
+            style={{ width: `${progress * 100}%`, background: "var(--accent)", transition: dragging ? "none" : "width 0.1s linear" }}
           />
         </div>
+        {/* Tutamaç (sürüklerken büyür) */}
+        <div
+          className="absolute"
+          style={{
+            left: `${progress * 100}%`, top: "50%",
+            width: 12, height: 12, marginLeft: -6, marginTop: -6,
+            borderRadius: "50%", background: "var(--accent)",
+            boxShadow: "0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)",
+            transform: dragging ? "scale(1.25)" : "scale(1)",
+            transition: dragging ? "none" : "left 0.1s linear, transform 0.1s ease",
+            pointerEvents: "none",
+          }}
+        />
       </div>
       {/* Time */}
       <span
@@ -411,7 +400,6 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
   const estimated = getEstimated(item);
   const isActive  = item.status === "pending" || item.status === "processing";
   const isSFX     = item.type === "sfx";
-  const bars      = waveformBars(item._id, 22);
 
   // Pending: add a rough "pending overhead" estimate (~10s BullMQ pickup)
   // so the ETA during processing is relative to actual AI work time
@@ -518,6 +506,15 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
             {item.duration}s
           </span>
         )}
+        {!isSFX && item.isLoop && (
+          <span
+            className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+            style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)", color: "var(--accent)" }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 11 }}>repeat</span>
+            Loop
+          </span>
+        )}
         <span
           className="text-[9px] font-semibold px-2 py-0.5 rounded"
           style={{ background: "var(--bg-input)", color: "var(--accent)" }}
@@ -603,7 +600,7 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
       {item.status === "done" && item.audioUrl && (
         <>
           {/* Inline oynatıcı — play/pause + tıklanabilir dalga formu + süre */}
-          <InlinePlayer src={item.audioUrl} bars={bars} />
+          <InlinePlayer src={item.audioUrl} />
 
           {/* İkincil aksiyonlar — Editor / DAW */}
           <div className="flex gap-2">

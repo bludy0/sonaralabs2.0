@@ -62,6 +62,8 @@ export interface GenerationRequest {
   style: MusicStyle;
   mood: MusicMood;
   duration: GenerationDuration;
+  /** Kusursuz döngü (oyun loop'u) — intro/outro olmadan üret. Varsayılan true. */
+  loop?: boolean;
 }
 
 export interface SFXRequest {

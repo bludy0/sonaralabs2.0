@@ -4,7 +4,6 @@ import { C }            from '../../constants'
 import type { MidiClip as TMidiClip, MidiNote } from '../../types'
 import { snapSeconds }  from './AudioClipBlock'
 
-const TRACK_H       = 72
 const PAD           = 3
 const MIDI_HANDLE_W = 8
 
@@ -84,13 +83,14 @@ export const MidiPreviewCanvas = memo(function MidiPreviewCanvas({
 
 // ── MIDI clip block ───────────────────────────────────────────────────────────
 export function MidiClipBlock({
-  clip, zoom, color, selected,
+  clip, zoom, color, selected, trackH = 72,
   onSelect, onRemove, onMove, onExtend, onLoop, onRename,
 }: {
   clip:     TMidiClip
   zoom:     number
   color:    string
   selected: boolean
+  trackH?:  number
   onSelect: (e?: React.MouseEvent) => void
   onRemove: () => void
   onMove:   (newStart: number) => void
@@ -106,7 +106,7 @@ export function MidiClipBlock({
   const totalBeats = clip.loopBeats ?? clip.durationBeats
   const w          = Math.max(32, totalBeats * secPerBeat * zoom)
   const x          = clip.startTime * zoom
-  const clipH      = TRACK_H - PAD * 2
+  const clipH      = trackH - PAD * 2
   const NOTE_AREA_TOP = 16
 
   const dragRef = useRef<{ type: 'move' | 'extend' | 'loop'; startX: number; startVal: number } | null>(null)

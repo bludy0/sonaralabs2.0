@@ -72,7 +72,11 @@ export const STABLEAUDIO_CONFIG = {
   /** Tek istek timeout (ms) — ZeroGPU kuyruğu + üretim. */
   timeoutMs:   180_000,
   /** Her prompt'a eklenen oyun-müziği çerçevesi (Stable Audio bunlara iyi yanıt verir). */
-  promptSuffix: "video game soundtrack, instrumental, seamless loop, professionally produced, high quality stereo audio",
+  promptSuffix: "video game soundtrack, instrumental, professionally produced, high quality stereo audio",
+  /** Loop AÇIK → kusursuz döngü vurgusu. */
+  loopSuffix:    "seamless loop, designed to loop perfectly, consistent energy throughout, no intro, no outro, no fade in or fade out",
+  /** Loop KAPALI → doğal giriş/bitişli tek seferlik parça. */
+  oneShotSuffix: "with a clear intro and a natural ending",
 } as const;
 
 /**

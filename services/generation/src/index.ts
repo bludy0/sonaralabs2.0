@@ -57,6 +57,7 @@ const generationSchema = new mongoose.Schema({
   duration:          Number,   // music: seconds (15/30/60); sfx: seconds (float)
   style:             String,
   mood:              String,
+  isLoop:            { type: Boolean, default: true },   // kusursuz döngü olarak mı üretildi
   bpm:               Number,
   creditCost:        Number,
   isFavorited:       { type: Boolean, default: false },
@@ -76,7 +77,7 @@ const Generation = mongoose.model("Generation", generationSchema);
 
 interface IMusicProvider {
   name: MusicProvider;
-  generate(prompt: string, duration: number, style: string, mood: string): Promise<string>;
+  generate(prompt: string, duration: number, style: string, mood: string, loop?: boolean): Promise<string>;
 }
 
 // ── PROVIDER REGISTRY ─────────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ async function earnCredit(userId: string, amount: number, relatedId: string) {
 
 // ── BULLMQ WORKER ─────────────────────────────────────────────────────────────
 const worker = new Worker("generation", async (job: Job) => {
-  const { generationId, userId, prompt, provider, style, mood, duration, type } = job.data;
+  const { generationId, userId, prompt, provider, style, mood, duration, type, loop } = job.data;
 
   await Generation.findByIdAndUpdate(generationId, { status: "processing" });
   await notifyUser({ userId, jobId: job.id!, status: "processing" });
@@ -172,7 +173,7 @@ const worker = new Worker("generation", async (job: Job) => {
   } else {
     const p = musicProviders.get(provider as MusicProvider);
     if (!p) throw new Error(`Unknown provider: ${provider}`);
-    audioUrl = await p.generate(prompt, duration, style, mood);
+    audioUrl = await p.generate(prompt, duration, style, mood, loop !== false);
     await Generation.findByIdAndUpdate(generationId, { status: "done", audioUrl });
   }
 
@@ -267,7 +268,7 @@ function getPayload(req: express.Request): InternalJwtPayload {
 app.post("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const { prompt, provider, style, mood, duration: reqDuration } = req.body as GenerationRequest;
+    const { prompt, provider, style, mood, duration: reqDuration, loop } = req.body as GenerationRequest;
 
     if (!prompt || !provider || !style || !mood || !reqDuration) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
@@ -278,10 +279,11 @@ app.post("/", async (req, res) => {
 
     // Stable Audio 15/30/60'ın hepsini destekler; clamp gerekmez.
     const duration = reqDuration;
+    const isLoop   = loop !== false;   // varsayılan: kusursuz döngü (oyun loop'u)
 
     const creditCost = getMusicCreditCost(provider, duration);
     const gen = await Generation.create({
-      userId, type: "music", prompt, provider, style, mood, duration, creditCost, status: "pending",
+      userId, type: "music", prompt, provider, style, mood, duration, isLoop, creditCost, status: "pending",
     });
 
     try {
@@ -295,7 +297,7 @@ app.post("/", async (req, res) => {
 
     try {
       const job = await generationQueue.add("generate", {
-        generationId: String(gen._id), userId, prompt, provider, style, mood, duration, type: "music",
+        generationId: String(gen._id), userId, prompt, provider, style, mood, duration, type: "music", loop: isLoop,
       }, { jobId: String(gen._id) });
       await Generation.findByIdAndUpdate(gen._id, { jobId: job.id });
       res.status(202).json({ success: true, data: { jobId: job.id, generationId: gen._id, creditCost } } as ApiResponse);
@@ -536,7 +538,7 @@ app.post("/:id/retry", async (req, res) => {
 
     const newGen = await Generation.create({
       userId, type: genType, prompt: gen.prompt, provider: gen.provider,
-      style: gen.style, mood: gen.mood, duration: gen.duration,
+      style: gen.style, mood: gen.mood, duration: gen.duration, isLoop: gen.isLoop,
       creditCost, status: "pending",
       isImageGeneration: gen.isImageGeneration, sourceImageUrl: gen.sourceImageUrl,
     });
@@ -557,7 +559,7 @@ app.post("/:id/retry", async (req, res) => {
       const job = await generationQueue.add("generate", {
         generationId: String(newGen._id), userId, prompt: gen.prompt,
         provider: gen.provider, style: gen.style, mood: gen.mood,
-        duration: gen.duration, type: genType,
+        duration: gen.duration, type: genType, loop: gen.isLoop,
       });
       await Generation.findByIdAndUpdate(newGen._id, { jobId: job.id });
       // Orijinal kayıt yalnızca eşzamanlılık kilidi için pending'e çekilmişti;

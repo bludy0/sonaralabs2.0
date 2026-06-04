@@ -75,6 +75,7 @@ interface DAWState {
   selectedClipIds:  string[]        // multi-selection (superset of selectedClipId)
   clipboard:        ClipboardItem[] | null
   zoom:             number
+  trackHeight:      number
 
   // Track mutations
   addAudioTrack:  () => void
@@ -133,6 +134,7 @@ interface DAWState {
 
   // Zoom
   setZoom: (z: number) => void
+  setTrackHeight: (h: number) => void
 
   // Project
   reset:         () => void
@@ -208,6 +210,7 @@ export const useDAWStore = create<DAWState>((set, get) => {
     selectedClipIds: [],
     clipboard:       null,
     zoom:            DEFAULTS.PIXELS_PER_SECOND,
+    trackHeight:     DEFAULTS.TRACK_HEIGHT,
 
     // ── Tracks ────────────────────────────────────────────────────────────────
 
@@ -655,6 +658,7 @@ export const useDAWStore = create<DAWState>((set, get) => {
     // ── Zoom ──────────────────────────────────────────────────────────────────
 
     setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
+    setTrackHeight: (h) => set({ trackHeight: Math.max(DEFAULTS.MIN_TRACK_HEIGHT, Math.min(DEFAULTS.MAX_TRACK_HEIGHT, Math.round(h))) }),
 
     // ── Project ───────────────────────────────────────────────────────────────
 
