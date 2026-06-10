@@ -236,6 +236,7 @@ services:
       NODE_ENV: development
       MONGO_URI: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASS:-rootpass}@mongo:27017/sonaralabs?authSource=admin
       INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?required}
+      GENERATION_SERVICE_URL: http://generation:3002
     depends_on:
       mongo:
         condition: service_healthy

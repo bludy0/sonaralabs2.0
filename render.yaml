@@ -191,6 +191,10 @@ services:
         sync: false
       - key: INTERNAL_JWT_SECRET
         sync: false
+      - key: GENERATION_SERVICE_URL
+        value: https://sonaralabs-generation.onrender.com
+      - key: UPLOAD_SERVICE_URL
+        value: https://sonaralabs-upload.onrender.com
 
   # ── ADMIN ──────────────────────────────────────────────────────────────────
   - type: web
@@ -208,6 +212,8 @@ services:
         sync: false
       - key: INTERNAL_JWT_SECRET
         sync: false
+      - key: GENERATION_SERVICE_URL
+        value: https://sonaralabs-generation.onrender.com
 
   # ── SOCIAL (profile absorbed — MongoDB only) ──────────────────────────────
   - type: web

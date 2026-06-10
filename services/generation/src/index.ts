@@ -639,6 +639,20 @@ app.get("/internal/generations", async (req, res) => {
   }
 });
 
+// GET /internal/queue-stats — admin paneli için BullMQ kuyruk durumu
+// (admin servisi çağırır; gateway /internal/* path'lerini zaten dışarıya kapatır)
+app.get("/internal/queue-stats", async (req, res) => {
+  try {
+    const payload = getPayload(req);
+    if (payload.role !== "admin")
+      return res.status(403).json({ success: false, error: "Admin access required" });
+    const counts = await generationQueue.getJobCounts("waiting", "active", "delayed", "failed", "completed");
+    res.json({ success: true, data: { queue: "generation", concurrency: 3, counts } } as ApiResponse);
+  } catch {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+});
+
 // POST /export/file — yüklenen WAV (örn. editörde kırpılmış) → seçilen formata
 // FFmpeg dönüşümü. Multipart: alan "wav" (dosya) + "format" (wav|mp3|ogg|flac|aac).
 app.post("/export/file", (req, res) => {

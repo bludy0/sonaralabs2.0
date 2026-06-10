@@ -5,12 +5,20 @@ import { logger } from "./logger"
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
+import axios from "axios";
 import { InternalJwtPayload, ApiResponse } from "@sonaralabs/types";
+
+axios.defaults.timeout = parseInt(process.env.INTERNAL_HTTP_TIMEOUT_MS ?? "10000");
 
 const app = express();
 app.use(express.json());
 
-const { PORT = "3006", MONGO_URI, INTERNAL_JWT_SECRET } = process.env;
+const {
+  PORT = "3006",
+  MONGO_URI,
+  INTERNAL_JWT_SECRET,
+  GENERATION_SERVICE_URL = "http://generation:3002",
+} = process.env;
 if (!MONGO_URI || !INTERNAL_JWT_SECRET) { process.exit(1); }
 
 // ── MODELS (read-only views — kendi collection'larına dokunmaz) ───────────────
@@ -92,6 +100,21 @@ app.get("/stats", async (_req, res) => {
   } catch (err) {
     logger.error("admin stats error", { message: String(err) });
     res.status(500).json({ success: false, error: "Failed to fetch stats" });
+  }
+});
+
+// GET /stats/queue — BullMQ üretim kuyruğu durumu (generation servisinden çekilir)
+app.get("/stats/queue", async (req, res) => {
+  try {
+    // Gateway'in ürettiği admin-rollü internal token aynen iletilir;
+    // generation tarafı da role:admin kontrolü yapar (defense in depth).
+    const { data } = await axios.get(`${GENERATION_SERVICE_URL}/internal/queue-stats`, {
+      headers: { "x-internal-token": req.headers["x-internal-token"] as string },
+    });
+    res.json(data);
+  } catch (err) {
+    logger.error("admin queue stats error", { message: String(err) });
+    res.status(502).json({ success: false, error: "Queue stats unavailable" });
   }
 });
 

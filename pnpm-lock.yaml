@@ -148,6 +148,9 @@ importers:
       '@sonaralabs/types':
         specifier: workspace:*
         version: link:../../packages/types
+      axios:
+        specifier: ^1.15.0
+        version: 1.15.0
       express:
         specifier: ^4.21.2
         version: 4.22.1

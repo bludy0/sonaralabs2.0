@@ -19,6 +19,18 @@ interface DailyStatRow {
   credits: number;
 }
 
+interface QueueStats {
+  queue: string;
+  concurrency: number;
+  counts: {
+    waiting?: number;
+    active?: number;
+    delayed?: number;
+    failed?: number;
+    completed?: number;
+  };
+}
+
 interface AdminUser {
   _id: string;
   email: string;
@@ -64,6 +76,7 @@ type GenStatus = "all" | "pending" | "processing" | "done" | "failed";
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("users");
   const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [daily, setDaily] = useState<DailyStatRow[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userTotal, setUserTotal] = useState(0);
@@ -101,12 +114,16 @@ export default function AdminPage() {
     setStatsLoading(true);
     setError(null);
     try {
-      const [statsRes, dailyRes] = await Promise.all([
+      const [statsRes, dailyRes, queueRes] = await Promise.allSettled([
         api.get("/api/admin/stats"),
         api.get("/api/admin/stats/daily"),
+        api.get("/api/admin/stats/queue"),
       ]);
-      setStats(statsRes.data?.data ?? statsRes.data ?? {});
-      setDaily(dailyRes.data?.data ?? dailyRes.data ?? []);
+      if (statsRes.status === "rejected" || dailyRes.status === "rejected") throw new Error("stats failed");
+      setStats(statsRes.value.data?.data ?? statsRes.value.data ?? {});
+      setDaily(dailyRes.value.data?.data ?? dailyRes.value.data ?? []);
+      // Kuyruk istatistiği opsiyonel — generation servisi kapalıysa panel yine açılır
+      setQueueStats(queueRes.status === "fulfilled" ? (queueRes.value.data?.data ?? null) : null);
     } catch {
       setError("Stats could not be loaded.");
     } finally {
@@ -222,6 +239,26 @@ export default function AdminPage() {
           <StatCard label="Failed" value={stats.generations?.failed ?? 0} />
         </div>
       ) : null}
+
+      {/* Generation queue (BullMQ) */}
+      {queueStats && (
+        <section className="mb-8">
+          <p
+            lang="en"
+            className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
+            style={{ color: "var(--text-3)" }}
+          >
+            Generation Queue (concurrency {queueStats.concurrency})
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <StatCard label="Waiting" value={queueStats.counts.waiting ?? 0} />
+            <StatCard label="Active" value={queueStats.counts.active ?? 0} />
+            <StatCard label="Delayed" value={queueStats.counts.delayed ?? 0} />
+            <StatCard label="Failed" value={queueStats.counts.failed ?? 0} />
+            <StatCard label="Completed" value={queueStats.counts.completed ?? 0} />
+          </div>
+        </section>
+      )}
 
       {/* Daily stats */}
       <section className="mb-8 overflow-x-auto">
