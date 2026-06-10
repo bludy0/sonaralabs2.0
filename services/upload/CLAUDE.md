@@ -1,39 +1,9 @@
-# upload-service — CLAUDE.md
+# upload — :3003 (Express) · collection: `uploads` (+ `users.storageUsed` yazar)
 
-> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
-> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
-> PROJECT-GUIDE.md ve kaynak kod esastır.
+> Tek doğru kaynak: [`docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md) §5.4.
 
-Port: 3003 | Prefix: /api/upload/*
-Collection sahibi: `uploads`
-
-## Sorumluluk
-- Ses dosyası yükleme (multer)
-- MinIO / Backblaze B2'ye kaydetme (@aws-sdk/client-s3)
-- storageUsed güncelleme (auth servise HTTP)
-- Dosya silme
-
-## Endpoint'ler
-```
-POST   /api/upload
-DELETE /api/upload/:id
-
-GET    /internal/uploads         ← library servisi kullanır
-POST   /internal/store           ← generation servisi (Lyria audio) kullanır
-```
-
-## Kurallar
-- Kabul: audio/wav, audio/mpeg, audio/ogg — diğerleri 422
-- Maks boyut: 50 MB (ses dosyası), 10 MB (görüntü analizi, generation servisi yönetir)
-- Kota: 500 MB = 524_288_000 byte
-- Upload öncesi: GET /internal/users/:id ile storageUsed oku, limit kontrol et
-- Upload sonrası: PATCH /internal/users/:id/storage { delta: +fileSize }
-- Silme sonrası: PATCH /internal/users/:id/storage { delta: -fileSize }
-- ffprobe ile duration ölç — hata olursa null bırak, işlemi durdurma
-
-## StorageService
-@aws-sdk/client-s3 kullan. MinIO ve B2 aynı SDK — sadece env değişir.
-Presigned URL üret (1 saatlik) — audioUrl olarak kaydet.
-
-## /internal/* endpoint'leri
-x-internal-secret header kontrolü.
+- Multer **disk** storage → MinIO'ya stream (heap'e yükleme yok). Kabul: WAV/MP3/OGG, max 50MB.
+- Kota (500MB/kullanıcı) **atomik**: `findOneAndUpdate` + `$expr: $lte` tek sorgu — asla ayrı find+save yapma. MinIO yazımı başarısızsa kota rollback edilir.
+- Dosya uzantısı MIME tipinden türetilir — `originalname`'e güvenme.
+- DELETE: MinIO'dan sil + kota iade.
+- `x-internal-token` doğrulaması: `getPayload(req)` + `_internal: true` kontrolü.

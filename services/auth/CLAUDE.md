@@ -1,51 +1,10 @@
-# auth-service — CLAUDE.md
+# auth — :3001 (Express) · collections: `users`, `refresh_tokens`, `credit_logs`
 
-> ⚠️ **Bu dosya eski mimariyi anlatabilir ve güncel olmayabilir.** Güncel ve doğru
-> referans: [`/docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md). Çelişki olursa
-> PROJECT-GUIDE.md ve kaynak kod esastır.
+> Tek doğru kaynak: [`docs/PROJECT-GUIDE.md`](../../docs/PROJECT-GUIDE.md) §5.2.
+> Eski credit servisi (:3005) buraya taşındı — ayrı credit servisi YOK.
 
-Port: 3001 | Prefix: /api/auth/*, /api/users/*
-Collection sahibi: `users`
-
-## Sorumluluk
-- Kullanıcı kayıt ve giriş
-- JWT access + refresh token (httpOnly cookie)
-- Kullanıcı profili ve tercih güncelleme
-- storageUsed atomik güncelleme (/internal/users/:id/storage)
-- Kayıt sonrası credit servise 100 kredi bildirimi
-
-## Endpoint'ler
-```
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/refresh
-POST   /api/auth/logout
-GET    /api/users/me
-PATCH  /api/users/me/preferences
-
-GET    /internal/users/:id              ← diğer servisler kullanır
-PATCH  /internal/users/:id/storage     ← upload servisi kullanır (delta: ±bytes)
-```
-
-## Cookie ayarları
-```typescript
-res.cookie('accessToken', token, {
-  httpOnly: true,
-  secure: NODE_ENV === 'production',
-  sameSite: 'strict',
-  maxAge: 15 * 60 * 1000,
-});
-res.cookie('refreshToken', token, {
-  httpOnly: true,
-  secure: NODE_ENV === 'production',
-  sameSite: 'strict',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/api/auth/refresh',
-});
-```
-
-## Kurallar
-- bcrypt min 10 round
-- passwordHash: select: false — yanıtta asla dönmez
-- /internal/* endpoint'leri x-internal-secret header kontrolü
-- Kayıtta credit servise POST /internal/earn { userId, amount: 100, reason: 'Kayıt bonusu' }
+- Auth: register (email onay + `INITIAL_CREDIT_BALANCE` kredi), login (brute-force kilidi, timing-safe), refresh (token rotation), logout/logout-all, me/preferences/password.
+- Kredi: `/credits/balance|history|spend|earn|purchase|packages`. Harcama **atomik** `findOneAndUpdate` + `$gte` — asla find+save yapma.
+- Stripe: `/credits/purchase` Checkout session; `/credits/webhook` **raw body** ister (global `express.json()` bu path'i atlar — bozma).
+- Email: nodemailer, SMTP yoksa console'a yazar; mailler fire-and-forget gönderilir (register'ı bloklamasın).
+- `x-internal-token` doğrulaması: `getPayload(req)` + `_internal: true` kontrolü.
