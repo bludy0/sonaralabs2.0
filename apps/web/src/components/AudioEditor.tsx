@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
+import { audioBufferToWav } from "@sonaralabs/daw-studio";
 import { api } from "../lib/api";
 
 interface AudioEditorProps {
@@ -8,57 +9,6 @@ interface AudioEditorProps {
 }
 
 type ExportFormat = "wav" | "mp3" | "ogg" | "flac";
-
-// ---------------------------------------------------------------------------
-// WAV encoder
-// ---------------------------------------------------------------------------
-function audioBufferToWav(buffer: AudioBuffer): Blob {
-  const numChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const format = 1; // PCM
-  const bitDepth = 16;
-  const bytesPerSample = bitDepth / 8;
-  const blockAlign = numChannels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = buffer.length * blockAlign;
-  const arrayBuffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(arrayBuffer);
-
-  const writeString = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, format, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitDepth, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let offset = 44;
-  for (let i = 0; i < buffer.length; i++) {
-    for (let ch = 0; ch < numChannels; ch++) {
-      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
-      view.setInt16(
-        offset,
-        sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-        true
-      );
-      offset += 2;
-    }
-  }
-
-  return new Blob([arrayBuffer], { type: "audio/wav" });
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -77,6 +27,7 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("wav");
+  const [embedLoop, setEmbedLoop] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStub, setExportStub] = useState<string | null>(null);
 
@@ -183,7 +134,25 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
         trimmed.getChannelData(ch).set(src);
       }
 
-      const wavBlob = audioBufferToWav(trimmed);
+      // Fade in/out lineer gain rampası olarak export'a uygulanır
+      const sr = trimmed.sampleRate;
+      const fadeInSamples  = Math.min(trimmed.length, Math.floor(fadeIn * sr));
+      const fadeOutSamples = Math.min(trimmed.length, Math.floor(fadeOut * sr));
+      for (let ch = 0; ch < trimmed.numberOfChannels; ch++) {
+        const data = trimmed.getChannelData(ch);
+        for (let i = 0; i < fadeInSamples; i++) data[i] *= i / fadeInSamples;
+        for (let i = 0; i < fadeOutSamples; i++)
+          data[trimmed.length - 1 - i] *= i / fadeOutSamples;
+      }
+
+      // WAV + loop seçiliyse smpl chunk göm: loop tüm trim bölgesini kapsar
+      // (Unity/Godot/Unreal bu işaretleri doğrudan okur). FFmpeg dönüşümleri
+      // smpl chunk'ı taşımadığından diğer formatlarda gömme yapılmaz.
+      const loopPoints =
+        embedLoop && exportFormat === "wav"
+          ? { startSec: 0, endSec: trimmed.length / sr }
+          : undefined;
+      const wavBlob = audioBufferToWav(trimmed, loopPoints);
       await audioCtx.close();
 
       // 2) WAV → doğrudan indir; diğer formatlar → backend FFmpeg dönüşümü
@@ -424,6 +393,21 @@ export default function AudioEditor({ audioUrl, onClose }: AudioEditorProps) {
                 </button>
               ))}
             </div>
+
+            {exportFormat === "wav" && (
+              <label
+                className="flex items-center gap-2 mb-3 text-xs cursor-pointer select-none"
+                style={{ color: "var(--text-2)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={embedLoop}
+                  onChange={(e) => setEmbedLoop(e.target.checked)}
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                Embed loop points — Unity / Godot / Unreal read these for seamless looping
+              </label>
+            )}
 
             {exportStub && (
               <p className="text-xs mb-3" style={{ color: "var(--teal)" }}>{exportStub}</p>
