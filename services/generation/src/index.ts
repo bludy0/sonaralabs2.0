@@ -610,16 +610,30 @@ app.delete("/internal/generations/:id", async (req, res) => {
 });
 
 // GET /internal/generations — for library service
+// Cursor sayfalama: ?before=<ISO createdAt> ile önceki batch'in son kaydından devam.
+// `total` her zaman cursor'suz filtreye göre döner (library toplam sayı için kullanır).
 app.get("/internal/generations", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const limit  = Math.min(200, parseInt(req.query.limit as string) || 50);
-    const type   = req.query.type as GenerationType | undefined;
+    const limit   = Math.min(200, parseInt(req.query.limit as string) || 50);
+    const type    = req.query.type as GenerationType | undefined;
+    const before  = req.query.before as string | undefined;
+    const favOnly = req.query.favorites === "true";
+    const q       = (req.query.q as string | undefined)?.trim();
     // Library şu an sadece "done" gösteriyor; status parametresi eklenerek genişletilebilir
     const filter: Record<string, unknown> = { userId, status: "done" };
     if (type) filter.type = type;
-    const items = await Generation.find(filter).sort({ createdAt: -1 }).limit(limit);
-    res.json({ success: true, data: items } as ApiResponse);
+    if (favOnly) filter.isFavorited = true;
+    if (q) filter.prompt = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+
+    const countFilter = { ...filter };
+    if (before && !isNaN(Date.parse(before))) filter.createdAt = { $lt: new Date(before) };
+
+    const [items, total] = await Promise.all([
+      Generation.find(filter).sort({ createdAt: -1 }).limit(limit),
+      Generation.countDocuments(countFilter),
+    ]);
+    res.json({ success: true, data: items, total });
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
   }

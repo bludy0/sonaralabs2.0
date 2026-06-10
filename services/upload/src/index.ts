@@ -215,12 +215,27 @@ app.patch("/internal/uploads/:id/favorite", async (req, res) => {
 });
 
 // GET /internal/uploads — library servisi için
+// Cursor sayfalama: ?before=<ISO createdAt>. `total` cursor'suz filtreye göre döner.
 app.get("/internal/uploads", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const limit = Math.min(200, parseInt(req.query.limit as string) || 50);
-    const uploads = await Upload.find({ userId }).sort({ createdAt: -1 }).limit(limit);
-    res.json({ success: true, data: uploads } as ApiResponse);
+    const limit   = Math.min(200, parseInt(req.query.limit as string) || 50);
+    const before  = req.query.before as string | undefined;
+    const favOnly = req.query.favorites === "true";
+    const q       = (req.query.q as string | undefined)?.trim();
+
+    const filter: Record<string, unknown> = { userId };
+    if (favOnly) filter.isFavorited = true;
+    if (q) filter.originalName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+
+    const countFilter = { ...filter };
+    if (before && !isNaN(Date.parse(before))) filter.createdAt = { $lt: new Date(before) };
+
+    const [uploads, total] = await Promise.all([
+      Upload.find(filter).sort({ createdAt: -1 }).limit(limit),
+      Upload.countDocuments(countFilter),
+    ]);
+    res.json({ success: true, data: uploads, total });
   } catch {
     res.status(401).json({ success: false, error: "Unauthorized" });
   }

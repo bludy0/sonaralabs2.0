@@ -83,44 +83,75 @@ function internalToken(userId: string): string {
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 
 // GET / — birleşik kütüphane listesi (generations + uploads)
+// Filtreler (favorites/q/type) kaynak servislere itilir; sayfalama, kaynaklardan
+// cursor'lu (?before=) batch'ler çekilerek k-way merge ile yapılır. Böylece 200
+// kayıt üstü kütüphaneler de eksiksiz sayfalanır.
 app.get("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
     const headers = { "x-internal-token": internalToken(userId) };
-    const page       = parseInt(req.query.page as string) || 1;
-    const limit      = parseInt(req.query.limit as string) || 20;
+    const page       = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit      = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
     const favOnly    = req.query.favorites === "true";
     const typeFilter = req.query.type as string | undefined;
-    const q          = (req.query.q as string | undefined)?.toLowerCase().trim();
+    const q          = (req.query.q as string | undefined)?.trim();
 
-    // limit=200: tüm itemlar in-memory çekilip sayfalanır (her servis max 200)
-    const [genRes, upRes] = await Promise.allSettled([
-      axios.get(`${GENERATION_SERVICE_URL}/internal/generations?limit=200`, { headers }),
-      axios.get(`${UPLOAD_SERVICE_URL}/internal/uploads?limit=200`, { headers }),
-    ]);
+    const BATCH = 100;
+    const baseParams = new URLSearchParams({ limit: String(BATCH) });
+    if (favOnly) baseParams.set("favorites", "true");
+    if (q) baseParams.set("q", q);
 
-    let generations = genRes.status === "fulfilled" ? genRes.value.data.data : [];
-    let uploads     = upRes.status  === "fulfilled" ? upRes.value.data.data  : [];
+    type LibItem = Record<string, unknown> & { _type: string; createdAt: string };
+    interface Source {
+      type: "generation" | "upload";
+      url: string;
+      buffer: LibItem[];
+      cursor?: string;       // son alınan kaydın createdAt'i
+      exhausted: boolean;
+      total: number;
+    }
 
-    type LibItem = Record<string, unknown> & { _type: string; createdAt: string; isFavorited?: boolean };
+    const sources: Source[] = [];
+    if (!typeFilter || typeFilter === "all" || typeFilter === "generation")
+      sources.push({ type: "generation", url: `${GENERATION_SERVICE_URL}/internal/generations`, buffer: [], exhausted: false, total: 0 });
+    if (!typeFilter || typeFilter === "all" || typeFilter === "upload")
+      sources.push({ type: "upload", url: `${UPLOAD_SERVICE_URL}/internal/uploads`, buffer: [], exhausted: false, total: 0 });
 
-    // Birleştir ve sırala
-    const items: LibItem[] = [
-      ...generations.map((g: Record<string, unknown>) => ({ ...g, _type: "generation" })),
-      ...uploads.map((u: Record<string, unknown>)     => ({ ...u, _type: "upload"     })),
-    ].sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
-
-    const filtered = items.filter((i) => {
-      if (favOnly && !i.isFavorited) return false;
-      if (typeFilter && typeFilter !== "all" && i._type !== typeFilter) return false;
-      if (q) {
-        const label = ((i.originalName ?? i.prompt ?? "") as string).toLowerCase();
-        if (!label.includes(q)) return false;
+    async function fill(src: Source): Promise<void> {
+      const params = new URLSearchParams(baseParams);
+      if (src.cursor) params.set("before", src.cursor);
+      try {
+        const r = await axios.get(`${src.url}?${params}`, { headers });
+        const data: Record<string, unknown>[] = r.data.data ?? [];
+        src.buffer.push(...data.map((d) => ({ ...d, _type: src.type } as LibItem)));
+        if (data.length > 0) src.cursor = data[data.length - 1].createdAt as string;
+        if (typeof r.data.total === "number") src.total = r.data.total;
+        if (data.length < BATCH) src.exhausted = true;
+      } catch (err) {
+        // Kaynak servise ulaşılamazsa diğer kaynak yine de gösterilir
+        logger.warn(`library source ${src.type} unavailable`, { message: String(err) });
+        src.exhausted = true;
       }
-      return true;
-    });
-    const total     = filtered.length;
-    const paginated = filtered.slice((page - 1) * limit, page * limit);
+    }
+
+    await Promise.all(sources.map((s) => fill(s)));
+
+    // k-way merge: createdAt desc — her adımda en yeni head'i al
+    const needed = page * limit;
+    const merged: LibItem[] = [];
+    while (merged.length < needed) {
+      const empty = sources.filter((s) => s.buffer.length === 0 && !s.exhausted);
+      if (empty.length > 0) { await Promise.all(empty.map((s) => fill(s))); continue; }
+      const heads = sources.filter((s) => s.buffer.length > 0);
+      if (heads.length === 0) break;
+      let best = heads[0];
+      for (const s of heads)
+        if (new Date(s.buffer[0].createdAt).getTime() > new Date(best.buffer[0].createdAt).getTime()) best = s;
+      merged.push(best.buffer.shift()!);
+    }
+
+    const total     = sources.reduce((sum, s) => sum + s.total, 0);
+    const paginated = merged.slice((page - 1) * limit, page * limit);
 
     res.json({ success: true, data: { items: paginated, total, page, pages: Math.ceil(total / limit) } } as ApiResponse);
   } catch (err) {
