@@ -226,7 +226,7 @@ export default function ProfilePage() {
       </div>
 
       {/* ── PROFILE HEADER ──────────────────────────────────────────────────── */}
-      <div className="max-w-5xl mx-auto px-8 -mt-16 relative z-10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 -mt-16 relative z-10">
         <div className="flex flex-col sm:flex-row items-start sm:items-end gap-6 pb-8">
 
           {/* Large avatar */}
@@ -416,7 +416,7 @@ export default function ProfilePage() {
       </div>
 
       {/* ── TRACKS SECTION ──────────────────────────────────────────────────── */}
-      <div className="max-w-5xl mx-auto px-8 pb-12">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 pb-12">
         {/* Section header */}
         <div className="flex items-center gap-3 mb-6">
           <span className="material-symbols-outlined text-[16px]" style={{ color: "var(--accent)" }}>queue_music</span>

@@ -13,20 +13,6 @@ const BARS = [
   46,76,65,89,
 ];
 
-const TICKER_ROW1 = [
-  "Text → Music","Screenshot → Music","Sound Effects","Browser Studio",
-  "Seamless Loops","Cloud Library","Unity Ready","Unreal Ready",
-  "WAV · OGG Export","BPM Control","Pitch Preserve","Loop Points",
-  "Instant Preview","Favorites","Collections","Prompt Engine",
-];
-
-const TICKER_ROW2 = [
-  "Beatoven AI","ElevenLabs SFX","Google Gemini","Lyria 3",
-  "Gemini Vision","WaveSurfer.js","BullMQ Jobs","MongoDB Atlas",
-  "Redis Cache","React 18","TypeScript","Vite 6",
-  "SSE Streaming","WebAudio API","Zustand","MinIO Storage",
-];
-
 const FEATURES = [
   {
     icon: "✦",
@@ -166,14 +152,6 @@ export default function WelcomePage() {
           from { opacity:0; }
           to   { opacity:1; }
         }
-        @keyframes ticker {
-          from { transform: translateX(0); }
-          to   { transform: translateX(-50%); }
-        }
-        @keyframes ticker-rev {
-          from { transform: translateX(-50%); }
-          to   { transform: translateX(0); }
-        }
         @keyframes blink {
           0%,49% { opacity:1; }
           50%,100%{ opacity:0; }
@@ -191,19 +169,6 @@ export default function WelcomePage() {
           box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 8%, transparent), 0 12px 40px rgba(0,0,0,0.35);
           transform: translateY(-3px);
         }
-        .wu-ticker-wrap  { overflow: hidden; mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent); }
-        .wu-ticker-track {
-          display: flex;
-          width: max-content;
-          animation: ticker 55s linear infinite;
-        }
-        .wu-ticker-track:hover { animation-play-state: paused; }
-        .wu-ticker-track-rev {
-          display: flex;
-          width: max-content;
-          animation: ticker-rev 48s linear infinite;
-        }
-        .wu-ticker-track-rev:hover { animation-play-state: paused; }
         .wu-cursor {
           display: inline-block;
           width: 2px; height: 1em;
@@ -539,53 +504,6 @@ export default function WelcomePage() {
             />
           </div>
         </section>
-
-        {/* ════════════════════════════════ TICKER ══════════════════════════ */}
-        <div
-          style={{
-            borderTop: "1px solid color-mix(in srgb, var(--accent) 12%, transparent)",
-            borderBottom: "1px solid color-mix(in srgb, var(--accent) 12%, transparent)",
-            background: "color-mix(in srgb, var(--accent) 3%, var(--bg-page))",
-            padding: "11px 0",
-            display: "flex",
-            flexDirection: "column",
-            gap: "9px",
-          }}
-        >
-          {/* Row 1 — features · left→right */}
-          <div className="wu-ticker-wrap">
-            <div className="wu-ticker-track">
-              {[...TICKER_ROW1, ...TICKER_ROW1].map((item, i) => (
-                <span key={i} className="inline-flex items-center gap-4 px-4">
-                  <span
-                    className="text-[10px] font-black tracking-[0.22em] uppercase whitespace-nowrap"
-                    style={{ color: i % 4 === 0 ? "var(--accent)" : "var(--text-2)" }}
-                  >
-                    {item}
-                  </span>
-                  <span style={{ color: "color-mix(in srgb, var(--accent) 40%, transparent)", fontSize: "7px" }}>◆</span>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Row 2 — tech / AI · right→left */}
-          <div className="wu-ticker-wrap">
-            <div className="wu-ticker-track-rev">
-              {[...TICKER_ROW2, ...TICKER_ROW2].map((item, i) => (
-                <span key={i} className="inline-flex items-center gap-4 px-4">
-                  <span
-                    className="text-[9px] font-bold tracking-[0.2em] uppercase whitespace-nowrap"
-                    style={{ color: i % 5 === 0 ? "var(--teal)" : "var(--text-3)" }}
-                  >
-                    {item}
-                  </span>
-                  <span style={{ color: "color-mix(in srgb, var(--teal) 30%, transparent)", fontSize: "6px" }}>▸</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {/* ════════════════════════════════ STATS ═══════════════════════════ */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-16">

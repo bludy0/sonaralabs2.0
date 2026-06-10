@@ -224,7 +224,7 @@ export default function AdminPage() {
       ) : null}
 
       {/* Daily stats */}
-      <section className="mb-8">
+      <section className="mb-8 overflow-x-auto">
         <p
           lang="en"
           className="text-[10px] font-bold tracking-[0.25em] uppercase mb-4"
@@ -237,7 +237,7 @@ export default function AdminPage() {
         ) : (() => {
           const maxCount = Math.max(...daily.map(r => r.count), 1);
           return (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-[560px]">
               {daily.map(row => (
                 <div
                   key={row._id}
@@ -279,7 +279,7 @@ export default function AdminPage() {
       </div>
 
       {/* Users table */}
-      <section style={{ display: activeTab === "users" ? undefined : "none" }}>
+      <section className="overflow-x-auto" style={{ display: activeTab === "users" ? undefined : "none" }}>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <p
             className="text-[10px] font-bold tracking-[0.25em] uppercase"
@@ -308,7 +308,7 @@ export default function AdminPage() {
         ) : users.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--text-3)" }}>No users found.</p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-[680px]">
             {/* Header row */}
             <div className="flex items-center gap-4 px-4 py-2">
               <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Email</span>
@@ -398,7 +398,7 @@ export default function AdminPage() {
 
       {/* Generations table */}
       {activeTab === "generations" && (
-        <section>
+        <section className="overflow-x-auto">
           {/* Status filter */}
           <div className="flex gap-1 mb-4 flex-wrap">
             {(["all", "pending", "processing", "done", "failed"] as GenStatus[]).map(s => (
@@ -425,7 +425,7 @@ export default function AdminPage() {
           ) : generations.length === 0 ? (
             <p className="text-sm" style={{ color: "var(--text-3)" }}>No generations found.</p>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-[520px]">
               {/* Header */}
               <div className="flex items-center gap-3 px-4 py-2">
                 <span lang="en" className="text-[9px] font-bold tracking-[0.15em] uppercase flex-1" style={{ color: "var(--text-3)" }}>Prompt</span>

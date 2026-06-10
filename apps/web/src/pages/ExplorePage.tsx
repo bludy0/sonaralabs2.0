@@ -170,7 +170,7 @@ export default function ExplorePage() {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
 
       {/* ── HERO ──────────────────────────────────────────────────────────────── */}
-      <div className="px-8 pt-10 pb-8">
+      <div className="px-4 sm:px-8 pt-10 pb-8">
         {/* System label */}
         <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-3" style={{ color: "var(--text-2)" }}>
           SONARALABS / DISCOVERY_ENGINE
@@ -229,7 +229,7 @@ export default function ExplorePage() {
       </div>
 
       {/* ── TRACK GRID ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 px-8 pb-28">
+      <div className="flex-1 px-4 sm:px-8 pb-28">
         {loading && tracks.length === 0 ? (
           <div className="flex items-center justify-center h-48">
             <p lang="en" className="text-xs tracking-widest uppercase" style={{ color: "var(--text-3)" }}>
@@ -292,7 +292,7 @@ export default function ExplorePage() {
       {/* ── GLOBAL PLAYBACK BAR ───────────────────────────────────────────────── */}
       {nowPlaying && (
         <div
-          className="fixed bottom-0 left-[220px] right-0 h-[72px] flex items-center gap-5 px-8"
+          className="fixed bottom-0 left-0 md:left-[220px] right-0 h-[72px] flex items-center gap-5 px-4 sm:px-8"
           style={{
             background: "color-mix(in srgb, var(--bg-page) 85%, transparent)",
             backdropFilter: "blur(20px)",

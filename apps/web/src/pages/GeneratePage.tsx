@@ -253,15 +253,15 @@ export default function GeneratePage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full min-h-screen" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
+    <div className="flex flex-col md:flex-row h-full min-h-screen" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
 
       {/* ── LEFT PANEL — Form ──────────────────────────────────────────────── */}
       <div
-        className="w-[450px] shrink-0 flex flex-col border-r overflow-y-auto"
+        className="w-full md:w-[450px] shrink-0 flex flex-col border-b md:border-b-0 md:border-r overflow-y-auto"
         style={{ borderColor: "var(--bg-input)", background: "var(--bg-page)" }}
       >
         {/* Panel header */}
-        <div className="px-7 pt-8 pb-6">
+        <div className="px-5 md:px-7 pt-8 pb-6">
           <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }} lang="en">
             SONARALABS / STUDIO
           </p>
@@ -286,9 +286,9 @@ export default function GeneratePage() {
         </div>
 
         {/* Divider */}
-        <div className="mx-7 h-px mb-6" style={{ background: "var(--bg-input)" }} />
+        <div className="mx-5 md:mx-7 h-px mb-6" style={{ background: "var(--bg-input)" }} />
 
-        <div className="px-7 flex-1 space-y-6">
+        <div className="px-5 md:px-7 flex-1 space-y-6">
 
           {/* Mode tabs — Music / SFX */}
           <div
@@ -585,10 +585,10 @@ export default function GeneratePage() {
       </div>
 
       {/* ── RIGHT PANEL — Queue ─────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col md:overflow-hidden">
 
         {/* Queue header */}
-        <div className="px-7 pt-8 pb-6 shrink-0">
+        <div className="px-5 md:px-7 pt-8 pb-6 shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-1" style={{ color: "var(--text-2)" }} lang="en">
@@ -619,10 +619,10 @@ export default function GeneratePage() {
         </div>
 
         {/* Divider */}
-        <div className="mx-7 h-px shrink-0" style={{ background: "var(--bg-input)" }} />
+        <div className="mx-5 md:mx-7 h-px shrink-0" style={{ background: "var(--bg-input)" }} />
 
         {/* Generation cards list */}
-        <div className="flex-1 overflow-y-auto px-7 py-6">
+        <div className="flex-1 md:overflow-y-auto px-5 md:px-7 py-6">
           {items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-3">
               <span className="material-symbols-outlined" style={{ fontSize: 40, color: "var(--bg-border)" }}>

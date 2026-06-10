@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { NavLink, Link, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { useT } from "../store/useI18nStore";
 import { SonarLogo } from "./SonarLogo";
@@ -10,12 +10,41 @@ const SIDEBAR_MAX     = 340;
 const SIDEBAR_ICON_ONLY_THRESHOLD = 130; // bu genişliğin altında label'lar kaybolur
 const STORAGE_KEY = "sidebar-width";
 
+const MOBILE_BREAKPOINT = 768;   // bu genişliğin altında sidebar → off-canvas drawer
+const MOBILE_DRAWER_WIDTH = 260;
+const MOBILE_TOPBAR_HEIGHT = 52;
+
 export default function Layout() {
   const t = useT();
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // ── Sidebar genişliği ─────────────────────────────────────────────────────
+  // ── Responsive: mobil mi? ─────────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState<boolean>(
+    () => typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // ── Mobil drawer açık/kapalı ──────────────────────────────────────────────
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Sayfa değişince drawer'ı kapat
+  useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
+  // Drawer açıkken body scroll kilidi
+  useEffect(() => {
+    if (isMobile && drawerOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [isMobile, drawerOpen]);
+
+  // ── Sidebar genişliği (yalnızca desktop) ──────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? parseInt(saved) : SIDEBAR_DEFAULT;
@@ -25,7 +54,8 @@ export default function Layout() {
     localStorage.setItem(STORAGE_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
 
-  const collapsed  = sidebarWidth <= SIDEBAR_ICON_ONLY_THRESHOLD;
+  // Mobilde drawer her zaman tam genişlik (label'lar görünür)
+  const collapsed  = !isMobile && sidebarWidth <= SIDEBAR_ICON_ONLY_THRESHOLD;
   const isDragging = useRef(false);
   const startX     = useRef(0);
   const startWidth = useRef(0);
@@ -74,22 +104,102 @@ export default function Layout() {
     navigate("/login");
   }
 
+  const navLinkStyle = (isActive: boolean): React.CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: collapsed ? 0 : 12,
+    justifyContent: collapsed ? "center" : "flex-start",
+    padding: collapsed ? "10px 0" : "9px 12px",
+    borderRadius: 8,
+    background: isActive ? "var(--accent)" : "transparent",
+    color:      isActive ? "var(--accent-on)" : "var(--text-2)",
+    textDecoration: "none",
+    fontSize: "var(--fs-xs)",
+    fontWeight: 600,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    transition: "background 0.1s, color 0.1s",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+  });
+
+  // ── Aside (sidebar) stili — mobilde off-canvas drawer ─────────────────────
+  const asideStyle: React.CSSProperties = isMobile
+    ? {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        height: "100%",
+        width: MOBILE_DRAWER_WIDTH,
+        minWidth: MOBILE_DRAWER_WIDTH,
+        background: "var(--bg-card)",
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 50,
+        transform: drawerOpen ? "translateX(0)" : `translateX(-100%)`,
+        transition: "transform 0.22s ease",
+        boxShadow: drawerOpen ? "4px 0 24px rgba(0,0,0,0.4)" : "none",
+        overflow: "hidden",
+      }
+    : {
+        width: sidebarWidth,
+        minWidth: sidebarWidth,
+        background: "var(--bg-card)",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        transition: isDragging.current ? "none" : "width 0.15s ease",
+        overflow: "hidden",
+      };
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page)", color: "var(--text-1)" }}>
 
-      {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside
-        style={{
-          width: sidebarWidth,
-          minWidth: sidebarWidth,
-          background: "var(--bg-card)",
-          display: "flex",
-          flexDirection: "column",
-          position: "relative",
-          transition: isDragging.current ? "none" : "width 0.15s ease",
-          overflow: "hidden",
-        }}
-      >
+      {/* ── MOBİL ÜST BAR ───────────────────────────────────────────────── */}
+      {isMobile && (
+        <header
+          style={{
+            position: "fixed",
+            top: 0, left: 0, right: 0,
+            height: MOBILE_TOPBAR_HEIGHT,
+            zIndex: 40,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "0 14px",
+            background: "var(--bg-card)",
+            borderBottom: "1px solid var(--bg-border)",
+          }}
+        >
+          <button
+            aria-label="Menü"
+            onClick={() => setDrawerOpen(v => !v)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-1)", padding: 4, display: "flex" }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "var(--fs-2xl)" }}>menu</span>
+          </button>
+          <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+            <SonarLogo size={26} variant="full" />
+          </Link>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: "var(--fs-md)", color: "var(--accent)" }}>bolt</span>
+            <span data-testid="credit-balance" style={{ fontSize: "var(--fs-sm)", fontWeight: 700, color: "var(--accent)" }}>
+              {user?.creditBalance ?? "—"}
+            </span>
+          </div>
+        </header>
+      )}
+
+      {/* ── MOBİL OVERLAY ───────────────────────────────────────────────── */}
+      {isMobile && drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 45, background: "rgba(0,0,0,0.55)" }}
+        />
+      )}
+
+      {/* ── SIDEBAR / DRAWER ────────────────────────────────────────────── */}
+      <aside style={asideStyle}>
         {/* Brand */}
         <Link to="/" style={{ textDecoration: "none" }}>
           <div
@@ -121,24 +231,7 @@ export default function Layout() {
               key={to}
               to={to}
               title={collapsed ? label : undefined}
-              style={({ isActive }) => ({
-                display: "flex",
-                alignItems: "center",
-                gap: collapsed ? 0 : 12,
-                justifyContent: collapsed ? "center" : "flex-start",
-                padding: collapsed ? "10px 0" : "9px 12px",
-                borderRadius: 8,
-                background: isActive ? "var(--accent)" : "transparent",
-                color:      isActive ? "var(--accent-on)" : "var(--text-2)",
-                textDecoration: "none",
-                fontSize: "var(--fs-xs)",
-                fontWeight: 600,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                transition: "background 0.1s, color 0.1s",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-              })}
+              style={({ isActive }) => navLinkStyle(isActive)}
             >
               <span className="material-symbols-outlined" style={{ fontSize: "var(--fs-xl)", flexShrink: 0 }}>{icon}</span>
               {!collapsed && label}
@@ -149,24 +242,7 @@ export default function Layout() {
             <NavLink
               to="/admin"
               title={collapsed ? t.nav.admin : undefined}
-              style={({ isActive }) => ({
-                display: "flex",
-                alignItems: "center",
-                gap: collapsed ? 0 : 12,
-                justifyContent: collapsed ? "center" : "flex-start",
-                padding: collapsed ? "10px 0" : "9px 12px",
-                borderRadius: 8,
-                background: isActive ? "var(--accent)" : "transparent",
-                color:      isActive ? "var(--accent-on)" : "var(--text-2)",
-                textDecoration: "none",
-                fontSize: "var(--fs-xs)",
-                fontWeight: 600,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                transition: "background 0.1s, color 0.1s",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-              })}
+              style={({ isActive }) => navLinkStyle(isActive)}
             >
               <span className="material-symbols-outlined" style={{ fontSize: "var(--fs-xl)", flexShrink: 0 }}>admin_panel_settings</span>
               {!collapsed && t.nav.admin}
@@ -227,28 +303,33 @@ export default function Layout() {
           )}
         </div>
 
-        {/* ── RESIZE HANDLE ────────────────────────────────────────────────── */}
-        <div
-          onMouseDown={onMouseDown}
-          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-          title="Sürükle · Çift tıkla: sıfırla"
-          style={{
-            position: "absolute",
-            top: 0, right: 0,
-            width: 5,
-            height: "100%",
-            cursor: "col-resize",
-            zIndex: 10,
-            background: "transparent",
-            transition: "background 0.15s",
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--accent)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-        />
+        {/* ── RESIZE HANDLE (yalnızca desktop) ─────────────────────────────── */}
+        {!isMobile && (
+          <div
+            onMouseDown={onMouseDown}
+            onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+            title="Sürükle · Çift tıkla: sıfırla"
+            style={{
+              position: "absolute",
+              top: 0, right: 0,
+              width: 5,
+              height: "100%",
+              cursor: "col-resize",
+              zIndex: 10,
+              background: "transparent",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--accent)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+          />
+        )}
       </aside>
 
       {/* ── ANA İÇERİK ──────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-auto" style={{ background: "var(--bg-page)" }}>
+      <main
+        className="flex-1 overflow-auto"
+        style={{ background: "var(--bg-page)", paddingTop: isMobile ? MOBILE_TOPBAR_HEIGHT : 0 }}
+      >
         <Outlet />
       </main>
     </div>
