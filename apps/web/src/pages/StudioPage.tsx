@@ -45,6 +45,7 @@ export default function StudioPage() {
   const [sharing,      setSharing]      = useState(false)
   const [copied,       setCopied]       = useState(false)
   const [isDirty,      setIsDirty]      = useState(false)
+  const [lastSavedAt,  setLastSavedAt]  = useState<Date | null>(null)
 
   // ── Dirty tracking ────────────────────────────────────────────────────────
   // suppressUntilRef: after save/load, ignore change events for 500ms
@@ -92,7 +93,7 @@ export default function StudioPage() {
   }
 
   // ── Keyboard shortcut: Ctrl/Cmd+S ────────────────────────────────────────
-  const handleSaveRef = useRef<() => void>(() => {})
+  const handleSaveRef = useRef<(auto?: boolean) => void>(() => {})
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 's') {
@@ -161,8 +162,20 @@ export default function StudioPage() {
     }
   }
 
+  // ── Autosave ─────────────────────────────────────────────────────────────
+  // Yalnızca daha önce kaydedilmiş projelerde (projectId varken) çalışır —
+  // istem dışı "Untitled Project" kayıtları oluşturmaz. Son değişiklikten
+  // 4sn sonra sessizce kaydeder.
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (isReadOnly || !projectId || !isDirty) return
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => handleSaveRef.current(true), 4000)
+    return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current) }
+  }, [tracks, transport, isDirty, projectId, isReadOnly])
+
   // ── Kaydet ───────────────────────────────────────────────────────────────
-  async function handleSave() {
+  async function handleSave(auto = false) {
     if (saving) return
     setSaving(true); setSaveLabel(null)
     try {
@@ -194,8 +207,11 @@ export default function StudioPage() {
       }
       suppressDirty()
       setIsDirty(false)
-      setSaveLabel('Saved ✓')
-      setTimeout(() => setSaveLabel(null), 2000)
+      setLastSavedAt(new Date())
+      if (!auto) {
+        setSaveLabel('Saved ✓')
+        setTimeout(() => setSaveLabel(null), 2000)
+      }
     } catch {
       setSaveLabel('Failed ✗')
       setTimeout(() => setSaveLabel(null), 3000)
@@ -344,12 +360,19 @@ export default function StudioPage() {
           }}>{saveLabel}</span>
         )}
 
+        {/* Last autosave time */}
+        {!isReadOnly && !isDirty && !saveLabel && lastSavedAt && (
+          <span style={{ fontSize: 10, color: C.text3, flexShrink: 0 }}>
+            Saved {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+
         <div style={{ flex: 1 }} />
 
         {/* Kaydet */}
         {!isReadOnly && (
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
             title="Save (Ctrl+S)"
             style={{
