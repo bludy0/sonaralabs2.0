@@ -26,6 +26,7 @@ export function Timeline() {
   const addClip         = useDAWStore(s => s.addClip)
   const dt              = useDAWT()
   const { currentTime, seek } = useAudioEngine()
+  const isPlaying = useAudioEngine(s => s.isPlaying)
   const setLoop = useDAWStore(s => s.setLoop)
 
   const rulerRef    = useRef<HTMLCanvasElement>(null)
@@ -39,6 +40,18 @@ export function Timeline() {
   useEffect(() => {
     if (rulerRef.current) drawRuler(rulerRef.current, zoom, transport)
   }, [zoom, themeVersion, transport.loopEnabled, transport.loopStart, transport.loopEnd])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Playhead takibi: çalma sırasında playhead görünür alanın sağından çıkınca
+  // görünümü "sayfa çevirir" gibi kaydır (sürekli kaydırma yerine — daha az baş döndürücü)
+  useEffect(() => {
+    if (!isPlaying) return
+    const el = scrollRef.current
+    if (!el) return
+    const x = currentTime * zoom
+    if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft) {
+      el.scrollLeft = Math.max(0, x - 80)
+    }
+  }, [currentTime, isPlaying, zoom])
 
   // Scroll with wheel (horizontal zoom on Ctrl+wheel)
   function onWheel(e: React.WheelEvent) {
@@ -171,6 +184,14 @@ export function Timeline() {
   }, 30)
   const timelineW = Math.max(maxEnd + 20, 60) * zoom
 
+  // Tüm projeyi görünür alana sığdır
+  function zoomToFit() {
+    const el = scrollRef.current
+    if (!el) return
+    setZoom((el.clientWidth - 60) / Math.max(maxEnd, 1))
+    el.scrollLeft = 0
+  }
+
   const playheadX = currentTime * zoom
 
   return (
@@ -199,8 +220,9 @@ export function Timeline() {
             TRACKS
           </span>
           <div style={{ display:'flex', gap:2 }}>
-            <ZoomBtn onClick={() => setZoom(zoom * 1.25)}>+</ZoomBtn>
-            <ZoomBtn onClick={() => setZoom(zoom * 0.8)}>−</ZoomBtn>
+            <ZoomBtn title="Zoom in (+)" onClick={() => setZoom(zoom * 1.25)}>+</ZoomBtn>
+            <ZoomBtn title="Zoom out (−)" onClick={() => setZoom(zoom * 0.8)}>−</ZoomBtn>
+            <ZoomBtn title={dt.zoomFit} onClick={zoomToFit}>⛶</ZoomBtn>
           </div>
         </div>
 
@@ -331,10 +353,11 @@ export function Timeline() {
   )
 }
 
-function ZoomBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function ZoomBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title?: string }) {
   return (
     <button
       onClick={onClick}
+      title={title}
       style={{
         width: 20, height: 20,
         background: C.bgHover, color: C.text2,
