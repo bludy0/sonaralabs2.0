@@ -19,6 +19,10 @@ import { useAudioEngine } from '../store/useAudioEngine'
  * Ctrl+Shift+Z   — Redo
  * Ctrl+Y         — Redo (Windows style)
  * [ / ]          — Loop in / Loop out (set to playhead)
+ * Home / End     — Playhead'i başa / proje sonuna al
+ * + / -          — Zoom in / out
+ * ?              — Kısayol panelini aç/kapat
+ * Escape         — Panel açıksa kapat, değilse seçimi bırak
  */
 export function useDAWKeyboard() {
   const store = useDAWStore
@@ -149,6 +153,61 @@ export function useDAWKeyboard() {
         case 'y':
         case 'Y':
           if (ctrl) { e.preventDefault(); redo() }
+          break
+
+        // ── Playhead konumu ───────────────────────────────────────────────
+        case 'Home':
+          e.preventDefault()
+          useAudioEngine.getState().seek(0)
+          break
+
+        case 'End': {
+          e.preventDefault()
+          // Proje sonu = en geç biten audio clip / midi clip
+          const { tracks, transport } = store.getState()
+          const secPerBeat = 60 / transport.bpm
+          let end = 0
+          for (const t of tracks) {
+            if (t.type === 'audio') {
+              for (const c of t.clips) {
+                const e2 = c.startTime + (c.trimEnd || c.duration) - c.trimStart
+                if (e2 > end) end = e2
+              }
+            } else if (t.type === 'midi') {
+              for (const c of t.clips) {
+                const e2 = c.startTime + c.durationBeats * secPerBeat
+                if (e2 > end) end = e2
+              }
+            }
+          }
+          useAudioEngine.getState().seek(end)
+          break
+        }
+
+        // ── Zoom ─────────────────────────────────────────────────────────
+        case '+':
+        case '=':
+          if (!ctrl) { e.preventDefault(); store.getState().setZoom(store.getState().zoom * 1.25) }
+          break
+        case '-':
+        case '_':
+          if (!ctrl) { e.preventDefault(); store.getState().setZoom(store.getState().zoom * 0.8) }
+          break
+
+        // ── Kısayol paneli / seçim bırakma ────────────────────────────────
+        case '?':
+          e.preventDefault()
+          store.getState().setShortcutsOpen(!store.getState().shortcutsOpen)
+          break
+
+        case 'Escape':
+          if (store.getState().shortcutsOpen) {
+            e.preventDefault()
+            store.getState().setShortcutsOpen(false)
+          } else if (store.getState().selectedClipIds.length > 0) {
+            e.preventDefault()
+            store.getState().selectClip(null)
+          }
           break
       }
     }

@@ -3,6 +3,7 @@ import { Transport }   from './Transport'
 import { Timeline }    from './Timeline/Timeline'
 import { Mixer }       from './Mixer/Mixer'
 import { PianoRoll }   from './PianoRoll/PianoRoll'
+import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { useDAWStore }    from '../store/useDAWStore'
 import { useAudioEngine } from '../store/useAudioEngine'
 import { useBufferRehydration } from '../lib/useBufferRehydration'
@@ -105,7 +106,11 @@ export function DAWLayout({
       color:         C.text1,
       fontFamily:    "'Inter', system-ui, sans-serif",
       overflow:      'hidden',
+      position:      'relative',   // ShortcutsOverlay bu kapsayıcıya göre konumlanır
     }}>
+      {/* ── Kısayol paneli ('?' veya transport'taki klavye ikonu) ─────────── */}
+      <ShortcutsOverlay />
+
       {/* ── Top header / Transport ─────────────────────────────────────── */}
       <Transport activeTab={mainTab} onTabChange={handleTabChange} />
 

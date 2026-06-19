@@ -20,6 +20,22 @@ function fmtTimecode(s: number): string {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}:${String(fr).padStart(2,'0')}`
 }
 
+/** Saniye → "bar.beat" (1 tabanlı) — müzisyenin takip ettiği asıl konum. */
+function fmtBarsBeats(s: number, bpm: number, beatsPerBar: number): string {
+  const beat = s * (bpm / 60)
+  const bar  = Math.floor(beat / beatsPerBar) + 1
+  const b    = Math.floor(beat % beatsPerBar) + 1
+  return `${bar}.${b}`
+}
+
+const SNAP_GRIDS: { label: string; beats: number }[] = [
+  { label: '1/4', beats: 0.25 },
+  { label: '1/2', beats: 0.5  },
+  { label: '1',   beats: 1    },
+  { label: '2',   beats: 2    },
+  { label: '4',   beats: 4    },
+]
+
 export function Transport({ activeTab, onTabChange }: TransportProps) {
   const transport         = useDAWStore(s => s.transport)
   const setBPM            = useDAWStore(s => s.setBPM)
@@ -27,6 +43,9 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
   const addAudio          = useDAWStore(s => s.addAudioTrack)
   const addMidi           = useDAWStore(s => s.addMidiTrack)
   const toggleLoop        = useDAWStore(s => s.toggleLoop)
+  const toggleSnap        = useDAWStore(s => s.toggleSnap)
+  const setSnapBeats      = useDAWStore(s => s.setSnapBeats)
+  const setShortcutsOpen  = useDAWStore(s => s.setShortcutsOpen)
 
   const { isPlaying, currentTime, play, pause, stop } = useAudioEngine()
   const masterVolume  = useAudioEngine(s => s.masterVolume)
@@ -151,8 +170,10 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         height:      32,
         flexShrink:  0,
       }}>
-        {/* BPM — editable */}
+        {/* BPM — editable. key: dışarıdan (proje yükleme) gelen BPM değişiminde
+            input'u yeniden başlatır; defaultValue tek başına güncellenmezdi. */}
         <input
+          key={transport.bpm}
           ref={bpmInputRef}
           type="number" min={40} max={300}
           defaultValue={transport.bpm}
@@ -210,6 +231,22 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
             <option key={t.label} value={t.label}>{t.label}</option>
           ))}
         </select>
+        {/* Bar.beat — müzikal konum */}
+        <span
+          title="Bar.Beat — Musical position of the playhead"
+          style={{
+            fontFamily: "'Inter', monospace",
+            fontSize:   13,
+            fontWeight: 700,
+            color:      C.text1,
+            letterSpacing: '0.02em',
+            minWidth:   38,
+            textAlign:  'right',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {fmtBarsBeats(currentTime, transport.bpm, timeSigNum)}
+        </span>
         {/* Timecode */}
         <span style={{
           fontFamily: "'Inter', monospace",
@@ -217,6 +254,7 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
           fontWeight: 600,
           color:      C.text2,
           letterSpacing: '0.04em',
+          fontVariantNumeric: 'tabular-nums',
         }}>
           {fmtTimecode(currentTime)}
         </span>
@@ -246,6 +284,38 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
       {/* ── Spacer ──────────────────────────────────────────────────────── */}
       <div style={{ flex: 1 }} />
 
+      {/* ── Snap toggle + grid ──────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '0 4px' }}>
+        <IconBtn
+          active={transport.snapEnabled}
+          onClick={toggleSnap}
+          title={transport.snapEnabled ? dt.snapOnTitle : dt.snapOffTitle}
+        >
+          <MagnetIcon />
+        </IconBtn>
+        <select
+          value={transport.snapBeats}
+          onChange={e => setSnapBeats(parseFloat(e.target.value))}
+          title={`${dt.gridLabel} — Snap grid size in beats`}
+          style={{
+            background:    C.bgSelected,
+            border:        `1px solid ${transport.snapEnabled ? alpha(C.accent, 31) : C.border}`,
+            borderRadius:  3,
+            color:         transport.snapEnabled ? C.text1 : C.text3,
+            fontSize:      10,
+            fontWeight:    600,
+            padding:       '3px 2px',
+            cursor:        'pointer',
+            outline:       'none',
+            opacity:       transport.snapEnabled ? 1 : 0.6,
+          }}
+        >
+          {SNAP_GRIDS.map(g => (
+            <option key={g.label} value={g.beats}>{g.label}</option>
+          ))}
+        </select>
+      </div>
+
       {/* ── Loop toggle ─────────────────────────────────────────────────── */}
       <div style={{ padding: '0 4px' }}>
         <IconBtn
@@ -257,10 +327,11 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         </IconBtn>
       </div>
 
-      {/* ── Undo / Redo ─────────────────────────────────────────────────── */}
+      {/* ── Undo / Redo / Shortcuts ─────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 1, padding: '0 4px', borderLeft: `1px solid ${C.border}`, height: '100%', alignItems: 'center' }}>
         <IconBtn active={false} onClick={undo} title="Undo (Ctrl+Z) — Revert the last action"><UndoIcon /></IconBtn>
         <IconBtn active={false} onClick={redo} title="Redo (Ctrl+Y) — Re-apply the last undone action"><RedoIcon /></IconBtn>
+        <IconBtn active={false} onClick={() => setShortcutsOpen(true)} title={dt.shortcutsTitle}><KeyboardIcon /></IconBtn>
       </div>
 
       {/* ── Add tracks ──────────────────────────────────────────────────── */}
@@ -463,6 +534,24 @@ function RedoIcon() {
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ transform: 'scaleX(-1)' }}>
       <path d="M2 6.5A4.5 4.5 0 1 1 6.5 11H4"/>
       <path d="M2 4v2.5h2.5"/>
+    </svg>
+  )
+}
+
+function MagnetIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 2v5a4 4 0 008 0V2"/>
+      <path d="M3 2h2.5v3H3zM8.5 2H11v3H8.5z" fill="currentColor" stroke="none"/>
+    </svg>
+  )
+}
+
+function KeyboardIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+      <rect x="1.5" y="4" width="12" height="7.5" rx="1.5"/>
+      <path d="M4 6.5h.01M7 6.5h.01M10 6.5h.01M4 9h7"/>
     </svg>
   )
 }

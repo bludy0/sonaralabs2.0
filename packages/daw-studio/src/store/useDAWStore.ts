@@ -136,6 +136,10 @@ interface DAWState {
   setZoom: (z: number) => void
   setTrackHeight: (h: number) => void
 
+  // UI (kalıcı değil, undo'ya girmez)
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
+
   // Project
   reset:         () => void
   loadTracks:    (tracks: DAWTrack[]) => void
@@ -659,6 +663,11 @@ export const useDAWStore = create<DAWState>((set, get) => {
 
     setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
     setTrackHeight: (h) => set({ trackHeight: Math.max(DEFAULTS.MIN_TRACK_HEIGHT, Math.min(DEFAULTS.MAX_TRACK_HEIGHT, Math.round(h))) }),
+
+    // ── UI ────────────────────────────────────────────────────────────────────
+
+    shortcutsOpen: false,
+    setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
     // ── Project ───────────────────────────────────────────────────────────────
 

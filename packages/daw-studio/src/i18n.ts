@@ -10,6 +10,8 @@ export interface DAWTranslations {
   snap: string; aiGenerate: string; aiMelodyGenerator: string; describeMelody: string;
   keyLabel: string; scaleLabel: string; barsLabel: string; creditWarning: string;
   cancel: string; generate: string; generating: string; selectMidiClip: string;
+  shortcuts: string; shortcutsTitle: string; gridLabel: string;
+  snapOnTitle: string; snapOffTitle: string; zoomFit: string;
 }
 
 const DICT: Record<DAWLang, DAWTranslations> = {
@@ -38,6 +40,12 @@ const DICT: Record<DAWLang, DAWTranslations> = {
     generate:         '✨ Generate',
     generating:       'Generating…',
     selectMidiClip:   'Select a MIDI clip to open the Piano Roll',
+    shortcuts:        'Keyboard Shortcuts',
+    shortcutsTitle:   'Keyboard Shortcuts (?) — View all available shortcuts',
+    gridLabel:        'Grid',
+    snapOnTitle:      'Snap ON (S) — Clips snap to the beat grid while dragging',
+    snapOffTitle:     'Snap OFF (S) — Clips move freely; click to snap to the grid',
+    zoomFit:          'Fit — Zoom to show the whole project',
   },
   tr: {
     addAudio:         '+Ses',
@@ -64,6 +72,12 @@ const DICT: Record<DAWLang, DAWTranslations> = {
     generate:         '✨ Üret',
     generating:       'Üretiliyor…',
     selectMidiClip:   "Piano Roll'u açmak için bir MIDI klibi seç",
+    shortcuts:        'Klavye Kısayolları',
+    shortcutsTitle:   'Klavye Kısayolları (?) — Tüm kısayolları görüntüle',
+    gridLabel:        'Izgara',
+    snapOnTitle:      'Hizalama AÇIK (S) — Klipler sürüklerken vuruş ızgarasına oturur',
+    snapOffTitle:     'Hizalama KAPALI (S) — Klipler serbest hareket eder; ızgaraya oturtmak için tıkla',
+    zoomFit:          'Sığdır — Tüm projeyi görünecek şekilde yakınlaştır',
   },
 }
 
