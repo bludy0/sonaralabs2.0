@@ -4,7 +4,7 @@
 # Tek komutla: altyapıyı (MongoDB/Redis/MinIO) ayağa kaldırır, bağımlılıkları
 # kurar, tüm servisleri + frontend'i çalıştırır ve hazır olunca tarayıcıyı açar.
 #
-# Kullanım:   ./scripts/dev.sh        (veya: pnpm start:local)
+# Kullanım:   ./scripts/dev.sh        (veya: pnpm start)
 # Durdurma:   Ctrl+C  (servisleri durdurur; MinIO arka planda kalır → scripts/stop.sh)
 #
 set -euo pipefail

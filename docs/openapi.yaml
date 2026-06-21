@@ -73,7 +73,8 @@ components:
         _id:         { type: string }
         userId:      { type: string }
         prompt:      { type: string }
-        provider:    { type: string, enum: [beatoven, lyria, elevenlabs] }
+        provider:    { type: string, enum: [stableaudio, beatoven, sonauto, elevenlabs] }
+        type:        { type: string, enum: [music, sfx, midi] }
         status:      { type: string, enum: [pending, processing, done, failed] }
         audioUrl:    { type: string, format: uri }
         duration:    { type: integer, description: "seconds" }
@@ -207,6 +208,23 @@ paths:
         "400":
           description: Invalid or expired token
 
+  /api/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend the email verification link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Verification email re-sent (if account exists and unverified)
+
   /api/auth/forgot-password:
     post:
       tags: [Auth]
@@ -261,6 +279,14 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/User" }
+    delete:
+      tags: [Auth]
+      summary: Permanently delete current account
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Account deleted
 
   /api/users/me/preferences:
     patch:
@@ -280,6 +306,29 @@ paths:
         "200":
           description: Preferences updated
 
+  /api/users/me/password:
+    patch:
+      tags: [Auth]
+      summary: Change password
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword:     { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Password changed
+        "401":
+          description: Current password incorrect
+
+
   # ── GENERATION ──────────────────────────────────────────────────────────────
   /api/generate/capabilities:
     get:
@@ -296,7 +345,7 @@ paths:
       description: |
         Queues an async generation job. Returns jobId immediately.
         Progress is streamed via SSE at /api/notify/sse.
-        **Credit cost**: Lyria 15s=2, 30s=3, 60s=5 | Beatoven 15s=3, 30s=5, 60s=8
+        Active free provider: **stableaudio** (HF ZeroGPU). Credit cost scales with duration.
       security:
         - cookieAuth: []
       requestBody:
@@ -305,13 +354,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [prompt, provider, duration]
+              required: [prompt, duration]
               properties:
                 prompt:   { type: string, maxLength: 500 }
-                provider: { type: string, enum: [beatoven, lyria] }
+                provider: { type: string, enum: [stableaudio, beatoven, sonauto], default: stableaudio }
                 duration: { type: integer, enum: [15, 30, 60] }
                 style:    { type: string }
                 mood:     { type: string }
+                loop:     { type: boolean, default: false }
       responses:
         "202":
           description: Job queued
@@ -364,34 +414,88 @@ paths:
               properties:
                 imageBase64: { type: string, description: "Base64 encoded image (max 10MB)" }
                 mimeType:    { type: string, enum: [image/jpeg, image/png, image/webp] }
-                provider:    { type: string, enum: [beatoven, lyria] }
+                provider:    { type: string, enum: [stableaudio, beatoven, sonauto], default: stableaudio }
                 duration:    { type: integer, enum: [15, 30, 60] }
       responses:
         "202":
           description: Analysis + generation queued
 
-  /api/generate/{jobId}:
-    get:
+  /api/generate/midi:
+    post:
       tags: [Generation]
-      summary: Get generation job status and result
+      summary: Generate a MIDI melody (Gemini) for the DAW
       security:
         - cookieAuth: []
-      parameters:
-        - in: path
-          name: jobId
-          required: true
-          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string }
+                key:    { type: string }
+                bpm:    { type: integer }
       responses:
         "200":
-          description: Generation record
+          description: Generated MIDI note data
+
+  /api/generate/master:
+    post:
+      tags: [Generation]
+      summary: AI mastering suggestions (Gemini) for a DAW mix
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Mastering recommendations (EQ/compression/levels)
+
+  /api/generate/export:
+    post:
+      tags: [Generation]
+      summary: Convert/export audio to a target format (FFmpeg)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audioUrl, format]
+              properties:
+                audioUrl: { type: string, format: uri }
+                format:   { type: string, enum: [wav, mp3, ogg, flac] }
+      responses:
+        "200":
+          description: Export job result (download reference)
+
+  /api/generate/export/file:
+    post:
+      tags: [Generation]
+      summary: Download the exported/converted audio file
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Binary audio file
           content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/Success"
-                  - type: object
-                    properties:
-                      data: { $ref: "#/components/schemas/Generation" }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /api/generate/stats:
+    get:
+      tags: [Generation]
+      summary: User dashboard statistics (aggregated)
+      description: |
+        Powers the user dashboard. MongoDB aggregations: totals, success/fail counts,
+        provider & style distribution, daily time series, credit usage. **No hardcoded data.**
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Aggregated statistics object
 
   /api/generate/history:
     get:
@@ -428,10 +532,10 @@ paths:
         "202":
           description: Retry queued
 
-  /api/generate/{id}/favorite:
-    patch:
+  /api/generate/{id}:
+    delete:
       tags: [Generation]
-      summary: Toggle favorite on a generation
+      summary: Delete a generation record
       security:
         - cookieAuth: []
       parameters:
@@ -441,7 +545,7 @@ paths:
           schema: { type: string }
       responses:
         "200":
-          description: Favorite toggled
+          description: Generation deleted
 
   # ── UPLOAD ──────────────────────────────────────────────────────────────────
   /api/upload:
@@ -483,16 +587,6 @@ paths:
         "200":
           description: File deleted
 
-  /api/upload/quota:
-    get:
-      tags: [Upload]
-      summary: Get storage quota usage
-      security:
-        - cookieAuth: []
-      responses:
-        "200":
-          description: Used and total quota in bytes
-
   # ── LIBRARY ─────────────────────────────────────────────────────────────────
   /api/library:
     get:
@@ -510,6 +604,45 @@ paths:
       responses:
         "200":
           description: Library items
+
+  /api/library/{model}/{id}/favorite:
+    patch:
+      tags: [Library]
+      summary: Toggle favorite on a library item
+      description: Proxies to the owning service (generation or upload).
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema: { type: string, enum: [generation, upload] }
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Favorite toggled
+
+  /api/library/{model}/{id}:
+    delete:
+      tags: [Library]
+      summary: Delete a library item (generation or upload)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema: { type: string, enum: [generation, upload] }
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Item deleted
 
   /api/collections:
     get:
@@ -774,12 +907,41 @@ paths:
   /api/credits/purchase:
     post:
       tags: [Credits]
-      summary: Purchase credits (MVP — returns 503 stub)
+      summary: Purchase credits via Stripe Checkout
+      description: Creates a Stripe Checkout session and returns the redirect URL.
       security:
         - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packageId]
+              properties:
+                packageId: { type: string }
       responses:
-        "503":
-          description: Payment not yet implemented
+        "200":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+
+  /api/credits/webhook:
+    post:
+      tags: [Credits]
+      summary: Stripe payment webhook
+      description: |
+        Receives Stripe events with the **raw request body** (signature-verified via
+        `stripe-signature` header). Public — not cookie-authenticated.
+      responses:
+        "200":
+          description: Event processed
+        "400":
+          description: Invalid signature
 
   # ── NOTIFICATION ────────────────────────────────────────────────────────────
   /api/notify/sse:
@@ -814,6 +976,30 @@ paths:
         "403":
           description: Admin only
 
+  /api/admin/stats/daily:
+    get:
+      tags: [Admin]
+      summary: Daily time series (new users / generations)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Daily aggregated series
+        "403":
+          description: Admin only
+
+  /api/admin/stats/queue:
+    get:
+      tags: [Admin]
+      summary: BullMQ queue statistics (waiting / active / failed)
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Queue counters
+        "403":
+          description: Admin only
+
   /api/admin/users:
     get:
       tags: [Admin]
@@ -830,6 +1016,23 @@ paths:
       responses:
         "200":
           description: Users list
+
+  /api/admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Get a single user (admin)
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: User detail
+        "403":
+          description: Admin only
 
   /api/admin/users/{id}/role:
     patch:

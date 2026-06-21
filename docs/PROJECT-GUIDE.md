@@ -337,11 +337,15 @@ Prod'da `MINIO_PUBLIC_URL` set edilmezse generation ve upload servisleri başlam
 ## 10. Geliştirme & Komutlar
 
 ```bash
-# Lokal — Docker ile tüm stack
+# Lokal — TEK KOMUT (önerilen): altyapı + bağımlılık + tüm servisler + frontend
 cp .env.example .env          # düzenle
+./scripts/dev.sh              # = pnpm start  (turbo dev --concurrency=15, tarayıcıyı açar)
+./scripts/stop.sh             # durdur (--infra ile brew mongo/redis dahil)
+
+# Lokal — Docker ile tüm stack (alternatif)
 docker compose up -d          # frontend :5174, api :3000
 
-# Monorepo (turbo)
+# Monorepo (turbo) — sadece servisler (altyapıyı sen başlatırsın)
 pnpm install
 pnpm dev          # tüm servisleri tsx watch ile (her servis --env-file=../../.env)
 pnpm build        # turbo build

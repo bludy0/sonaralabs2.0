@@ -16,8 +16,15 @@ MinIO / B2      → Dosya depolama
 
 ```bash
 cp .env.example .env   # .env'i düzenle
-docker compose up -d   # Tüm servisleri başlat
+
+# Önerilen — tek komutla başlat (altyapı + servisler + frontend):
+./scripts/dev.sh       # = pnpm start   ·   durdurmak: ./scripts/stop.sh
+
+# Alternatif — tüm stack konteynerde:
+docker compose up -d
 ```
+
+Tüm scriptlerin ayrıntısı için: `scripts/README.md`.
 
 Frontend: http://localhost:5174
 API: http://localhost:3000

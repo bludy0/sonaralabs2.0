@@ -66,14 +66,20 @@ sonaralabs2.0/
 ## Hızlı Başlangıç
 
 ```bash
-# 1. Bağımlılıklar
-pnpm install
-
-# 2. Ortam değişkenleri
+# 1. Ortam değişkenleri
 cp .env.example .env      # .env'i doldur (JWT secret'ları, AI key'leri vb.)
 
-# 3. Geliştirme (tüm servisler + frontend)
-pnpm dev                  # veya: pnpm start  (scripts/dev.sh)
+# 2. Tek komutla başlat (önerilen)
+./scripts/dev.sh          # veya: pnpm start
+```
+
+`scripts/dev.sh` her şeyi tek komutta yapar: altyapıyı (MongoDB / Redis / MinIO)
+ayağa kaldırır, bağımlılıkları kurar (`pnpm install`), tüm servisleri + frontend'i
+`turbo dev --concurrency=15` ile başlatır ve hazır olunca tarayıcıyı açar.
+
+```bash
+# Durdurmak için (servisler + MinIO)
+./scripts/stop.sh         # veya: pnpm stop   ·   altyapı dahil: ./scripts/stop.sh --infra
 ```
 
 - Frontend: <http://localhost:5174>
@@ -81,6 +87,10 @@ pnpm dev                  # veya: pnpm start  (scripts/dev.sh)
 
 > Lokal MongoDB host-native `mongod` (localhost:27017, auth yok) bekler.
 > Demo verisi için: `pnpm demo:seed` (temizlik: `pnpm demo:clean`).
+> Tüm scriptlerin ayrıntısı: [`scripts/README.md`](scripts/README.md).
+
+> **Alternatifler:** `pnpm dev` (sadece servisler, altyapıyı sen başlatırsın) ·
+> `docker compose up -d` (tüm stack konteynerde).
 
 ---
 
@@ -88,7 +98,9 @@ pnpm dev                  # veya: pnpm start  (scripts/dev.sh)
 
 | Komut | Açıklama |
 |-------|----------|
-| `pnpm dev` | Tüm servisleri `tsx watch` ile çalıştır |
+| `./scripts/dev.sh` / `pnpm start` | **Tek komutla başlat:** altyapı + bağımlılık + tüm servisler + frontend |
+| `./scripts/stop.sh` / `pnpm stop` | Servisleri (ve MinIO'yu) durdur (`--infra` ile brew mongo/redis dahil) |
+| `pnpm dev` | Sadece servisleri `turbo dev` ile çalıştır (altyapıyı sen başlatırsın) |
 | `pnpm build` | Tüm workspace'leri derle (Turbo) |
 | `pnpm typecheck` | Tip kontrolü |
 | `pnpm lint` | Lint |
