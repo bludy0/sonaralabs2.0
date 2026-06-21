@@ -26,7 +26,9 @@ API: http://localhost:3000
 
 ## Production — Render (Backend)
 
-`render.yaml` blueprint ile tüm servisler otomatik deploy edilir.
+> **Not:** `render.yaml` blueprint dosyası kaldırıldı. Her servis Render dashboard'ından
+> **manuel** kurulur: 7 web servisi (gateway, auth, generation, upload, library, admin, social),
+> her biri kendi Dockerfile'ı ile. Build/start ayarlarını ve aşağıdaki env vars'ı dashboard'dan gir.
 
 **Gerekli env vars (Render dashboard → servis → Environment):**
 
@@ -53,10 +55,13 @@ API: http://localhost:3000
 
 ## Production — Vercel (Frontend)
 
-`vercel.json` otomatik olarak:
-- `pnpm install` + `pnpm build` çalıştırır
-- `/api/*` → Render gateway'e proxy
-- `/*` → `index.html` (SPA routing)
+> **Not:** `vercel.json` dosyası kaldırıldı. Aşağıdaki ayarları Vercel dashboard'ından
+> (Project → Settings) **manuel** olarak gir:
+
+- **Install:** `pnpm install --frozen-lockfile`
+- **Build:** `pnpm --filter @sonaralabs/types build && pnpm --filter sonaralabs-frontend build`
+- **Output directory:** `apps/web/dist`
+- **Rewrites:** `/api/*` → Render gateway'e proxy · `/*` → `index.html` (SPA routing)
 
 **Gerekli env var:**
 ```

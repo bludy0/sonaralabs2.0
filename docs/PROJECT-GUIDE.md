@@ -1,9 +1,10 @@
 # Sonaralabs 2.0 — Proje Kılavuzu
 
-> **Bu dosya kod tabanının gerçek durumundan (2026-05-31) üretilmiştir.**
-> Kökteki `/Users/bludy/PROJECTS/Sonaralabs/.claude/CLAUDE.md` ve servis-içi
-> `CLAUDE.md` dosyaları eski (10 servisli, PostgreSQL'li) mimariyi anlatır ve
-> **güncel değildir**. Çelişki olursa bu dosya ve kaynak kod esas alınmalıdır.
+> **Bu dosya kod tabanının gerçek durumundan üretilmiştir ve tek doğru kaynaktır.**
+> Servis-içi `services/*/CLAUDE.md` dosyaları bu kılavuza (ilgili §) atıf yapacak
+> şekilde güncellenmiştir — onlara güvenebilirsin. Yalnızca üst klasördeki eski
+> proje dokümanı (`/Users/bludy/PROJECTS/Sonaralabs/.claude/CLAUDE.md`, eski 8-servisli
+> MVP) güncel değildir. Çelişki olursa bu dosya ve kaynak kod esas alınmalıdır.
 > Eski ↔ yeni farkları için bkz. [§12 Mimari Geçmişi](#12-mimari-geçmişi--neyin-değiştiği).
 
 ---
@@ -35,8 +36,6 @@ sonaralabs2.0/
 ├── pnpm-workspace.yaml
 ├── turbo.json
 ├── docker-compose.yml        # tüm stack (dev)
-├── render.yaml               # backend deploy (Render blueprint)
-├── vercel.json               # frontend deploy (Vercel)
 ├── .env / .env.example       # tüm servisler tek .env'den okur (--env-file)
 ├── docs/
 │   ├── openapi.yaml          # Swagger spec (gateway /api/docs altında serve edilir)
@@ -363,8 +362,8 @@ Gateway'in ayrıca `rateLimit.test.ts`'i var.
 
 ## 11. Deploy
 
-- **Frontend → Vercel:** `vercel.json` ile build; `/api/*` → Render gateway'e proxy, `/*` → SPA. Env: `VITE_API_BASE_URL`.
-- **Backend → Render:** `render.yaml` blueprint, 7 web servis (gateway, auth, generation, upload, library, admin, social). Her serviste env vars dashboard'dan girilir.
+- **Frontend → Vercel:** dashboard'dan manuel ayar (blueprint dosyası yok); build `apps/web/dist`, `/api/*` → Render gateway'e proxy, `/*` → SPA. Env: `VITE_API_BASE_URL`.
+- **Backend → Render:** her servis dashboard'dan manuel kurulur (blueprint dosyası yok), 7 web servis (gateway, auth, generation, upload, library, admin, social). Her serviste env vars dashboard'dan girilir.
 - **DB:** MongoDB Atlas. **Cache/Queue:** Redis. **Storage:** Backblaze B2 (MinIO SDK uyumlu).
 - **Email:** Resend (SMTP). Ayrıntı: `DEPLOY.md`.
 
@@ -389,6 +388,6 @@ göre değişenler:
 | Email yok | **nodemailer** + onay/reset/bildirim mailleri |
 | admin "sadece HTTP ile okur" | admin **DB'yi doğrudan salt-okuma** model ile okur |
 
-> **Tavsiye:** Kök ve servis-içi `CLAUDE.md` dosyaları bu gerçekliği yansıtacak
-> şekilde güncellenmeli (özellikle port tablosu, servis listesi, credit/notification
-> referansları). İstersen bunu ayrı bir görevde yapabilirim.
+> **Not:** Kök `CLAUDE.md` ve servis-içi `CLAUDE.md` dosyaları bu gerçekliği
+> (7 servis, kredi→auth, notification→generation, profile→social, PostgreSQL yok)
+> yansıtacak şekilde güncellenmiştir.

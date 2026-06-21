@@ -23,6 +23,10 @@ pnpm-debug.log*
 
 # ── Turbo ─────────────────────────────────────────────────────────────────────
 .turbo/
+*.tsbuildinfo
+
+# ── Deploy ────────────────────────────────────────────────────────────────────
+.vercel/
 
 # ── Editor & OS ───────────────────────────────────────────────────────────────
 .DS_Store
@@ -31,9 +35,12 @@ pnpm-debug.log*
 *.swp
 *.swo
 
-# ── Claude Code ───────────────────────────────────────────────────────────────
-.claude/worktrees/
-.claude/settings.local.json
+# ── Claude Code (yerel, commit edilmez) ───────────────────────────────────────
+.claude/
+
+# ── Claude yönerge dosyaları (yerel talimatlar, commit edilmez) ────────────────
+# Kök + her servisteki CLAUDE.md'leri kapsar (slash'sız desen her dizinde eşleşir)
+CLAUDE.md
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.docx
