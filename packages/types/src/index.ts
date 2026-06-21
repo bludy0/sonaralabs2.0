@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Yunus Emre Aslan
+
 // shared/types.ts
 // Tüm servislerde ortak kullanılan tipler.
 // Her servise kopyalanır veya git submodule / npm workspace ile paylaşılır.

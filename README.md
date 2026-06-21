@@ -133,4 +133,4 @@ Bu proje **GNU Affero General Public License v3.0 (AGPL-3.0)** ile lisanslanmı�
 **ağ üzerinden bir hizmet olarak sunsan bile** kaynak kodunu aynı lisansla
 açık tutmak zorundasın.
 
-© 2026 Sonaralabs
+© 2026 Yunus Emre Aslan

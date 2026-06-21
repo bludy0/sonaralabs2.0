@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Yunus Emre Aslan
+
 import { logger } from "./logger"
 // services/social/src/index.ts
 // Profile service merged in — all data on MongoDB, no PostgreSQL dependency.

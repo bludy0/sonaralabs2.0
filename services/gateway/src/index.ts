@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Yunus Emre Aslan
+
 import { logger } from "./logger";
 import { serve }  from "@hono/node-server";
 import { createClient } from "redis";

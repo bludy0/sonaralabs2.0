@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Yunus Emre Aslan
+
 export { DAWLayout }      from './components/DAWLayout'
 export { setDAWLang }     from './i18n'
 export { audioBufferToDataUrlSync, dataUrlToAudioBuffer, audioBufferToWav } from './lib/audioUtils'
