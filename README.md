@@ -121,5 +121,16 @@ Ayrıntılar için → [`DEPLOY.md`](DEPLOY.md)
 ## Dokümantasyon
 
 - **[`docs/PROJECT-GUIDE.md`](docs/PROJECT-GUIDE.md)** — tek doğru kaynak (servis detayları, env vars, güvenlik modeli, DAW, deploy)
-- **[`CLAUDE.md`](CLAUDE.md)** — Claude Code için talimatlar
 - **[`docs/openapi.yaml`](docs/openapi.yaml)** — API spec (gateway `/api/docs` altında serve edilir)
+
+---
+
+## Lisans
+
+Bu proje **GNU Affero General Public License v3.0 (AGPL-3.0)** ile lisanslanmıştır — bkz. [`LICENSE`](LICENSE).
+
+Özetle: kodu kullanabilir ve değiştirebilirsin, ancak değiştirilmiş bir sürümü
+**ağ üzerinden bir hizmet olarak sunsan bile** kaynak kodunu aynı lisansla
+açık tutmak zorundasın.
+
+© 2026 Sonaralabs
