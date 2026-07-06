@@ -185,7 +185,7 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 ### 5.3 generation — :3002 (Express) · collection: `generations`
 **Eski generation + notification servislerinin birleşimi.** SSE burada.
 
-- `POST /` → müzik üretimi başlat (202, jobId döner)
+- `POST /` → müzik üretimi başlat (202, jobId döner). Gövdede artık müzik metrikleri gönderilebilir: `bpm`, `key`, `scale`, `timeSignature`, `intensity`, `loop`.
 - `POST /sfx` → ElevenLabs SFX üretimi
 - `POST /analyze-image` → Gemini Flash görüntü→prompt (1 kredi, hata olursa iade)
 - `POST /midi` → Gemini ile MIDI melodi üret (1 kredi, max 32 nota)
@@ -196,6 +196,7 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 - `GET /stats` → kişisel dashboard istatistikleri (aggregate'ler)
 - `GET /capabilities` → hangi provider'lar aktif (frontend disable için, 60s cache)
 - `POST /:id/retry` → başarısız üretimi yarı kredi ile tekrar (atomik status geçişi)
+- `PATCH /:id/analysis` → frontend'in hesapladığı `bpm`, `waveformData` (max 2000 eleman) ve isteğe bağlı `key`/`scale` güncellemesi
 - `DELETE /:id` → kendi üretimini sil (aktif job silinemez)
 - `GET /stream` → **SSE** (gateway `/api/notify/stream` → buraya proxy)
 - internal: `GET/DELETE /internal/generations`, `PATCH /internal/generations/:id/favorite`
@@ -203,7 +204,8 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 **Provider Pattern** (`providers/`): `IMusicProvider` arayüzü, `Map`'te kayıt.
 Çalışan: **`stableaudio`** — Stability AI'ın `stabilityai/stable-audio-3` HF Space'i,
 Gradio `/call` REST API + SSE ile, HF **ZeroGPU** günlük ücretsiz kotasından (HF token gerekir,
-ek ücret yok). `prompt` style/mood ile zenginleştirilir (`buildGameMusicPrompt`).
+ek ücret yok). `prompt` style/mood/**metrikler** ile zenginleştirilir (`buildGameMusicPrompt`,
+`GenerationOptions` ile `bpm`/`key`/`scale`/`timeSignature`/`intensity`/`loop` bilgisi sağlanır).
 `beatoven`/`sonauto` map'te kayıtlı ama .env key'leri geçersiz → frontend'de "Geçici olarak
 kapalı". `lyria` kapalı (Gemini Lyria-3 erişilebilir ama ücretsiz kota = 0, billing ister).
 SFX: `ElevenLabsProvider`. Yeni provider = yeni dosya + map'e 1 satır.
@@ -225,6 +227,7 @@ worker concurrency 3, lock = `JOB_TIMEOUT_MS + 10s`. Retry manueldir.
 - Kabul: WAV/MP3/OGG, max 50MB, kullanıcı kotası 500MB
 - **Atomik kota:** `findOneAndUpdate` + `$expr: $lte` tek sorguda (race-condition'sız)
 - MinIO başarısızsa kota geri alınır (rollback)
+- `PATCH /:id/analysis` → frontend'in hesapladığı `bpm` ve `waveformData` (max 2000 eleman) güncellemesi
 - `DELETE /:id` → MinIO'dan sil + kota iade
 - internal: `GET /internal/uploads`, `DELETE /internal/uploads/:id`, `PATCH /internal/uploads/:id/favorite`
 
@@ -263,9 +266,17 @@ social tipleri (`UserProfile`, `PublicTrack`, `FeedEvent`), ve **kredi maliyet t
 MUSIC_CREDIT_COST   stableaudio: hep 1 (flat) | beatoven: 15→3 30→5 60→8 | lyria: 15→2 30→3 60→5 | sonauto: hep 5
 MusicStyle (18)     ambient action adventure puzzle horror platformer orchestral chiptune synthwave fantasy boss racing scifi lofi medieval cyberpunk western jrpg
 MusicMood (12)      tense calm epic mysterious cheerful heroic melancholic dark energetic dreamy playful triumphant
+MusicKey (12)       C C# D D# E F F# G G# A A# B
+MusicScale (6)      Major Minor Dorian Phrygian Lydian Mixolydian
+TimeSignature       [number, number]
 SFX_CREDIT_COST     elevenlabs: 1
 getMusicCreditCost(provider, duration, isRetry)  → retry = Math.ceil(base/2)
 ```
+
+`GenerationRequest` ayrıca isteğe bağlı `loop` (default true), `bpm` (40-300), `key`,
+`scale`, `timeSignature` ve `intensity` (0-1) alanlarını içerir. Üretim dökümanı ve upload
+dökümanı `waveformData?: number[]` ile `bpm?: number` saklayabilir; backend bunları sadece
+günceller, hesaplamaz.
 
 `INTERNAL_TOKEN_HEADER = "x-internal-token"`.
 
@@ -278,7 +289,7 @@ React 18 + Vite + TypeScript + Tailwind + Zustand + react-router + WaveSurfer.js
 - **`lib/api.ts`** — Axios, `withCredentials`, 401 interceptor: otomatik `/api/auth/refresh` + istek kuyruğu; refresh başarısızsa public sayfa değilse `/login`'e yönlendirir.
 - **Store'lar:** `useAuthStore`, `useGenerationStore`, `useLibraryStore`, `useThemeStore`, `useI18nStore`
 - **Hook'lar:** `useGenerationSSE` (EventSource → onopen'da pending job recovery), `useFixedTheme`
-- **Sayfalar:** Welcome, Login, Register, VerifyEmail, Forgot/ResetPassword, Generate, Library, Dashboard (chart'lar), Admin, **Studio** (DAW), Explore, Profile, Feed, Settings
+- **Sayfalar:** Welcome, Login, Register, VerifyEmail, Forgot/ResetPassword, **Generate** (müzik metrikleri + SFX formu + waveform önizleme), Library, Dashboard (chart'lar), Admin, **Studio** (DAW, `?projectId=` ile yükleme), Explore, Profile, Feed, Settings
 - **Route koruması** (`App.tsx`): `ProtectedRoute` (login gerekli) ve `AdminRoute` (role=admin). `fetchMe()` bitene kadar karar verilmez.
 - Public route'lar: `/`, `/login`, `/register`, `/explore`, `/profile/:username`, `/studio/share/:token`
 - i18n: `lib/i18n` (TR/EN destekli görünüyor)
@@ -294,9 +305,12 @@ Tarayıcıda çalışan tam bir **çok kanallı DAW**, React paketi olarak `apps
 - **Efektler** (`engine/effects/`): EQ, Reverb, Delay, Chorus, Compressor, Limiter
 - **UI** (`src/components/`): Timeline (audio/midi clip'ler), PianoRoll (MIDI), Mixer (channel/master strip), EffectsChain panelleri, LoopEditor + WaveformView, AutomationLane, Mastering paneli, Transport
 - **Export** (`src/lib/`): `exportMix`, `exportMp3` (lamejs), `renderMixWorker` (web worker). AudioEditor + kuyruk kartı: WAV (client-side) + MP3/OGG/FLAC (`/export` veya `/export/file` üzerinden gateway→FFmpeg)
+- **Audio analizi** (`src/lib/audioAnalysis.ts`): `analyzeAudio`, `computeWaveformData` (RMS), `detectBPM`, `mixToMono`. Frontend üretim/upload seslerini tarayıcıda analiz eder.
 - **State:** `useDAWStore`, `useAudioEngine` (zustand)
 - Projeler library servisinin `daw_projects` collection'ında saklanır (serialize edilmiş track'ler, max 2MB).
 - AI yardımcıları: `/api/generate/midi` (MIDI üret), `/api/generate/master` (mastering önerisi)
+- Üretim kartından "DAW'da Aç" ile generation sesi otomatik `daw_projects` kaydı oluşturularak
+  Studio'ya yüklenir; URL `?projectId=` ile proje ön yüklenebilir.
 
 ---
 

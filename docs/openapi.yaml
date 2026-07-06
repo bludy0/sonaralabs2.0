@@ -70,18 +70,40 @@ components:
     Generation:
       type: object
       properties:
-        _id:         { type: string }
-        userId:      { type: string }
-        prompt:      { type: string }
-        provider:    { type: string, enum: [stableaudio, beatoven, sonauto, elevenlabs] }
-        type:        { type: string, enum: [music, sfx, midi] }
-        status:      { type: string, enum: [pending, processing, done, failed] }
-        audioUrl:    { type: string, format: uri }
-        duration:    { type: integer, description: "seconds" }
-        creditCost:  { type: integer }
-        isFavorited: { type: boolean }
-        jobId:       { type: string }
-        createdAt:   { type: string, format: date-time }
+        _id:           { type: string }
+        userId:        { type: string }
+        prompt:        { type: string }
+        provider:      { type: string, enum: [stableaudio, beatoven, sonauto, elevenlabs] }
+        type:          { type: string, enum: [music, sfx, midi] }
+        status:        { type: string, enum: [pending, processing, done, failed] }
+        audioUrl:      { type: string, format: uri }
+        duration:      { type: integer, description: "seconds" }
+        creditCost:    { type: integer }
+        isFavorited:   { type: boolean }
+        jobId:         { type: string }
+        loop:          { type: boolean }
+        bpm:           { type: number, description: "Tempo 40-300" }
+        key:           { $ref: "#/components/schemas/MusicKey" }
+        scale:         { $ref: "#/components/schemas/MusicScale" }
+        timeSignature: { $ref: "#/components/schemas/TimeSignature" }
+        intensity:     { type: number, minimum: 0, maximum: 1 }
+        waveformData:  { type: array, items: { type: number }, maxItems: 2000, description: "RMS waveform samples" }
+        createdAt:     { type: string, format: date-time }
+
+    MusicKey:
+      type: string
+      enum: [C, "C#", D, "D#", E, F, "F#", G, "G#", A, "A#", B]
+
+    MusicScale:
+      type: string
+      enum: [Major, Minor, Dorian, Phrygian, Lydian, Mixolydian]
+
+    TimeSignature:
+      type: array
+      items: { type: integer }
+      minItems: 2
+      maxItems: 2
+      example: [4, 4]
 
     CreditLog:
       type: object
@@ -356,12 +378,17 @@ paths:
               type: object
               required: [prompt, duration]
               properties:
-                prompt:   { type: string, maxLength: 500 }
-                provider: { type: string, enum: [stableaudio, beatoven, sonauto], default: stableaudio }
-                duration: { type: integer, enum: [15, 30, 60] }
-                style:    { type: string }
-                mood:     { type: string }
-                loop:     { type: boolean, default: false }
+                prompt:        { type: string, maxLength: 500 }
+                provider:      { type: string, enum: [stableaudio, beatoven, sonauto], default: stableaudio }
+                duration:      { type: integer, enum: [15, 30, 60] }
+                style:         { type: string }
+                mood:          { type: string }
+                loop:          { type: boolean, default: true, description: "Seamless game loop" }
+                bpm:           { type: integer, minimum: 40, maximum: 300 }
+                key:           { $ref: "#/components/schemas/MusicKey" }
+                scale:         { $ref: "#/components/schemas/MusicScale" }
+                timeSignature: { $ref: "#/components/schemas/TimeSignature" }
+                intensity:     { type: number, minimum: 0, maximum: 1, description: "Energy level 0-1" }
       responses:
         "202":
           description: Job queued
@@ -380,7 +407,7 @@ paths:
     post:
       tags: [Generation]
       summary: Generate a sound effect from a text prompt
-      description: Powered by ElevenLabs. Credit cost = 2.
+      description: Powered by ElevenLabs. Credit cost = 1.
       security:
         - cookieAuth: []
       requestBody:
@@ -392,7 +419,7 @@ paths:
               required: [prompt]
               properties:
                 prompt:   { type: string, maxLength: 300 }
-                duration: { type: number }
+                duration: { type: number, description: "Desired SFX duration in seconds" }
       responses:
         "202":
           description: Job queued
@@ -547,6 +574,35 @@ paths:
         "200":
           description: Generation deleted
 
+  /api/generate/{id}/analysis:
+    patch:
+      tags: [Generation]
+      summary: Store frontend-computed audio analysis
+      description: |
+        Frontend (Web Audio API) tarafından hesaplanan BPM, waveformData ve opsiyonel
+        key/scale değerlerini generation dökümanına yazar. waveformData max 2000 eleman.
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bpm:           { type: number, minimum: 40, maximum: 300 }
+                key:           { $ref: "#/components/schemas/MusicKey" }
+                scale:         { $ref: "#/components/schemas/MusicScale" }
+                waveformData:  { type: array, items: { type: number }, maxItems: 2000 }
+      responses:
+        "200":
+          description: Analysis stored
+
   # ── UPLOAD ──────────────────────────────────────────────────────────────────
   /api/upload:
     post:
@@ -586,6 +642,33 @@ paths:
       responses:
         "200":
           description: File deleted
+
+  /api/upload/{id}/analysis:
+    patch:
+      tags: [Upload]
+      summary: Store frontend-computed audio analysis
+      description: |
+        Frontend (Web Audio API) tarafından hesaplanan BPM ve waveformData değerlerini
+        upload dökümanına yazar. waveformData max 2000 eleman.
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bpm:           { type: number, minimum: 40, maximum: 300 }
+                waveformData:  { type: array, items: { type: number }, maxItems: 2000 }
+      responses:
+        "200":
+          description: Analysis stored
 
   # ── LIBRARY ─────────────────────────────────────────────────────────────────
   /api/library:
