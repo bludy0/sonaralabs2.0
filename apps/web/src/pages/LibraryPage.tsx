@@ -109,11 +109,25 @@ export default function LibraryPage() {
     }
   }
 
-  function handleOpenInStudio(item: LibraryItem) {
+  async function handleOpenInStudio(item: LibraryItem) {
     if (!item.audioUrl) return;
     const name = item.originalName ?? (item.prompt?.slice(0, 40) ?? "Track");
-    sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
-    navigate("/studio");
+    try {
+      const { data } = await api.post("/api/library/projects", {
+        name,
+        tracks: [],
+        bpm: item.bpm ?? 120,
+        loopEnabled: item.isLoop ?? false,
+        loopStart: 0,
+        loopEnd: item.duration ?? 8,
+      });
+      const projectId = data.data?._id ?? data.data?.id;
+      sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl, projectId }]));
+      navigate(`/studio?projectId=${projectId}`);
+    } catch {
+      sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
+      navigate("/studio");
+    }
   }
 
   async function handleDelete(item: LibraryItem) {

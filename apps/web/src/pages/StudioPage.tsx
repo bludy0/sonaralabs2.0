@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { toast } from '../lib/toast'
 import { DAWLayout, useDAWStore } from '@sonaralabs/daw-studio'
@@ -24,6 +24,8 @@ export interface SavedProjectMeta {
 export default function StudioPage() {
   const navigate                        = useNavigate()
   const { token: shareToken_ }          = useParams<{ token?: string }>()
+  const [searchParams]                  = useSearchParams()
+  const queryProjectId                  = searchParams.get('projectId')
   const isReadOnly                      = Boolean(shareToken_)
 
   // ── Store subscriptions ───────────────────────────────────────────────────
@@ -105,7 +107,7 @@ export default function StudioPage() {
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
-  // ── Mount: shared project or preload ─────────────────────────────────────
+  // ── Mount: shared project, query project, or preload ──────────────────────
   useEffect(() => {
     reset()
     suppressDirty(1000)
@@ -128,16 +130,35 @@ export default function StudioPage() {
       return
     }
 
-    // Önceki sayfadan preload (Library → Studio)
+    // Load explicit project from query param
+    if (queryProjectId) {
+      api.get(`/api/library/projects/${queryProjectId}`)
+        .then(({ data }) => {
+          const p = data.data
+          if (!p) return
+          loadTransport({
+            bpm:         p.bpm        ?? 120,
+            loopStart:   p.loopStart  ?? 0,
+            loopEnd:     p.loopEnd    ?? 8,
+            loopEnabled: p.loopEnabled ?? false,
+          })
+          if (p.tracks?.length) loadTracks(p.tracks)
+          setProjectName(p.name)
+          setProjectId(p._id ?? p.id)
+        }).catch(() => {})
+    }
+
+    // Önceki sayfadan preload (Library / Generate → Studio)
     const raw = sessionStorage.getItem('studio:preload')
     if (raw) {
       try {
-        const preload = JSON.parse(raw) as { name: string; audioUrl: string }[]
+        const preload = JSON.parse(raw) as { name: string; audioUrl: string; projectId?: string }[]
         preload.forEach(t => addFromUrl(t))
+        if (preload[0]?.projectId) setProjectId(preload[0].projectId)
       } catch {}
       sessionStorage.removeItem('studio:preload')
     }
-  }, [shareToken_])
+  }, [shareToken_, queryProjectId])
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   async function addFromUrl({ name, audioUrl }: { name: string; audioUrl: string }) {

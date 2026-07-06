@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDuration, timeAgo } from "../lib/format";
+import { WaveformBar } from "../components/WaveformBar";
 
 interface PublicTrack {
   id: string;
@@ -11,6 +12,7 @@ interface PublicTrack {
   audioUrl: string;
   durationSec: number;
   bpm?: number;
+  waveformData?: number[];
   genreTags: string[];
   moodTags: string[];
   gameTypeTags: string[];
@@ -24,15 +26,17 @@ const MOODS  = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const FILTER_CHIPS = ["Popular", ...GENRES.slice(0, 4)];
 
 
-/** Seeded pseudo-random waveform bar heights (deterministic per track ID) */
-function waveformBars(seed: string, count = 28): number[] {
+/** Seeded pseudo-random waveform bar heights (deterministic per track ID).
+ *  Used as fallback when the backend has not yet stored real waveformData.
+ */
+function fallbackWaveformBars(seed: string, count = 28): number[] {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return Array.from({ length: count }, (_, i) => {
     h = (h * 1664525 + 1013904223) >>> 0;
     const base = (h % 60) + 20; // 20–80%
     const peak = i % 4 === 0 ? Math.min(base + 20, 95) : base;
-    return peak;
+    return peak / 100;
   });
 }
 
@@ -321,18 +325,13 @@ export default function ExplorePage() {
           </div>
 
           {/* Waveform visualization */}
-          <div className="hidden md:flex items-center gap-[2px] h-8">
-            {waveformBars(nowPlaying.id, 32).map((h, i) => (
-              <div
-                key={i}
-                className="w-[2px] rounded-full transition-all duration-75"
-                style={{
-                  height: `${playing === nowPlaying.id ? h : h * 0.5}%`,
-                  background: playing === nowPlaying.id ? "var(--accent)" : "var(--text-3)",
-                  opacity: playing === nowPlaying.id ? 1 : 0.6,
-                }}
-              />
-            ))}
+          <div className="hidden md:flex items-center h-8">
+            <WaveformBar
+              data={nowPlaying.waveformData ?? fallbackWaveformBars(nowPlaying.id, 32)}
+              width={160}
+              height={32}
+              progress={0}
+            />
           </div>
 
           {/* Meta */}
@@ -387,7 +386,7 @@ interface TrackCardProps {
 }
 
 function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShare, cardRef }: TrackCardProps) {
-  const bars = waveformBars(track.id, 32);
+  const bars = track.waveformData ?? fallbackWaveformBars(track.id, 32);
 
   return (
     <article
@@ -404,17 +403,15 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
         style={{ background: "var(--bg-card)" }}
       >
         {/* Waveform visualization */}
-        <div className="flex items-center gap-[2px] h-16 px-4 w-full">
-          {bars.map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-full transition-all duration-100"
-              style={{
-                height: `${isPlaying ? h : Math.max(h * 0.6, 12)}%`,
-                background: isPlaying ? "var(--accent)" : "var(--bg-bright)",
-              }}
-            />
-          ))}
+        <div className="flex items-center justify-center h-16 px-4 w-full">
+          <WaveformBar
+            data={bars}
+            width={280}
+            height={64}
+            progress={isPlaying ? 0.5 : 0}
+            barColor="var(--bg-bright)"
+            progressColor="var(--accent)"
+          />
         </div>
 
         {/* Play overlay */}

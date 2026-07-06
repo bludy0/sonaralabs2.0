@@ -1,7 +1,7 @@
 // frontend/src/store/useGenerationStore.ts
 import { create } from "zustand";
 import { api } from "../lib/api";
-import { GenerationStatus, MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent, GenerationType } from "@sonaralabs/types";
+import { GenerationStatus, MusicProvider, MusicStyle, MusicMood, GenerationDuration, MusicKey, MusicScale, TimeSignature, SseStatusEvent, GenerationType } from "@sonaralabs/types";
 
 export interface GenerationItem {
   _id: string;
@@ -12,6 +12,12 @@ export interface GenerationItem {
   style?: MusicStyle;
   mood?: MusicMood;
   duration?: number;
+  bpm?: number;
+  key?: MusicKey;
+  scale?: MusicScale;
+  timeSignature?: TimeSignature;
+  intensity?: number;
+  waveformData?: number[];
   status: GenerationStatus;
   audioUrl?: string;
   creditCost: number;
@@ -33,6 +39,11 @@ interface GenerationState {
     mood: MusicMood;
     duration: GenerationDuration;
     loop: boolean;
+    bpm?: number;
+    key?: MusicKey;
+    scale?: MusicScale;
+    timeSignature?: TimeSignature;
+    intensity?: number;
   }) => Promise<{ jobId: string; generationId: string }>;
   generateSFX: (params: {
     prompt: string;

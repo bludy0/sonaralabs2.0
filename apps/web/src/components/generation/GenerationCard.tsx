@@ -3,6 +3,7 @@ import { api } from "../../lib/api";
 import type { GenerationItem } from "../../store/useGenerationStore";
 import { useT } from "../../store/useI18nStore";
 import { toast } from "../../lib/toast";
+import MiniWaveformPlayer from "./MiniWaveformPlayer";
 
 // İndirilebilir dosya formatları (kaynak WAV → FFmpeg ile dönüştürülür)
 const DOWNLOAD_FORMATS = ["wav", "mp3", "ogg", "flac"] as const;
@@ -35,132 +36,6 @@ function fmtClock(secs: number): string {
   if (!isFinite(secs) || secs < 0) secs = 0;
   const s = Math.floor(secs);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
-// ── Inline audio player (done kartı için) ─────────────────────────────────────
-function InlinePlayer({ src }: { src: string }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [cur, setCur] = useState(0);
-  const [dur, setDur] = useState(0);
-  const [dragging, setDragging] = useState(false);
-
-  const toggle = () => {
-    const a = audioRef.current;
-    if (!a) return;
-    if (a.paused) {
-      // Aynı anda tek parça çalsın — sayfadaki diğer audio'ları durdur
-      document.querySelectorAll("audio").forEach(el => { if (el !== a) el.pause(); });
-      a.play().catch(() => {});
-    } else {
-      a.pause();
-    }
-  };
-
-  // Pointer X → 0–1 oran (sürüklenince anlık güncellenir)
-  const ratioAt = (clientX: number): number => {
-    const el = trackRef.current;
-    if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  };
-  const applySeek = (clientX: number) => {
-    const a = audioRef.current;
-    if (!a || !dur) return;
-    const time = ratioAt(clientX) * dur;
-    a.currentTime = time;
-    setCur(time); // anlık görsel geri bildirim (timeupdate'i bekleme)
-  };
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!dur) return;
-    e.preventDefault();
-    setDragging(true);
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    applySeek(e.clientX);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (dragging) applySeek(e.clientX);
-  };
-  const endDrag = (e: React.PointerEvent) => {
-    if (!dragging) return;
-    setDragging(false);
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-  };
-
-  const progress = dur ? cur / dur : 0;
-
-  return (
-    <div
-      className="flex items-center gap-3 rounded-lg p-2.5"
-      style={{ background: "var(--bg-mid)", border: "1px solid var(--bg-border)" }}
-    >
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={e => { if (!dragging) setCur(e.currentTarget.currentTime); }}
-        onLoadedMetadata={e => setDur(e.currentTarget.duration)}
-        onEnded={() => { setPlaying(false); setCur(0); }}
-      />
-      {/* Play / pause */}
-      <button
-        onClick={toggle}
-        className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-transform"
-        style={{ background: "var(--accent)", color: "var(--accent-on)" }}
-        onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.transform = "scale(1.08)")}
-        onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.transform = "scale(1)")}
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: 22 }}>
-          {playing ? "pause" : "play_arrow"}
-        </span>
-      </button>
-      {/* Seekable line bar — tıkla veya sürükle (scrub). Dalga formuna göre daha stabil. */}
-      <div
-        ref={trackRef}
-        className="relative flex-1 flex items-center"
-        style={{ height: 24, cursor: dragging ? "grabbing" : "pointer", touchAction: "none", userSelect: "none" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-      >
-        {/* Track çizgisi */}
-        <div
-          className="relative w-full rounded-full"
-          style={{ height: 4, background: "color-mix(in srgb, var(--text-3) 22%, transparent)", pointerEvents: "none" }}
-        >
-          {/* Dolu kısım */}
-          <div
-            className="absolute top-0 left-0 h-full rounded-full"
-            style={{ width: `${progress * 100}%`, background: "var(--accent)", transition: dragging ? "none" : "width 0.1s linear" }}
-          />
-        </div>
-        {/* Tutamaç (sürüklerken büyür) */}
-        <div
-          className="absolute"
-          style={{
-            left: `${progress * 100}%`, top: "50%",
-            width: 12, height: 12, marginLeft: -6, marginTop: -6,
-            borderRadius: "50%", background: "var(--accent)",
-            boxShadow: "0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)",
-            transform: dragging ? "scale(1.25)" : "scale(1)",
-            transition: dragging ? "none" : "left 0.1s linear, transform 0.1s ease",
-            pointerEvents: "none",
-          }}
-        />
-      </div>
-      {/* Time */}
-      <span
-        className="shrink-0 text-[9px] font-mono tabular-nums"
-        style={{ color: "var(--text-3)", minWidth: 62, textAlign: "right" }}
-      >
-        {fmtClock(cur)} / {fmtClock(dur)}
-      </span>
-    </div>
-  );
 }
 
 // ── Pipeline step indicators ──────────────────────────────────────────────────
@@ -383,6 +258,11 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
   const [downloading, setDownloading] = useState(false);
   const [dlFormat,    setDlFormat]    = useState<DownloadFormat>("wav");
 
+  // Cached analysis result (BPM / waveform). Once computed, optionally persisted to backend.
+  const [analyzed, setAnalyzed] = useState<{ bpm: number; waveformData: number[]; duration: number } | null>(
+    item.bpm && item.waveformData ? { bpm: item.bpm, waveformData: item.waveformData, duration: item.duration ?? 0 } : null
+  );
+
   // Track elapsed seconds since creation (anchor = createdAt)
   const [elapsed, setElapsed] = useState(() =>
     Math.floor((Date.now() - new Date(item.createdAt).getTime()) / 1000)
@@ -446,6 +326,21 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
     finally { setRemoving(false); }
   }
 
+  async function handleAnalysisResult(info: { duration: number; bpm: number; waveformData: number[] }) {
+    if (!info.bpm || analyzed) return;
+    setAnalyzed(info);
+      // Persist to backend so other views (library, publish) can reuse it.
+    try {
+      await api.patch(`/api/generate/${item._id}/analysis`, {
+        bpm: info.bpm,
+        waveformData: info.waveformData,
+        duration: info.duration,
+      });
+    } catch {
+      // Non-fatal: analysis still works locally even if backend save fails.
+    }
+  }
+
   const borderColor =
     item.status === "done"       ? "color-mix(in srgb, var(--success) 30%, transparent)" :
     item.status === "processing" ? "color-mix(in srgb, var(--accent) 30%, transparent)"  :
@@ -506,6 +401,21 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
             {item.duration}s
           </span>
         )}
+        {analyzed?.bpm ? (
+          <span
+            className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded"
+            style={{ background: "var(--bg-input)", color: "var(--text-3)" }}
+          >
+            {analyzed.bpm} BPM
+          </span>
+        ) : item.bpm ? (
+          <span
+            className="text-[9px] uppercase tracking-wider px-2 py-0.5 rounded"
+            style={{ background: "var(--bg-input)", color: "var(--text-3)" }}
+          >
+            {item.bpm} BPM
+          </span>
+        ) : null}
         {!isSFX && item.isLoop && (
           <span
             className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
@@ -599,8 +509,11 @@ export function GenerationCard({ item, onOpenEditor, onRetry, onRemove, onOpenIn
       {/* ── Done: waveform + action buttons ──────────────────────────────── */}
       {item.status === "done" && item.audioUrl && (
         <>
-          {/* Inline oynatıcı — play/pause + tıklanabilir dalga formu + süre */}
-          <InlinePlayer src={item.audioUrl} />
+          {/* Waveform player — real waveform, play/pause, scrub, duration */}
+          <MiniWaveformPlayer
+            audioUrl={item.audioUrl}
+            onReady={handleAnalysisResult}
+          />
 
           {/* İkincil aksiyonlar — Editor / DAW */}
           <div className="flex gap-2">

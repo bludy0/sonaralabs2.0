@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { stripTags } from "../../lib/sanitize";
+import { analyzeAudio } from "@sonaralabs/daw-studio";
 import type { LibraryItem } from "./LibraryTypes";
 
 const GENRES     = ["ambient", "action", "puzzle", "horror", "platformer"];
@@ -24,16 +25,40 @@ interface PublishModalProps {
 
 export function PublishModal({ item, onClose, onPublished }: PublishModalProps) {
   const defaultTitle = item.originalName ?? (item.prompt?.slice(0, 80) ?? "Untitled");
+
+  // Prefill from item metadata when available.
+  const initialGenreTags = item.style && GENRES.includes(item.style) ? [item.style] : [];
+  const initialMoodTags = item.mood && MOODS.includes(item.mood) ? [item.mood] : [];
+  const initialBpm = item.bpm ? String(item.bpm) : "";
+
   const [form, setForm] = useState<PublishForm>({
     title: defaultTitle,
-    genreTags: [],
-    moodTags: [],
+    genreTags: initialGenreTags,
+    moodTags: initialMoodTags,
     gameTypeTags: [],
-    isLoop: false,
-    bpm: "",
+    isLoop: item.isLoop ?? false,
+    bpm: initialBpm,
   });
+  const [waveformData, setWaveformData] = useState<number[] | undefined>(item.waveformData);
+  const [analyzing, setAnalyzing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Compute waveform data on mount if not already available.
+  useEffect(() => {
+    if (waveformData || !item.audioUrl) return;
+    let cancelled = false;
+    setAnalyzing(true);
+    analyzeAudio(item.audioUrl)
+      .then(({ waveformData: data }) => {
+        if (!cancelled) setWaveformData(data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAnalyzing(false);
+      });
+    return () => { cancelled = true; };
+  }, [item.audioUrl, waveformData]);
 
   function toggleTag(key: "genreTags" | "moodTags" | "gameTypeTags", tag: string) {
     setForm(prev => {
@@ -67,6 +92,7 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
         moodTags: form.moodTags,
         gameTypeTags: form.gameTypeTags,
         isLoop: form.isLoop,
+        waveformData,
         generationId: item._type === "generation" ? item._id : undefined,
         uploadId:     item._type === "upload"     ? item._id : undefined,
       });
@@ -185,11 +211,11 @@ export function PublishModal({ item, onClose, onPublished }: PublishModalProps) 
         <div className="flex gap-3 pt-1">
           <button
             onClick={handleSubmit}
-            disabled={publishing}
+            disabled={publishing || analyzing}
             className="flex-1 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
             style={{ background: "var(--accent)", color: "var(--accent-on)", boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)" }}
           >
-            {publishing ? "Publishing…" : "Publish"}
+            {analyzing ? "Analyzing…" : publishing ? "Publishing…" : "Publish"}
           </button>
           <button
             onClick={onClose}

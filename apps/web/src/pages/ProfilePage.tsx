@@ -3,7 +3,18 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { stripTags } from "../lib/sanitize";
 import { useAuthStore } from "../store/useAuthStore";
-import { formatDuration, timeAgo, waveformBars } from "../lib/format";
+import { formatDuration, timeAgo } from "../lib/format";
+import { WaveformBar } from "../components/WaveformBar";
+
+/** Fallback deterministic waveform bars (0-1 normalized). */
+function fallbackWaveformBars(seed: string, count = 28): number[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return Array.from({ length: count }, () => {
+    h = (h * 1664525 + 1013904223) >>> 0;
+    return ((h % 60) + 20) / 100;
+  });
+}
 
 interface UserProfile {
   userId: string;
@@ -27,6 +38,7 @@ interface PublicTrack {
   audioUrl: string;
   durationSec: number;
   bpm?: number;
+  waveformData?: number[];
   genreTags: string[];
   moodTags: string[];
   isLoop: boolean;
@@ -465,7 +477,7 @@ interface TrackCardProps {
 }
 
 function TrackCard({ track, isPlaying, onPlay, onOpenInStudio }: TrackCardProps) {
-  const bars = waveformBars(track.id, 20);
+  const bars = track.waveformData ?? fallbackWaveformBars(track.id, 28);
 
   return (
     <div
@@ -514,17 +526,15 @@ function TrackCard({ track, isPlaying, onPlay, onOpenInStudio }: TrackCardProps)
       </div>
 
       {/* Waveform bars */}
-      <div className="hidden sm:flex items-center gap-[1.5px] h-7 shrink-0">
-        {bars.map((h, i) => (
-          <div
-            key={i}
-            className="w-[2px] rounded-full"
-            style={{
-              height: `${isPlaying ? h : Math.max(h * 0.5, 10)}%`,
-              background: isPlaying ? "var(--accent)" : "var(--bg-bright)",
-            }}
-          />
-        ))}
+      <div className="hidden sm:flex items-center h-7 shrink-0">
+        <WaveformBar
+          data={bars}
+          width={120}
+          height={28}
+          progress={isPlaying ? 0.5 : 0}
+          barColor="var(--text-3)"
+          progressColor="var(--accent)"
+        />
       </div>
 
       {/* Meta */}

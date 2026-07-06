@@ -18,7 +18,7 @@ export interface Translations {
     // Errors
     sessionExpired: string; emailNotVerified: string; resendVerification: string; resendSent: string; resendFailed: string; accountLocked: string; passwordMismatch: string; passwordWeak: string;
   };
-  generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; loop: string; loopOn: string; loopOff: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string; imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxGenerate: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string;
+  generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; loop: string; loopOn: string; loopOff: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string;     imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxDurationLabel: string; sfxDurationHint: string; sfxGenerate: string; sfxGenerateBtn: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string;
     sonautoNote: string; stableaudioNote: string; providerClosed: string; providerComingSoon: string; queueJobs: string;
     // GenerationCard statuses & labels
     statusQueued: string; statusProcessing: string; statusSuccess: string; statusFailed: string;
@@ -160,7 +160,10 @@ export const en: Translations = {
     sfxPromptLabel:   "Describe the sound effect",
     sfxPromptHint:    "e.g. sword clash, fire crackle, footsteps on gravel…",
     sfxDuration:      "Duration (sec)",
+    sfxDurationLabel: "Duration (seconds, optional)",
+    sfxDurationHint:  "Leave empty for automatic length. Max 22s.",
     sfxGenerate:      "Generate SFX",
+    sfxGenerateBtn:   "Generate SFX",
     sfxGenerating:    "Generating…",
     imageOnly:        "Only PNG, JPG and WEBP images are allowed.",
     imageSize:        "Image must be smaller than 10 MB.",

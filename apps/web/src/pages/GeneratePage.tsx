@@ -7,7 +7,7 @@ import { useGenerationSSE } from "../hooks/useGenerationSSE";
 import AudioEditor from "../components/AudioEditor";
 import { api } from "../lib/api";
 import { stripTags } from "../lib/sanitize";
-import type { MusicProvider, MusicStyle, MusicMood, GenerationDuration, SseStatusEvent } from "@sonaralabs/types";
+import type { MusicProvider, MusicStyle, MusicMood, GenerationDuration, MusicKey, MusicScale, TimeSignature, SseStatusEvent } from "@sonaralabs/types";
 import { MUSIC_CREDIT_COST as CREDIT_COST } from "@sonaralabs/types";
 import { GenerationCard } from "../components/generation/GenerationCard";
 import { SelectField } from "../components/SelectField";
@@ -54,6 +54,25 @@ const MOODS: { value: MusicMood; label: string }[] = [
 ];
 const DURATIONS: GenerationDuration[] = [15, 30, 60];
 
+const KEYS: { value: MusicKey; label: string }[] = [
+  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+].map(k => ({ value: k as MusicKey, label: k }));
+
+const SCALES: { value: MusicScale; label: string }[] = [
+  { value: "Major",       label: "Major" },
+  { value: "Minor",       label: "Minor" },
+  { value: "Dorian",      label: "Dorian" },
+  { value: "Phrygian",    label: "Phrygian" },
+  { value: "Lydian",      label: "Lydian" },
+  { value: "Mixolydian",  label: "Mixolydian" },
+];
+
+const TIME_SIGNATURES: { value: string; label: string; sig: TimeSignature }[] = [
+  { value: "3/4", label: "3/4", sig: [3, 4] },
+  { value: "4/4", label: "4/4", sig: [4, 4] },
+  { value: "6/8", label: "6/8", sig: [6, 8] },
+];
+
 interface Capabilities { music: { beatoven: boolean; sonauto: boolean; stableaudio?: boolean; lyria?: boolean }; }
 // closed: API'si şu an kullanılamıyor (örn. geçersiz key) → "Geçici olarak kapalı".
 // Geçerli key gelince ilgili satırdan `closed: true` kaldır.
@@ -89,6 +108,11 @@ export default function GeneratePage() {
   const [duration, setDuration] = useState<GenerationDuration>(30);
   const [loop, setLoop]         = useState(true);   // kusursuz döngü (oyun loop'u) — varsayılan açık
   const [provider, setProvider] = useState<MusicProvider>("stableaudio");
+  const [bpm, setBpm]           = useState<number>(120);
+  const [key, setKey]           = useState<MusicKey>("C");
+  const [scale, setScale]       = useState<MusicScale>("Minor");
+  const [timeSignature, setTimeSignature] = useState<TimeSignature>([4, 4]);
+  const [intensity, setIntensity] = useState<number>(0.5);
 
   const [sfxPrompt, setSfxPrompt]     = useState("");
   const [sfxDuration, setSfxDuration] = useState<number | "">("");
@@ -195,7 +219,10 @@ export default function GeneratePage() {
     const cleanPrompt = stripTags(prompt.trim())
     if (!cleanPrompt) { setFormError(t.generate.enterPrompt); return; }
     try {
-      await generate({ prompt: cleanPrompt, provider, style, mood, duration, loop });
+      await generate({
+        prompt: cleanPrompt, provider, style, mood, duration, loop,
+        bpm, key, scale, timeSignature, intensity,
+      });
       updateCredit(-creditCost);
       setPrompt("");
     } catch (err) {
@@ -243,11 +270,26 @@ export default function GeneratePage() {
     }
   }
 
-  function handleOpenInStudio(item: GenerationItem) {
+  async function handleOpenInStudio(item: GenerationItem) {
     if (!item.audioUrl) return;
     const name = item.prompt.slice(0, 40);
-    sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
-    navigate("/studio");
+    try {
+      const { data } = await api.post("/api/library/projects", {
+        name,
+        tracks: [],
+        bpm: item.bpm ?? 120,
+        loopEnabled: item.isLoop ?? false,
+        loopStart: 0,
+        loopEnd: item.duration ?? 8,
+      });
+      const projectId = data.data?._id ?? data.data?.id;
+      sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl, projectId }]));
+      navigate(`/studio?projectId=${projectId}`);
+    } catch {
+      // Fallback: open without project
+      sessionStorage.setItem("studio:preload", JSON.stringify([{ name, audioUrl: item.audioUrl }]));
+      navigate("/studio");
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -463,6 +505,112 @@ export default function GeneratePage() {
                   />
                 </div>
 
+                {/* Music metric controls — BPM / Key / Scale / Time Signature */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* BPM */}
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="bpm-input"
+                      className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                      style={{ color: "var(--text-3)" }}
+                    >
+                      BPM
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="bpm-input"
+                        type="number"
+                        min={40}
+                        max={300}
+                        value={bpm}
+                        onChange={e => {
+                          const v = Number(e.target.value);
+                          if (!isNaN(v)) setBpm(Math.max(40, Math.min(300, v)));
+                        }}
+                        className="w-full rounded-lg px-3 py-2.5 text-xs font-medium outline-none transition-all duration-100"
+                        style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
+                        onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)")}
+                        onBlur={e => (e.currentTarget.style.boxShadow = "none")}
+                      />
+                    </div>
+                    <div className="flex gap-1">
+                      {[90, 120, 128, 140].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setBpm(preset)}
+                          className="text-[9px] px-1.5 py-0.5 rounded transition-colors"
+                          style={{
+                            background: bpm === preset ? "var(--accent)" : "var(--bg-input)",
+                            color: bpm === preset ? "var(--accent-on)" : "var(--text-3)",
+                          }}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <SelectField
+                    id="key-select"
+                    label="Key"
+                    value={key}
+                    onChange={v => setKey(v as MusicKey)}
+                    options={KEYS.map(k => ({ value: k.value, label: k.label }))}
+                  />
+
+                  <SelectField
+                    id="scale-select"
+                    label="Scale"
+                    value={scale}
+                    onChange={v => setScale(v as MusicScale)}
+                    options={SCALES.map(s => ({ value: s.value, label: s.label }))}
+                  />
+
+                  <SelectField
+                    id="time-signature-select"
+                    label="Time Signature"
+                    value={`${timeSignature[0]}/${timeSignature[1]}`}
+                    onChange={v => {
+                      const found = TIME_SIGNATURES.find(t => t.value === v);
+                      if (found) setTimeSignature(found.sig);
+                    }}
+                    options={TIME_SIGNATURES.map(t => ({ value: t.value, label: t.label }))}
+                  />
+                </div>
+
+                {/* Intensity slider */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="intensity-slider"
+                      className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                      style={{ color: "var(--text-3)" }}
+                    >
+                      Intensity
+                    </label>
+                    <span className="text-[9px] font-mono" style={{ color: "var(--text-2)" }}>
+                      {Math.round(intensity * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    id="intensity-slider"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={intensity}
+                    onChange={e => setIntensity(Number(e.target.value))}
+                    className="w-full accent-current"
+                    style={{ accentColor: "var(--accent)" }}
+                  />
+                  <div className="flex justify-between text-[9px]" style={{ color: "var(--text-3)" }}>
+                    <span>Calm</span>
+                    <span>Balanced</span>
+                    <span>Intense</span>
+                  </div>
+                </div>
+
                 {/* Loop toggle — kusursuz döngü üretimi (oyun loop'u) */}
                 <button
                   type="button"
@@ -549,34 +697,106 @@ export default function GeneratePage() {
 
           {/* ── SFX FORM ── */}
           {mode === "sfx" && (
-            <div className="space-y-5">
-              {/* Coming Soon banner */}
-              <div
-                className="rounded-lg px-4 py-5 flex flex-col items-center gap-3 text-center"
-                style={{ background: "var(--bg-card)", border: "1px dashed var(--bg-border)" }}
-              >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: 32, color: "var(--text-3)" }}
+            <form onSubmit={handleGenerateSFX} className="space-y-5">
+              {/* Prompt textarea */}
+              <div className="space-y-1.5">
+                <label
+                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                  style={{ color: "var(--text-3)" }}
+                  htmlFor="sfx-prompt-input"
                 >
-                  surround_sound
-                </span>
-                <div className="space-y-1">
-                  <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--text-2)" }}>
-                    {t.generate.sfxComingSoon}
-                  </p>
-                  <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-                    {t.generate.sfxComingSoonDesc}
-                  </p>
-                </div>
-                <span
-                  className="px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest"
-                  style={{ background: "var(--bg-input)", color: "var(--text-3)" }}
-                >
-                  {t.common.noResults}
-                </span>
+                  {t.generate.sfxPromptLabel ?? "SFX Prompt"}
+                </label>
+                <textarea
+                  id="sfx-prompt-input"
+                  data-testid="sfx-prompt-input"
+                  value={sfxPrompt}
+                  onChange={e => setSfxPrompt(e.target.value)}
+                  placeholder={t.generate.sfxPromptHint ?? "e.g. sword clang, explosion, magical chime"}
+                  rows={4}
+                  className="w-full rounded-lg px-4 py-3 text-sm resize-none outline-none transition-all duration-100"
+                  style={{
+                    background: "var(--bg-card)",
+                    color: "var(--text-1)",
+                    border: "1px solid var(--bg-border)",
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "var(--bg-input)")}
+                />
               </div>
-            </div>
+
+              {/* Duration */}
+              <div className="space-y-1.5">
+                <label
+                  className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                  style={{ color: "var(--text-3)" }}
+                  htmlFor="sfx-duration-input"
+                >
+                  {t.generate.sfxDurationLabel ?? "Duration (seconds, optional)"}
+                </label>
+                <input
+                  id="sfx-duration-input"
+                  type="number"
+                  min={0.5}
+                  max={22}
+                  step={0.5}
+                  value={sfxDuration}
+                  onChange={e => {
+                    const v = e.target.value === "" ? "" : Number(e.target.value);
+                    setSfxDuration(v);
+                  }}
+                  placeholder="Auto"
+                  className="w-full rounded-lg px-3 py-2.5 text-xs font-medium outline-none transition-all duration-100"
+                  style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
+                  onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)")}
+                  onBlur={e => (e.currentTarget.style.boxShadow = "none")}
+                />
+                <p className="text-[9px]" style={{ color: "var(--text-3)" }}>
+                  {t.generate.sfxDurationHint ?? "Leave empty for automatic length. Max 22s."}
+                </p>
+              </div>
+
+              {formError && (
+                <p className="text-[11px] rounded px-3 py-2" style={{ background: "color-mix(in srgb, var(--error) 8%, transparent)", color: "var(--error)" }}>
+                  {formError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                data-testid="sfx-generate-btn"
+                disabled={isGenerating || isAnalyzing}
+                className="w-full rounded-lg py-3.5 text-sm font-bold uppercase tracking-wider transition-all duration-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                style={{
+                  background: "var(--accent)",
+                  color: "var(--accent-on)",
+                  boxShadow: "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)",
+                }}
+                onMouseEnter={e => !isGenerating && !isAnalyzing && ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 28px color-mix(in srgb, var(--accent) 50%, transparent)")}
+                onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.boxShadow = "0px 0px 20px color-mix(in srgb, var(--accent) 30%, transparent)")}
+              >
+                {isGenerating ? (
+                  <>
+                    <span
+                      className="h-4 w-4 rounded-full border-2 animate-spin"
+                      style={{ borderColor: "color-mix(in srgb, var(--accent-on) 30%, transparent)", borderTopColor: "var(--accent-on)" }}
+                    />
+                    {t.generate.generating}
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>surround_sound</span>
+                    {t.generate.sfxGenerateBtn ?? "Generate SFX"}
+                    <span
+                      className="rounded px-2 py-0.5 text-[10px] font-bold"
+                      style={{ background: "color-mix(in srgb, var(--accent-on) 20%, transparent)" }}
+                    >
+                      1 cr
+                    </span>
+                  </>
+                )}
+              </button>
+            </form>
           )}
         </div>
 

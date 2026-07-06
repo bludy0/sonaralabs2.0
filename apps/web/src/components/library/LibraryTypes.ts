@@ -5,6 +5,11 @@ export interface LibraryItem {
   prompt?: string;
   audioUrl?: string;
   duration?: number;
+  bpm?: number;
+  style?: string;
+  mood?: string;
+  isLoop?: boolean;
+  waveformData?: number[];
   isFavorited: boolean;
   createdAt: string;
   status?: string;

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { api } from "../../lib/api";
 import { formatDate, formatDuration } from "../../lib/format";
 import type { Collection, LibraryItem } from "./LibraryTypes";
+import MiniWaveformPlayer from "../generation/MiniWaveformPlayer";
 
 const STATUS_COLOR: Record<string, string> = {
   done:       "var(--success)",
@@ -52,9 +54,11 @@ export function LibraryItemCard({
     collections.filter(c => c.items.some(i => i.refId === item._id)).map(c => c._id)
   );
 
+  const [showWaveform, setShowWaveform] = useState(false);
+
   return (
     <li
-      className="flex items-center gap-3 rounded-lg px-4 py-3 transition-colors cursor-default"
+      className="rounded-lg px-4 py-3 transition-colors cursor-default"
       style={{
         background: hovered ? "var(--bg-input)" : "var(--bg-card)",
         borderLeft: inActiveCollection ? "2px solid var(--accent)" : "2px solid transparent",
@@ -62,6 +66,7 @@ export function LibraryItemCard({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      <div className="flex items-center gap-3">
       {/* Type badge */}
       <span
         className="text-[9px] font-bold tracking-[0.15em] uppercase px-2 py-0.5 rounded shrink-0"
@@ -220,6 +225,43 @@ export function LibraryItemCard({
       >
         <span className="material-symbols-outlined text-[18px]">delete</span>
       </button>
+      </div>
+
+      {/* Waveform preview */}
+      {item.audioUrl && (
+        <div className="mt-3">
+          {showWaveform ? (
+            <MiniWaveformPlayer
+              audioUrl={item.audioUrl}
+              onReady={async (info) => {
+                if (!info.bpm) return;
+                const endpoint = item._type === "generation"
+                  ? `/api/generate/${item._id}/analysis`
+                  : `/api/upload/${item._id}/analysis`;
+                try {
+                  await api.patch(endpoint, {
+                    bpm: info.bpm,
+                    waveformData: info.waveformData,
+                    duration: info.duration,
+                  });
+                } catch {
+                  // Non-fatal
+                }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowWaveform(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg py-2 text-[10px] font-bold uppercase tracking-wider transition-colors"
+              style={{ background: "var(--bg-mid)", color: "var(--text-3)" }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>graphic_eq</span>
+              Preview
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }
