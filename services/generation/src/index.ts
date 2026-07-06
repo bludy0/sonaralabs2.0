@@ -61,7 +61,12 @@ const generationSchema = new mongoose.Schema({
   style:             String,
   mood:              String,
   isLoop:            { type: Boolean, default: true },   // kusursuz döngü olarak mı üretildi
-  bpm:               Number,
+  bpm:               Number,   // 40-300
+  key:               String,   // C, C#, D, ...
+  scale:             String,   // Major, Minor, ...
+  timeSignature:     [Number], // [4, 4]
+  intensity:         Number,   // 0-1
+  waveformData:      [Number], // normalize edilmiş RMS/peak değerleri
   creditCost:        Number,
   isFavorited:       { type: Boolean, default: false },
   isImageGeneration: { type: Boolean, default: false },
@@ -78,9 +83,18 @@ const Generation = mongoose.model("Generation", generationSchema);
 
 // ── AI PROVIDER PATTERN ───────────────────────────────────────────────────────
 
+export interface GenerationOptions {
+  loop?: boolean;
+  bpm?: number;
+  key?: string;
+  scale?: string;
+  timeSignature?: [number, number];
+  intensity?: number;
+}
+
 interface IMusicProvider {
   name: MusicProvider;
-  generate(prompt: string, duration: number, style: string, mood: string, loop?: boolean): Promise<string>;
+  generate(prompt: string, duration: number, style: string, mood: string, options?: GenerationOptions): Promise<string>;
 }
 
 // ── PROVIDER REGISTRY ─────────────────────────────────────────────────────────
@@ -160,7 +174,7 @@ async function earnCredit(userId: string, amount: number, relatedId: string) {
 
 // ── BULLMQ WORKER ─────────────────────────────────────────────────────────────
 const worker = new Worker("generation", async (job: Job) => {
-  const { generationId, userId, prompt, provider, style, mood, duration, type, loop } = job.data;
+  const { generationId, userId, prompt, provider, style, mood, duration, type, loop, bpm, key, scale, timeSignature, intensity } = job.data;
 
   await Generation.findByIdAndUpdate(generationId, { status: "processing" });
   await notifyUser({ userId, jobId: job.id!, status: "processing" });
@@ -176,7 +190,15 @@ const worker = new Worker("generation", async (job: Job) => {
   } else {
     const p = musicProviders.get(provider as MusicProvider);
     if (!p) throw new Error(`Unknown provider: ${provider}`);
-    audioUrl = await p.generate(prompt, duration, style, mood, loop !== false);
+    const options: GenerationOptions = {
+      loop: loop !== false,
+      bpm,
+      key,
+      scale,
+      timeSignature,
+      intensity,
+    };
+    audioUrl = await p.generate(prompt, duration, style, mood, options);
     await Generation.findByIdAndUpdate(generationId, { status: "done", audioUrl });
   }
 
@@ -271,7 +293,7 @@ function getPayload(req: express.Request): InternalJwtPayload {
 app.post("/", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const { prompt, provider, style, mood, duration: reqDuration, loop } = req.body as GenerationRequest;
+    const { prompt, provider, style, mood, duration: reqDuration, loop, bpm, key, scale, timeSignature, intensity } = req.body as GenerationRequest;
 
     if (!prompt || !provider || !style || !mood || !reqDuration) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
@@ -284,9 +306,18 @@ app.post("/", async (req, res) => {
     const duration = reqDuration;
     const isLoop   = loop !== false;   // varsayılan: kusursuz döngü (oyun loop'u)
 
+    // Opsiyonel metrikleri doğrula / sınırla
+    const normalizedBpm = bpm ? Math.max(40, Math.min(300, bpm)) : undefined;
+    const normalizedIntensity = intensity !== undefined ? Math.max(0, Math.min(1, intensity)) : undefined;
+    const normalizedTimeSignature = timeSignature && timeSignature.length === 2 ? timeSignature : undefined;
+
     const creditCost = getMusicCreditCost(provider, duration);
     const gen = await Generation.create({
-      userId, type: "music", prompt, provider, style, mood, duration, isLoop, creditCost, status: "pending",
+      userId, type: "music", prompt, provider, style, mood, duration,
+      isLoop, bpm: normalizedBpm, key, scale,
+      timeSignature: normalizedTimeSignature,
+      intensity: normalizedIntensity,
+      creditCost, status: "pending",
     });
 
     try {
@@ -300,7 +331,11 @@ app.post("/", async (req, res) => {
 
     try {
       const job = await generationQueue.add("generate", {
-        generationId: String(gen._id), userId, prompt, provider, style, mood, duration, type: "music", loop: isLoop,
+        generationId: String(gen._id), userId, prompt, provider, style, mood, duration,
+        type: "music", loop: isLoop,
+        bpm: normalizedBpm, key, scale,
+        timeSignature: normalizedTimeSignature,
+        intensity: normalizedIntensity,
       }, { jobId: String(gen._id) });
       await Generation.findByIdAndUpdate(gen._id, { jobId: job.id });
       res.status(202).json({ success: true, data: { jobId: job.id, generationId: gen._id, creditCost } } as ApiResponse);
@@ -514,6 +549,37 @@ app.delete("/:id", async (req, res) => {
   }
 });
 
+// PATCH /:id/analysis — store browser-computed BPM + waveform data
+app.patch("/:id/analysis", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
+
+    const { bpm, waveformData, duration } = req.body as {
+      bpm?: number;
+      waveformData?: number[];
+      duration?: number;
+    };
+
+    const update: Record<string, unknown> = {};
+    if (typeof bpm === "number") update.bpm = Math.max(40, Math.min(300, bpm));
+    if (Array.isArray(waveformData)) update.waveformData = waveformData.slice(0, 2000);
+    if (typeof duration === "number") update.duration = duration;
+
+    const gen = await Generation.findOneAndUpdate(
+      { _id: req.params.id, userId, status: "done" },
+      { $set: update },
+      { new: true, select: "bpm waveformData duration" }
+    );
+
+    if (!gen) return res.status(404).json({ success: false, error: "Not found or not done" });
+    res.json({ success: true, data: { bpm: gen.bpm, waveformData: gen.waveformData, duration: gen.duration } } as ApiResponse);
+  } catch (err) {
+    logger.error("[generation] PATCH /:id/analysis error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+});
+
 // POST /:id/retry — retry failed generation at half cost
 app.post("/:id/retry", async (req, res) => {
   try {
@@ -542,6 +608,8 @@ app.post("/:id/retry", async (req, res) => {
     const newGen = await Generation.create({
       userId, type: genType, prompt: gen.prompt, provider: gen.provider,
       style: gen.style, mood: gen.mood, duration: gen.duration, isLoop: gen.isLoop,
+      bpm: gen.bpm, key: gen.key, scale: gen.scale,
+      timeSignature: gen.timeSignature, intensity: gen.intensity,
       creditCost, status: "pending",
       isImageGeneration: gen.isImageGeneration, sourceImageUrl: gen.sourceImageUrl,
     });
@@ -563,6 +631,8 @@ app.post("/:id/retry", async (req, res) => {
         generationId: String(newGen._id), userId, prompt: gen.prompt,
         provider: gen.provider, style: gen.style, mood: gen.mood,
         duration: gen.duration, type: genType, loop: gen.isLoop,
+        bpm: gen.bpm, key: gen.key, scale: gen.scale,
+        timeSignature: gen.timeSignature, intensity: gen.intensity,
       });
       await Generation.findByIdAndUpdate(newGen._id, { jobId: job.id });
       // Orijinal kayıt yalnızca eşzamanlılık kilidi için pending'e çekilmişti;

@@ -381,17 +381,33 @@ describe("ZeroGPU kota hatası tespiti", () => {
 
 describe("buildGameMusicPrompt — loop seçeneği", () => {
   it("loop=true → kusursuz döngü ifadeleri eklenir", () => {
-    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", true);
+    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", { loop: true });
     expect(p.toLowerCase()).toContain("seamless loop");
     expect(p.toLowerCase()).toContain("no intro");
   });
   it("loop=false → giriş/bitiş ifadesi, döngü ifadesi yok", () => {
-    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", false);
+    const p = buildGameMusicPrompt("dungeon", "ambient", "calm", { loop: false });
     expect(p.toLowerCase()).toContain("intro");
     expect(p.toLowerCase()).toContain("ending");
     expect(p.toLowerCase()).not.toContain("seamless loop");
   });
   it("varsayılan (param yok) loop davranır", () => {
     expect(buildGameMusicPrompt("x", "ambient", "calm").toLowerCase()).toContain("seamless loop");
+  });
+});
+
+describe("buildGameMusicPrompt — müzik metrikleri", () => {
+  it("bpm, key, scale ekler", () => {
+    const p = buildGameMusicPrompt("battle", "action", "epic", { bpm: 140, key: "D", scale: "Minor" });
+    expect(p).toContain("140 BPM");
+    expect(p).toContain("D Minor");
+  });
+  it("time signature ekler", () => {
+    const p = buildGameMusicPrompt("waltz", "orchestral", "calm", { timeSignature: [3, 4] });
+    expect(p).toContain("3/4 time signature");
+  });
+  it("intensity label ekler", () => {
+    const p = buildGameMusicPrompt("intense", "action", "energetic", { intensity: 0.9 });
+    expect(p.toLowerCase()).toContain("high intensity");
   });
 });

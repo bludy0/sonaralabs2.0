@@ -16,6 +16,7 @@
 import axios from "axios";
 import { SONAUTO_CONFIG } from "./config";
 import { uploadAudioBuffer } from "./minio-client";
+import type { GenerationOptions } from "../index";
 
 const SONAUTO_API_KEY = process.env.SONAUTO_API_KEY;
 const JOB_TIMEOUT_MS  = parseInt(process.env.JOB_TIMEOUT_MS || "300000");
@@ -34,18 +35,34 @@ async function sleep(ms: number) {
 export class SonautoProvider {
   readonly name = "sonauto" as const;
 
-  async generate(prompt: string, _duration: number, style: string, mood: string): Promise<string> {
+  async generate(prompt: string, _duration: number, style: string, mood: string, options?: GenerationOptions): Promise<string> {
     if (!SONAUTO_API_KEY) throw new Error("SONAUTO_API_KEY not set");
 
     const cfg     = SONAUTO_CONFIG;
     const headers = { Authorization: `Bearer ${SONAUTO_API_KEY}` };
     const tags    = buildTags(style, mood);
 
+    // Prompt'u metriklerle zenginleştir
+    const metricParts: string[] = [];
+    if (options?.bpm) metricParts.push(`${options.bpm} BPM`);
+    if (options?.key && options?.scale) metricParts.push(`${options.key} ${options.scale}`);
+    if (options?.timeSignature) metricParts.push(`${options.timeSignature[0]}/${options.timeSignature[1]} time signature`);
+    if (options?.intensity !== undefined) {
+      const intensityLabel = options.intensity < 0.35 ? "low intensity" : options.intensity < 0.7 ? "medium intensity" : "high intensity";
+      metricParts.push(intensityLabel);
+    }
+    if (options?.loop === false) metricParts.push("with clear intro and ending");
+    else metricParts.push("seamless looping video game music");
+
+    const enrichedPrompt = metricParts.length > 0
+      ? `${prompt}. ${metricParts.join(", ")}.`
+      : prompt;
+
     // ── 1. Üretimi başlat ───────────────────────────────────────────────────
     const createRes = await axios.post<{ task_id: string }>(
       `${cfg.baseUrl}/generations/${cfg.modelVersion}`,
       {
-        prompt,
+        prompt: enrichedPrompt,
         tags: tags.length >= 3 ? tags : undefined, // min 3 tag veya hiç
         instrumental:  true,
         num_songs:     1,

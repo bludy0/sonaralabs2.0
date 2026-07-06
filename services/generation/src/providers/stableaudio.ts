@@ -21,6 +21,7 @@
 import axios from "axios";
 import { STABLEAUDIO_CONFIG, STYLE_PROMPTS, MOOD_PROMPTS } from "./config";
 import { uploadAudioBuffer } from "./minio-client";
+import type { GenerationOptions } from "../index";
 
 const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
 
@@ -29,7 +30,12 @@ const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
  * Stable Audio için zengin, betimleyici bir prompt üretir. Boş/yinelenen parçalar
  * atlanır; çıktı ~500 karaktere kısaltılır (Stable Audio uzun prompt'ta zayıflar).
  */
-export function buildGameMusicPrompt(prompt: string, style: string, mood: string, loop = true): string {
+export function buildGameMusicPrompt(
+  prompt: string,
+  style: string,
+  mood: string,
+  options?: GenerationOptions,
+): string {
   const lower = prompt.toLowerCase();
   const parts = [prompt.trim()];
   const styleDesc = STYLE_PROMPTS[style];
@@ -37,9 +43,22 @@ export function buildGameMusicPrompt(prompt: string, style: string, mood: string
   // Aynı kelime promptta zaten varsa tekrar ekleme (örn. "ambient ambient")
   if (styleDesc && !lower.includes(style)) parts.push(styleDesc);
   if (moodDesc  && !lower.includes(mood))  parts.push(moodDesc);
+
+  // Müzik metriklerini prompt'a ekle
+  const metricParts: string[] = [];
+  if (options?.bpm) metricParts.push(`at ${options.bpm} BPM`);
+  if (options?.key && options?.scale) metricParts.push(`in ${options.key} ${options.scale}`);
+  if (options?.timeSignature) metricParts.push(`${options.timeSignature[0]}/${options.timeSignature[1]} time signature`);
+  if (options?.intensity !== undefined) {
+    const intensityLabel = options.intensity < 0.35 ? "low intensity" : options.intensity < 0.7 ? "medium intensity" : "high intensity";
+    metricParts.push(intensityLabel);
+  }
+  if (metricParts.length > 0) parts.push(metricParts.join(", "));
+
   parts.push(STABLEAUDIO_CONFIG.promptSuffix);
   // Loop AÇIK → kusursuz döngü; KAPALI → giriş/bitişli tek parça
-  parts.push(loop ? STABLEAUDIO_CONFIG.loopSuffix : STABLEAUDIO_CONFIG.oneShotSuffix);
+  const isLoop = options?.loop !== false;
+  parts.push(isLoop ? STABLEAUDIO_CONFIG.loopSuffix : STABLEAUDIO_CONFIG.oneShotSuffix);
   return parts.filter(Boolean).join(". ").replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
@@ -70,14 +89,14 @@ export class StableAudioProvider {
     return Boolean(HF_API_KEY);
   }
 
-  async generate(prompt: string, duration: number, style: string, mood: string, loop = true): Promise<string> {
+  async generate(prompt: string, duration: number, style: string, mood: string, options?: GenerationOptions): Promise<string> {
     if (!HF_API_KEY) throw new Error("HUGGINGFACE_API_KEY not set");
 
     const cfg  = STABLEAUDIO_CONFIG;
     const base = process.env.STABLE_AUDIO_SPACE_URL || cfg.spaceUrl;
     const auth = { Authorization: `Bearer ${HF_API_KEY}` };
     const dur  = Math.min(Math.max(Math.round(duration) || 30, 1), cfg.maxDuration);
-    const fullPrompt = buildGameMusicPrompt(prompt, style, mood, loop);
+    const fullPrompt = buildGameMusicPrompt(prompt, style, mood, options);
 
     // ── 1. Üretimi başlat → event_id ─────────────────────────────────────────
     const data = [cfg.variant, fullPrompt, dur, cfg.steps, cfg.cfgScale, cfg.sampler, 0];

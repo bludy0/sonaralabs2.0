@@ -64,6 +64,8 @@ const uploadSchema = new mongoose.Schema({
   mimeType:     String,
   fileSize:     Number,
   duration:     Number,
+  bpm:          Number,
+  waveformData: [Number],
   isFavorited:  { type: Boolean, default: false },
 }, { timestamps: true });
 
@@ -196,6 +198,37 @@ app.delete("/:id", async (req, res) => {
     res.json({ success: true, message: "Upload deleted" } as ApiResponse);
   } catch {
     res.status(500).json({ success: false, error: "Delete failed" });
+  }
+});
+
+// PATCH /:id/analysis — store browser-computed BPM + waveform data
+app.patch("/:id/analysis", async (req, res) => {
+  try {
+    const { sub: userId } = getPayload(req);
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: "Invalid ID" });
+
+    const { bpm, waveformData, duration } = req.body as {
+      bpm?: number;
+      waveformData?: number[];
+      duration?: number;
+    };
+
+    const update: Record<string, unknown> = {};
+    if (typeof bpm === "number") update.bpm = Math.max(40, Math.min(300, bpm));
+    if (Array.isArray(waveformData)) update.waveformData = waveformData.slice(0, 2000);
+    if (typeof duration === "number") update.duration = duration;
+
+    const doc = await Upload.findOneAndUpdate(
+      { _id: req.params.id, userId },
+      { $set: update },
+      { new: true, select: "bpm waveformData duration" }
+    );
+
+    if (!doc) return res.status(404).json({ success: false, error: "Not found" });
+    res.json({ success: true, data: { bpm: doc.bpm, waveformData: doc.waveformData, duration: doc.duration } } as ApiResponse);
+  } catch (err) {
+    logger.error("[upload] PATCH /:id/analysis error", { message: String(err) });
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
