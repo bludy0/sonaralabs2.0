@@ -58,6 +58,11 @@ export type MusicMood =
   | "tense" | "calm" | "epic" | "mysterious" | "cheerful" | "heroic"
   | "melancholic" | "dark" | "energetic" | "dreamy" | "playful" | "triumphant";
 export type GenerationDuration = 15 | 30 | 60;
+export type MusicKey =
+  | "C" | "C#" | "D" | "D#" | "E" | "F" | "F#" | "G" | "G#" | "A" | "A#" | "B";
+export type MusicScale =
+  | "Major" | "Minor" | "Dorian" | "Phrygian" | "Lydian" | "Mixolydian";
+export type TimeSignature = [number, number];
 
 export interface GenerationRequest {
   prompt: string;
@@ -67,6 +72,16 @@ export interface GenerationRequest {
   duration: GenerationDuration;
   /** Kusursuz döngü (oyun loop'u) — intro/outro olmadan üret. Varsayılan true. */
   loop?: boolean;
+  /** Tempo (BPM). 40-300 arası. */
+  bpm?: number;
+  /** Ton (örn. "C", "F#"). */
+  key?: MusicKey;
+  /** Gam (örn. "Minor", "Dorian"). */
+  scale?: MusicScale;
+  /** Ölçü (örn. [4, 4]). */
+  timeSignature?: TimeSignature;
+  /** Yoğunluk / enerji seviyesi. 0-1 arası. */
+  intensity?: number;
 }
 
 export interface SFXRequest {
