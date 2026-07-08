@@ -124,6 +124,7 @@ export const tr: Translations = {
     stableaudioNote:  "",
     providerClosed:      "Geçici olarak kapalı",
     providerComingSoon:  "Yakında",
+    advancedParams:   "Gelişmiş parametreler",
     queueJobs:        "iş",
     // GenerationCard
     statusQueued:     "KUYRUKTA",
@@ -185,6 +186,10 @@ export const tr: Translations = {
     deleteCollectionError:"Koleksiyon silinemedi.",
     loadCollectionError:  "Koleksiyon yüklenemedi.",
     newCollectionError:   "Koleksiyon oluşturulamadı.",
+    addToCollection:      "Koleksiyona ekle",
+    removeFromCollection: "Koleksiyondan çıkar",
+    moreActions:          "Diğer işlemler",
+    preview:              "Önizle",
   },
   dashboard: {
     title:        "Kontrol Paneli",

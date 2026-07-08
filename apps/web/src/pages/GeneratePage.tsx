@@ -126,6 +126,11 @@ export default function GeneratePage() {
   const [editorUrl,     setEditorUrl]     = useState<string | null>(null);
   const [formError,     setFormError]     = useState<string | null>(null);
   const [capabilities,  setCapabilities]  = useState<Capabilities | null>(null);
+  const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("generate-advanced-open");
+    return saved ? saved === "true" : true;
+  });
 
   // Provider durumu: ok = seçilebilir | closed = geçici kapalı | soon = yakında.
   // Tüm provider'lar listede görünür; kullanılamayanlar disabled + etiketli olur.
@@ -162,6 +167,10 @@ export default function GeneratePage() {
       .then(r => setCapabilities(r.data.data ?? r.data))
       .catch(() => {}); // hata olursa tüm provider'lar gösterilir
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("generate-advanced-open", String(advancedOpen));
+  }, [advancedOpen]);
 
   // Seçili provider kullanılamıyorsa (kapalı/yakında) ilk kullanılabilir olana geç
   useEffect(() => {
@@ -497,118 +506,151 @@ export default function GeneratePage() {
                     onChange={v => setProvider(v as MusicProvider)}
                     options={ALL_PROVIDERS.map(p => {
                       const st = providerStatus(p);
-                      const suffix = st === "soon"   ? ` — ${t.generate.providerComingSoon}`
-                                   : st === "closed" ? ` — ${t.generate.providerClosed}`
+                      const suffix = st === "soon"   ? ` (${t.generate.providerComingSoon})`
+                                   : st === "closed" ? ` (${t.generate.providerClosed})`
                                    : "";
                       return { value: p.value, label: `${p.label}${suffix}`, disabled: st !== "ok" };
                     })}
                   />
                 </div>
 
-                {/* Music metric controls — BPM / Key / Scale / Time Signature */}
-                <div className="grid grid-cols-2 gap-3">
-                  {/* BPM */}
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor="bpm-input"
-                      className="block text-[9px] font-bold tracking-[0.2em] uppercase"
-                      style={{ color: "var(--text-3)" }}
-                    >
-                      BPM
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="bpm-input"
-                        type="number"
-                        min={40}
-                        max={300}
-                        value={bpm}
-                        onChange={e => {
-                          const v = Number(e.target.value);
-                          if (!isNaN(v)) setBpm(Math.max(40, Math.min(300, v)));
-                        }}
-                        className="w-full rounded-lg px-3 py-2.5 text-xs font-medium outline-none transition-all duration-100"
-                        style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
-                        onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)")}
-                        onBlur={e => (e.currentTarget.style.boxShadow = "none")}
-                      />
-                    </div>
-                    <div className="flex gap-1">
-                      {[90, 120, 128, 140].map(preset => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setBpm(preset)}
-                          className="text-[9px] px-1.5 py-0.5 rounded transition-colors"
-                          style={{
-                            background: bpm === preset ? "var(--accent)" : "var(--bg-input)",
-                            color: bpm === preset ? "var(--accent-on)" : "var(--text-3)",
-                          }}
-                        >
-                          {preset}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <SelectField
-                    id="key-select"
-                    label="Key"
-                    value={key}
-                    onChange={v => setKey(v as MusicKey)}
-                    options={KEYS.map(k => ({ value: k.value, label: k.label }))}
-                  />
-
-                  <SelectField
-                    id="scale-select"
-                    label="Scale"
-                    value={scale}
-                    onChange={v => setScale(v as MusicScale)}
-                    options={SCALES.map(s => ({ value: s.value, label: s.label }))}
-                  />
-
-                  <SelectField
-                    id="time-signature-select"
-                    label="Time Signature"
-                    value={`${timeSignature[0]}/${timeSignature[1]}`}
-                    onChange={v => {
-                      const found = TIME_SIGNATURES.find(t => t.value === v);
-                      if (found) setTimeSignature(found.sig);
-                    }}
-                    options={TIME_SIGNATURES.map(t => ({ value: t.value, label: t.label }))}
-                  />
-                </div>
-
-                {/* Intensity slider */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label
-                      htmlFor="intensity-slider"
-                      className="block text-[9px] font-bold tracking-[0.2em] uppercase"
-                      style={{ color: "var(--text-3)" }}
-                    >
-                      Intensity
-                    </label>
-                    <span className="text-[9px] font-mono" style={{ color: "var(--text-2)" }}>
-                      {Math.round(intensity * 100)}%
+                {/* Advanced parameters — BPM / Key / Scale / Time Signature / Intensity */}
+                <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--bg-border)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedOpen(v => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors"
+                    style={{ background: "var(--bg-input)" }}
+                    aria-expanded={advancedOpen}
+                  >
+                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+                      {t.generate.advancedParams}
                     </span>
-                  </div>
-                  <input
-                    id="intensity-slider"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={intensity}
-                    onChange={e => setIntensity(Number(e.target.value))}
-                    className="w-full accent-current"
-                    style={{ accentColor: "var(--accent)" }}
-                  />
-                  <div className="flex justify-between text-[9px]" style={{ color: "var(--text-3)" }}>
-                    <span>Calm</span>
-                    <span>Balanced</span>
-                    <span>Intense</span>
-                  </div>
+                    <span
+                      className="material-symbols-outlined transition-transform duration-200"
+                      style={{ fontSize: 18, color: "var(--text-3)", transform: advancedOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      expand_more
+                    </span>
+                  </button>
+
+                  {advancedOpen && (
+                    <div className="p-3 space-y-4" style={{ background: "var(--bg-card)" }}>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* BPM */}
+                        <div className="space-y-1.5">
+                          <label
+                            htmlFor="bpm-input"
+                            className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                            style={{ color: "var(--text-3)" }}
+                          >
+                            BPM
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              id="bpm-input"
+                              type="number"
+                              min={40}
+                              max={300}
+                              value={bpm}
+                              onChange={e => {
+                                const v = Number(e.target.value);
+                                if (!isNaN(v)) setBpm(Math.max(40, Math.min(300, v)));
+                              }}
+                              className="w-full rounded-lg px-3 py-2.5 text-xs font-medium outline-none transition-all duration-100"
+                              style={{ background: "var(--bg-input)", color: "var(--text-1)", border: "none" }}
+                              onFocus={e => (e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)")}
+                              onBlur={e => (e.currentTarget.style.boxShadow = "none")}
+                            />
+                          </div>
+                          <div className="flex gap-1.5">
+                            {[90, 120, 128, 140].map(preset => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setBpm(preset)}
+                                className="text-[10px] px-2 py-1 rounded transition-colors min-w-[36px]"
+                                style={{
+                                  background: bpm === preset ? "var(--accent)" : "var(--bg-input)",
+                                  color: bpm === preset ? "var(--accent-on)" : "var(--text-3)",
+                                }}
+                              >
+                                {preset}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <SelectField
+                          id="key-select"
+                          label="Key"
+                          value={key}
+                          onChange={v => setKey(v as MusicKey)}
+                          options={KEYS.map(k => ({ value: k.value, label: k.label }))}
+                        />
+
+                        <SelectField
+                          id="scale-select"
+                          label="Scale"
+                          value={scale}
+                          onChange={v => setScale(v as MusicScale)}
+                          options={SCALES.map(s => ({ value: s.value, label: s.label }))}
+                        />
+
+                        <SelectField
+                          id="time-signature-select"
+                          label="Time Signature"
+                          value={`${timeSignature[0]}/${timeSignature[1]}`}
+                          onChange={v => {
+                            const found = TIME_SIGNATURES.find(t => t.value === v);
+                            if (found) setTimeSignature(found.sig);
+                          }}
+                          options={TIME_SIGNATURES.map(t => ({ value: t.value, label: t.label }))}
+                        />
+                      </div>
+
+                      {/* Intensity slider */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label
+                            htmlFor="intensity-slider"
+                            className="block text-[9px] font-bold tracking-[0.2em] uppercase"
+                            style={{ color: "var(--text-3)" }}
+                          >
+                            Intensity
+                          </label>
+                          <span className="text-[9px] font-mono" style={{ color: "var(--text-2)" }}>
+                            {Math.round(intensity * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          id="intensity-slider"
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={intensity}
+                          onChange={e => setIntensity(Number(e.target.value))}
+                          className="w-full accent-current"
+                          style={{ accentColor: "var(--accent)" }}
+                        />
+                        <div className="flex justify-between text-[10px]" style={{ color: "var(--text-3)" }}>
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>waves</span>
+                            Calm
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>equalizer</span>
+                            Balanced
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>bolt</span>
+                            Intense
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Loop toggle — kusursuz döngü üretimi (oyun loop'u) */}

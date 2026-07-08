@@ -19,7 +19,7 @@ export interface Translations {
     sessionExpired: string; emailNotVerified: string; resendVerification: string; resendSent: string; resendFailed: string; accountLocked: string; passwordMismatch: string; passwordWeak: string;
   };
   generate:  { title: string; tabPrompt: string; tabImage: string; tabSfx: string; tabMusic: string; tabSfxMode: string; promptLabel: string; promptLabelImage: string; promptHint: string; promptHintImage: string; promptAnalyzing: string; style: string; mood: string; duration: string; provider: string; loop: string; loopOn: string; loopOff: string; generateBtn: string; retryBtn: string; generating: string; noHistory: string; credits: string; sfxComingSoon: string; sfxComingSoonDesc: string;     imageUploadLabel: string; imageUploadHint: string; sfxPromptLabel: string; sfxPromptHint: string; sfxDuration: string; sfxDurationLabel: string; sfxDurationHint: string; sfxGenerate: string; sfxGenerateBtn: string; sfxGenerating: string; imageOnly: string; imageSize: string; imageAnalysisFailed: string; enterPrompt: string; sfxEnterPrompt: string; sfxDurationRange: string; generationFailed: string; sfxFailed: string;
-    sonautoNote: string; stableaudioNote: string; providerClosed: string; providerComingSoon: string; queueJobs: string;
+    sonautoNote: string; stableaudioNote: string; providerClosed: string; providerComingSoon: string; advancedParams: string; queueJobs: string;
     // GenerationCard statuses & labels
     statusQueued: string; statusProcessing: string; statusSuccess: string; statusFailed: string;
     pipelineQueued: string; pipelineAiWork: string; pipelineComplete: string;
@@ -27,7 +27,7 @@ export interface Translations {
     retrying: string; remove: string; removing: string; openEditor: string;
     downloadBtn: string; downloading: string; downloadFormat: string; downloadFailed: string;
   };
-  library:   { title: string; search: string; upload: string; all: string; uploads: string; generations: string; favorites: string; empty: string; noMatches: string; addToStudio: string; download: string; delete: string; favorite: string; unfavorite: string; publish: string; unpublish: string; sortNewest: string; sortOldest: string; sortLongest: string; sortShortest: string; filterAll: string; filterDone: string; filterProcessing: string; filterFailed: string; filterGenerated: string; filterUploaded: string; confirmDelete: string; loadError: string; uploadSuccess: string; uploadFailed: string; addedToCollection: string; collectionError: string; removeError: string; renameError: string; deleteCollectionError: string; loadCollectionError: string; newCollectionError: string };
+  library:   { title: string; search: string; upload: string; all: string; uploads: string; generations: string; favorites: string; empty: string; noMatches: string; addToStudio: string; download: string; delete: string; favorite: string; unfavorite: string; publish: string; unpublish: string; sortNewest: string; sortOldest: string; sortLongest: string; sortShortest: string; filterAll: string; filterDone: string; filterProcessing: string; filterFailed: string; filterGenerated: string; filterUploaded: string; confirmDelete: string; loadError: string; uploadSuccess: string; uploadFailed: string; addedToCollection: string; collectionError: string; removeError: string; renameError: string; deleteCollectionError: string;     loadCollectionError: string; newCollectionError: string; addToCollection: string; removeFromCollection: string; moreActions: string; preview: string };
   dashboard: { title: string; totalGen: string; credits: string; storage: string; history: string; creditLog: string; noHistory: string; earned: string; spent: string; refunded: string; creditBalance: string; completed: string };
   explore:   { title: string; trending: string; recent: string; search: string };
   feed:      { title: string; following: string; forYou: string; noFeed: string };
@@ -177,6 +177,7 @@ export const en: Translations = {
     stableaudioNote:  "",
     providerClosed:      "Temporarily unavailable",
     providerComingSoon:  "Coming soon",
+    advancedParams:   "Advanced parameters",
     queueJobs:        "jobs",
     // GenerationCard
     statusQueued:     "QUEUED",
@@ -238,6 +239,10 @@ export const en: Translations = {
     deleteCollectionError:"Could not delete collection.",
     loadCollectionError:  "Could not load collection.",
     newCollectionError:   "Could not create collection.",
+    addToCollection:      "Add to collection",
+    removeFromCollection: "Remove from collection",
+    moreActions:          "More actions",
+    preview:              "Preview",
   },
   dashboard: {
     title:        "Dashboard",
