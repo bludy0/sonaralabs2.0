@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { analyzeAudio } from "@sonaralabs/daw-studio";
+import { useThemeStore } from "../../store/useThemeStore";
 
 export interface MiniWaveformPlayerProps {
   audioUrl: string;
@@ -14,6 +15,14 @@ function fmtTime(secs: number): string {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+function getWaveformColors() {
+  const root = getComputedStyle(document.documentElement);
+  return {
+    waveColor: root.getPropertyValue("--text-3").trim() || "#999",
+    progressColor: root.getPropertyValue("--accent").trim() || "#555",
+  };
+}
+
 export default function MiniWaveformPlayer({ audioUrl, onReady }: MiniWaveformPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
@@ -22,14 +31,16 @@ export default function MiniWaveformPlayer({ audioUrl, onReady }: MiniWaveformPl
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [analyzed, setAnalyzed] = useState(false);
+  const themeId = useThemeStore(s => s.themeId);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const colors = getWaveformColors();
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: "var(--text-3)",
-      progressColor: "var(--accent)",
+      waveColor: colors.waveColor,
+      progressColor: colors.progressColor,
       cursorColor: "transparent",
       url: audioUrl,
       height: 48,
@@ -67,6 +78,18 @@ export default function MiniWaveformPlayer({ audioUrl, onReady }: MiniWaveformPl
       wsRef.current = null;
     };
   }, [audioUrl, onReady]);
+
+  // Tema değişince WaveSurfer canvas renklerini güncelle
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws || !isReady) return;
+    const colors = getWaveformColors();
+    try {
+      ws.setOptions({ waveColor: colors.waveColor, progressColor: colors.progressColor });
+    } catch {
+      // eski sürümlerde setOptions yoksa sessizce geç
+    }
+  }, [themeId, isReady]);
 
   const togglePlay = () => {
     wsRef.current?.playPause();
