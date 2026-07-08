@@ -48,6 +48,10 @@ export function ToastContainer() {
 
   return (
     <div
+      role="region"
+      aria-label="Notifications"
+      aria-live="polite"
+      aria-atomic="true"
       style={{
         position:      'fixed',
         bottom:        24,
@@ -61,9 +65,12 @@ export function ToastContainer() {
     >
       {toasts.map(t => {
         const s = TYPE_STYLES[t.type]
+        const isAlert = t.type === 'error'
         return (
           <div
             key={t.id}
+            role={isAlert ? 'alert' : 'status'}
+            aria-live={isAlert ? 'assertive' : 'polite'}
             style={{
               display:       'flex',
               alignItems:    'center',

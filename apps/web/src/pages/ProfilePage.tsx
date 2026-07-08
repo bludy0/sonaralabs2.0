@@ -4,17 +4,8 @@ import { api } from "../lib/api";
 import { stripTags } from "../lib/sanitize";
 import { useAuthStore } from "../store/useAuthStore";
 import { formatDuration, timeAgo } from "../lib/format";
+import { fallbackWaveformBars, waveformColorFromSeed } from "../lib/waveform";
 import { WaveformBar } from "../components/WaveformBar";
-
-/** Fallback deterministic waveform bars (0-1 normalized). */
-function fallbackWaveformBars(seed: string, count = 28): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return Array.from({ length: count }, () => {
-    h = (h * 1664525 + 1013904223) >>> 0;
-    return ((h % 60) + 20) / 100;
-  });
-}
 
 interface UserProfile {
   userId: string;
@@ -478,6 +469,9 @@ interface TrackCardProps {
 
 function TrackCard({ track, isPlaying, onPlay, onOpenInStudio }: TrackCardProps) {
   const bars = track.waveformData ?? fallbackWaveformBars(track.id, 28);
+  const colors = track.waveformData
+    ? { bar: "var(--text-3)", progress: "var(--accent)" }
+    : waveformColorFromSeed(track.id);
 
   return (
     <div
@@ -532,8 +526,8 @@ function TrackCard({ track, isPlaying, onPlay, onOpenInStudio }: TrackCardProps)
           width={120}
           height={28}
           progress={isPlaying ? 0.5 : 0}
-          barColor="var(--text-3)"
-          progressColor="var(--accent)"
+          barColor={colors.bar}
+          progressColor={colors.progress}
         />
       </div>
 

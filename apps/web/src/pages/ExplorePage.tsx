@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDuration, timeAgo } from "../lib/format";
+import { fallbackWaveformBars, waveformColorFromSeed } from "../lib/waveform";
 import { WaveformBar } from "../components/WaveformBar";
 
 interface PublicTrack {
@@ -24,21 +25,6 @@ interface PublicTrack {
 const GENRES = ["ambient", "action", "puzzle", "horror", "platformer"];
 const MOODS  = ["tense", "calm", "epic", "mysterious", "cheerful"];
 const FILTER_CHIPS = ["Popular", ...GENRES.slice(0, 4)];
-
-
-/** Seeded pseudo-random waveform bar heights (deterministic per track ID).
- *  Used as fallback when the backend has not yet stored real waveformData.
- */
-function fallbackWaveformBars(seed: string, count = 28): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return Array.from({ length: count }, (_, i) => {
-    h = (h * 1664525 + 1013904223) >>> 0;
-    const base = (h % 60) + 20; // 20–80%
-    const peak = i % 4 === 0 ? Math.min(base + 20, 95) : base;
-    return peak / 100;
-  });
-}
 
 export default function ExplorePage() {
   const [tracks, setTracks]         = useState<PublicTrack[]>([]);
@@ -331,6 +317,8 @@ export default function ExplorePage() {
               width={160}
               height={32}
               progress={0}
+              barColor={nowPlaying.waveformData ? "var(--text-3)" : waveformColorFromSeed(nowPlaying.id).bar}
+              progressColor={nowPlaying.waveformData ? "var(--accent)" : waveformColorFromSeed(nowPlaying.id).progress}
             />
           </div>
 
@@ -387,6 +375,9 @@ interface TrackCardProps {
 
 function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShare, cardRef }: TrackCardProps) {
   const bars = track.waveformData ?? fallbackWaveformBars(track.id, 32);
+  const colors = track.waveformData
+    ? { bar: "var(--bg-bright)", progress: "var(--accent)" }
+    : waveformColorFromSeed(track.id);
 
   return (
     <article
@@ -409,8 +400,8 @@ function TrackCard({ track, isPlaying, isLiked, isCopied, onPlay, onLike, onShar
             width={280}
             height={64}
             progress={isPlaying ? 0.5 : 0}
-            barColor="var(--bg-bright)"
-            progressColor="var(--accent)"
+            barColor={colors.bar}
+            progressColor={colors.progress}
           />
         </div>
 
