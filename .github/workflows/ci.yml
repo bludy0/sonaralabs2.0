@@ -68,7 +68,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run unit tests
-        run: pnpm --filter "!sonaralabs-frontend" test --if-present
+        run: pnpm --filter "!sonaralabs-frontend" run --if-present test
         env:
           NODE_ENV: test
 
