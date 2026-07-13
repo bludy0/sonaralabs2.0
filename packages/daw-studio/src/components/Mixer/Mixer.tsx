@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useDAWStore }    from '../../store/useDAWStore'
-import { useAudioEngine } from '../../store/useAudioEngine'
+import { useAudioEngine, getTrackAnalyser } from '../../store/useAudioEngine'
+import { getAnalyser as getMasterAnalyser } from '../../engine/context'
 import { C, alpha } from '../../constants'
 import { EffectsPanel } from '../Effects/EffectsPanel'
 
@@ -52,13 +53,24 @@ function ChannelStrip({ trackId, onOpenFX, fxOpen }: {
   const meterRef    = useRef<number>(0)
   const [meterH, setMeterH] = useState(0)
 
-  // Animate fake level meter
+  // Drive the level meter from the *real* per-track AnalyserNode rather than
+  // pretending with Math.random().  Falls back to silence when the track is
+  // muted or has no graph yet.  Smoothing avoids jitter without misrepresenting
+  // the actual signal.
   useEffect(() => {
-    let raf: number
+    let raf = 0
+    const data = new Uint8Array(128)
     function tick() {
-      if (track && !track.muted) {
-        const target = track.volume * 0.85 + Math.random() * track.volume * 0.15
-        meterRef.current = meterRef.current * 0.85 + target * 0.15
+      const analyser = getTrackAnalyser(trackId)
+      if (analyser) {
+        analyser.getByteFrequencyData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) sum += data[i]
+        const avg = sum / data.length / 255      // 0..1 normalised
+        const target = track && !track.muted ? avg * track.volume : 0
+        // Map to a more "meter-like" curve (perceptual loudness ~ sqrt)
+        const shaped = Math.sqrt(target)
+        meterRef.current = meterRef.current * 0.78 + shaped * 0.22
       } else {
         meterRef.current *= 0.9
       }
@@ -67,7 +79,7 @@ function ChannelStrip({ trackId, onOpenFX, fxOpen }: {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [track])
+  }, [trackId, track])
 
   if (!track) return null
 
@@ -299,10 +311,22 @@ function MasterStrip() {
   const [meterH, setMeterH] = useState(0)
 
   useEffect(() => {
-    let raf: number
+    let raf = 0
+    const data = new Uint8Array(128)
     function tick() {
-      const target = masterVolume * 0.7 + Math.random() * masterVolume * 0.2
-      meterRef.current = meterRef.current * 0.85 + target * 0.15
+      // Master meter reads the master analyser on the shared AudioContext.
+      const analyser = getMasterAnalyser()
+      if (analyser) {
+        analyser.getByteFrequencyData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) sum += data[i]
+        const avg = sum / data.length / 255
+        const target = avg * masterVolume
+        const shaped = Math.sqrt(target)
+        meterRef.current = meterRef.current * 0.78 + shaped * 0.22
+      } else {
+        meterRef.current *= 0.9
+      }
       setMeterH(meterRef.current)
       raf = requestAnimationFrame(tick)
     }

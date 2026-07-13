@@ -50,12 +50,26 @@ export function DAWLayout({
 
   const selectedClipId = useDAWStore(s => s.selectedClipId)
   const tracks         = useDAWStore(s => s.tracks)
+  const dirty          = useDAWStore(s => s.dirty)
   const { init }       = useAudioEngine()
   const dragRef        = useRef<{ startY: number; startH: number } | null>(null)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => { const unsub = init(); return () => unsub && unsub() }, [])
   useBufferRehydration()
   useDAWKeyboard()
+
+  // Unsaved-changes prompt: when the project is dirty, ask before tab close /
+  // reload.  Host apps that have their own save flow call `markSaved()` once a
+  // project snapshot is persisted, so the prompt disappears until the next edit.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (!useDAWStore.getState().dirty) return
+      e.preventDefault()
+      e.returnValue = ''   // some browsers require a non-empty string to show
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
 
   const hasMidiClipSelected = tracks.some(
     t => t.type === 'midi' && t.clips.some(c => c.id === selectedClipId)
@@ -118,7 +132,10 @@ export function DAWLayout({
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
         {/* ── Left sidebar (icon rail) ────────────────────────────────── */}
-        <nav style={{
+        <nav
+          role="tablist"
+          aria-label="DAW navigation"
+          style={{
           width:          64,
           flexShrink:     0,
           display:        'flex',
@@ -222,7 +239,10 @@ export function DAWLayout({
               />
 
               {/* Panel header / tabs */}
-              <div style={{
+              <div
+                role="tablist"
+                aria-label="Bottom panel tabs"
+                style={{
                 height:       32,
                 display:      'flex',
                 alignItems:   'stretch',
@@ -234,6 +254,8 @@ export function DAWLayout({
                   <button
                     key={t}
                     onClick={() => handleTabChange(t)}
+                    role="tab"
+                    aria-selected={mainTab === t}
                     title={
                       t === 'MIXER'
                         ? 'Mixer — Adjust volume, panning and send effects for each track'
@@ -308,6 +330,10 @@ function SideNavItem({ item, active, hasContent, onClick }: {
     <button
       onClick={onClick}
       title={item.title}
+      role="tab"
+      aria-label={item.label}
+      aria-selected={active}
+      aria-disabled={!hasContent}
       style={{
         display:        'flex',
         flexDirection:  'column',

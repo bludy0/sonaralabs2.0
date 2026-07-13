@@ -42,6 +42,21 @@ export class EQEffect {
     this.high.gain.value  = s.enabled ? s.highGain  : 0
   }
 
+  /** Smoothly automate a single band's gain via setTargetAtTime — avoids
+   *  zipper noise compared to writing `.value` directly during automation. */
+  setBandGain(
+    band: 'low' | 'loMid' | 'hiMid' | 'high',
+    gain: number,
+    t: number,
+    tau = 0.01,
+  ) {
+    const node = band === 'low'   ? this.low
+              : band === 'loMid' ? this.loMid
+              : band === 'hiMid' ? this.hiMid
+              :                    this.high
+    node.gain.setTargetAtTime(gain, t, tau)
+  }
+
   connect(dest: AudioNode) { this.output.connect(dest) }
   disconnect() { this.output.disconnect() }
 }

@@ -149,32 +149,20 @@ export function detectBPM(buffer: AudioBuffer): number {
 export async function analyzeAudio(audioUrl: string): Promise<AudioAnalysisResult> {
   const res = await fetch(audioUrl);
   const arrayBuffer = await res.arrayBuffer();
-  const audioCtx = new AudioContext();
-  try {
-    const buffer = await audioCtx.decodeAudioData(arrayBuffer);
-    return {
-      bpm: detectBPM(buffer),
-      waveformData: computeWaveformData(buffer),
-      duration: buffer.duration,
-      sampleRate: buffer.sampleRate,
-    };
-  } finally {
-    await audioCtx.close();
-  }
+  return analyzeAudioBuffer(arrayBuffer);
 }
 
 /** Decode an ArrayBuffer directly (avoids double fetch if you already have bytes). */
 export async function analyzeAudioBuffer(arrayBuffer: ArrayBuffer): Promise<AudioAnalysisResult> {
-  const audioCtx = new AudioContext();
-  try {
-    const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    return {
-      bpm: detectBPM(buffer),
-      waveformData: computeWaveformData(buffer),
-      duration: buffer.duration,
-      sampleRate: buffer.sampleRate,
-    };
-  } finally {
-    await audioCtx.close();
-  }
+  // Use the shared singleton AudioContext instead of allocating a fresh one.
+  // Chrome caps the number of concurrent AudioContexts (~6); the previous
+  // implementation leaked contexts when decode failed in a tight loop.
+  const { decodeWithContext } = await import('../engine/context');
+  const buffer = await decodeWithContext(arrayBuffer.slice(0));
+  return {
+    bpm: detectBPM(buffer),
+    waveformData: computeWaveformData(buffer),
+    duration: buffer.duration,
+    sampleRate: buffer.sampleRate,
+  };
 }
