@@ -21,16 +21,15 @@
     "react-dom": "^18.0.0"
   },
   "dependencies": {
-    "lamejs": "^1.2.1",
-    "uuid": "^11.0.5",
+    "@breezystack/lamejs": "^1.2.7",
     "wavesurfer.js": "^7.8.12",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^29.1.1",
     "typescript": "^5.7.3",
     "vite": "^6.4.2",
     "vitest": "^4.1.8"

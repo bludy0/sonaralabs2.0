@@ -1,5 +1,4 @@
-/// <reference path="./lamejs.d.ts" />
-import { Mp3Encoder } from 'lamejs'
+import { Mp3Encoder } from '@breezystack/lamejs'
 
 const CHUNK_SIZE = 1152 // lamejs requires multiples of 1152 samples
 
@@ -13,13 +12,19 @@ function float32ToInt16(float32: Float32Array): Int16Array {
 }
 
 /**
- * Encode an AudioBuffer to MP3 using lamejs.
- * Runs synchronously — for long mixes (>5min) consider offloading to a Worker.
+ * Encode an AudioBuffer to MP3 using @breezystack/lamejs (a maintained fork of
+ * the unmaintained `lamejs` package).  Produces audio/mpeg via a single
+ * concatenated Uint8Array — significantly cheaper than the previous
+ * `number[]` accumulator for long mixes (no per-byte boxing/GC pressure).
+ *
+ * Runs synchronously — for very long mixes (>5min) consider offloading to a
+ * Worker, but the type-array accumulation already keeps peak heap low.
+ *
  * @param buffer  Rendered AudioBuffer
  * @param kbps    Bit rate (default 192)
  */
 export function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Blob {
-  const channels   = Math.min(buffer.numberOfChannels, 2) // lamejs: mono or stereo
+  const channels   = Math.min(buffer.numberOfChannels, 2) // mono or stereo
   const sampleRate = buffer.sampleRate
   const encoder    = new Mp3Encoder(channels, sampleRate, kbps)
 
@@ -29,11 +34,10 @@ export function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Blob {
   const leftInt16  = float32ToInt16(leftF32)
   const rightInt16 = float32ToInt16(rightF32)
 
-  // Accumulate raw bytes in a flat array, then create a single Blob
-  const bytes: number[] = []
-  const pushChunk = (chunk: Int8Array) => {
-    for (let i = 0; i < chunk.length; i++) bytes.push(chunk[i])
-  }
+  // Accumulate encoded chunks as Uint8Array pieces and concatenate once at
+  // the end — far more efficient than pushing every byte into a number[].
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
 
   const total = leftInt16.length
   for (let offset = 0; offset < total; offset += CHUNK_SIZE) {
@@ -41,9 +45,24 @@ export function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Blob {
     const left  = leftInt16.subarray(offset, end)
     const right = channels > 1 ? rightInt16.subarray(offset, end) : undefined
     const chunk = right ? encoder.encodeBuffer(left, right) : encoder.encodeBuffer(left)
-    if (chunk.length > 0) pushChunk(chunk)
+    if (chunk.length > 0) {
+      chunks.push(chunk)
+      totalBytes += chunk.length
+    }
   }
-  pushChunk(encoder.flush())
+  const tail = encoder.flush()
+  if (tail.length > 0) {
+    chunks.push(tail)
+    totalBytes += tail.length
+  }
 
-  return new Blob([new Uint8Array(bytes)], { type: 'audio/mpeg' })
+  // Concatenate in O(n) rather than spreading (which is O(n²) for large lists).
+  const merged = new Uint8Array(totalBytes)
+  let pos = 0
+  for (const c of chunks) {
+    merged.set(c, pos)
+    pos += c.length
+  }
+
+  return new Blob([merged], { type: 'audio/mpeg' })
 }

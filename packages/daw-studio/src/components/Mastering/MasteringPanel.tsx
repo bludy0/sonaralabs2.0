@@ -106,8 +106,9 @@ export function MasteringPanel() {
       const raw: Omit<MasteringSuggestion, 'applied'>[] = json.data?.suggestions ?? []
       setSuggestions(raw.map(s => ({ ...s, applied: false })))
       setAnalyzed(true)
-    } catch (e: any) {
-      setError(e.message ?? 'Analysis failed')
+    } catch (e) {
+      const err = e as Error
+      setError(err.message ?? 'Analysis failed')
     } finally {
       setLoading(false)
     }
