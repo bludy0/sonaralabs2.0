@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useDAWStore }  from '../../store/useDAWStore'
 import { C } from '../../constants'
-import type { EffectChain } from '../../types'
+import type {
+  EffectChain, EQSettings, ReverbSettings, DelaySettings,
+  CompressorSettings, LimiterSettings, ChorusSettings,
+} from '../../types'
 
-type Tab = 'EQ' | 'Reverb' | 'Delay' | 'Comp' | 'Limiter'
-const TABS: Tab[] = ['EQ', 'Reverb', 'Delay', 'Comp', 'Limiter']
+type Tab = 'EQ' | 'Reverb' | 'Delay' | 'Chorus' | 'Comp' | 'Limiter'
+const TABS: Tab[] = ['EQ', 'Reverb', 'Delay', 'Chorus', 'Comp', 'Limiter']
 
 export function EffectsPanel({ trackId, onClose }: { trackId: string; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('EQ')
@@ -71,6 +74,7 @@ export function EffectsPanel({ trackId, onClose }: { trackId: string; onClose: (
         {tab === 'EQ'      && <EQPanel    fx={fx} update={p => updateEffects(trackId, { eq: { ...fx.eq, ...p } })} />}
         {tab === 'Reverb'  && <ReverbPanel fx={fx} update={p => updateEffects(trackId, { reverb: { ...fx.reverb, ...p } })} />}
         {tab === 'Delay'   && <DelayPanel  fx={fx} update={p => updateEffects(trackId, { delay: { ...fx.delay, ...p } })} />}
+        {tab === 'Chorus'  && <ChorusPanel fx={fx} update={p => updateEffects(trackId, { chorus: { ...fx.chorus, ...p } })} />}
         {tab === 'Comp'    && <CompPanel   fx={fx} update={p => updateEffects(trackId, { compressor: { ...fx.compressor, ...p } })} />}
         {tab === 'Limiter' && <LimiterPanel fx={fx} update={p => updateEffects(trackId, { limiter: { ...fx.limiter, ...p } })} />}
       </div>
@@ -82,6 +86,7 @@ function isActive(fx: EffectChain, tab: Tab): boolean {
   if (tab === 'EQ')      return fx.eq.enabled
   if (tab === 'Reverb')  return fx.reverb.enabled
   if (tab === 'Delay')   return fx.delay.enabled
+  if (tab === 'Chorus')  return fx.chorus.enabled
   if (tab === 'Comp')    return fx.compressor.enabled
   if (tab === 'Limiter') return fx.limiter.enabled
   return false
@@ -150,7 +155,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 
 // ── Individual effect panels ──────────────────────────────────────────────────
 
-function EQPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) {
+function EQPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<EQSettings>) => void }) {
   const eq = fx.eq
   return (
     <div>
@@ -175,7 +180,7 @@ function EQPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) 
   )
 }
 
-function ReverbPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) {
+function ReverbPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<ReverbSettings>) => void }) {
   const r = fx.reverb
   return (
     <div>
@@ -192,7 +197,7 @@ function ReverbPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void
   )
 }
 
-function DelayPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) {
+function DelayPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<DelaySettings>) => void }) {
   const d = fx.delay
   return (
     <div>
@@ -213,7 +218,7 @@ function DelayPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void 
   )
 }
 
-function CompPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) {
+function CompPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<CompressorSettings>) => void }) {
   const c = fx.compressor
   return (
     <div>
@@ -238,7 +243,7 @@ function CompPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }
   )
 }
 
-function LimiterPanel({ fx, update }: { fx: EffectChain; update: (p: any) => void }) {
+function LimiterPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<LimiterSettings>) => void }) {
   const l = fx.limiter
   return (
     <div>
@@ -250,6 +255,27 @@ function LimiterPanel({ fx, update }: { fx: EffectChain; update: (p: any) => voi
       <Row label="Release">
         <Slider min={0.01} max={0.5} step={0.01} value={l.release} onChange={v => update({ release: v })} />
         <Val v={l.release * 1000} unit="ms" />
+      </Row>
+    </div>
+  )
+}
+
+function ChorusPanel({ fx, update }: { fx: EffectChain; update: (p: Partial<ChorusSettings>) => void }) {
+  const c = fx.chorus
+  return (
+    <div>
+      <Toggle label="Enable Chorus" checked={c.enabled} onChange={v => update({ enabled: v })} />
+      <Row label="Rate">
+        <Slider min={0.1} max={8} step={0.1} value={c.rate} onChange={v => update({ rate: v })} />
+        <Val v={c.rate} unit="Hz" />
+      </Row>
+      <Row label="Depth">
+        <Slider min={0} max={0.02} step={0.0005} value={c.depth} onChange={v => update({ depth: v })} />
+        <Val v={c.depth * 1000} unit="ms" />
+      </Row>
+      <Row label="Wet">
+        <Slider min={0} max={1} value={c.wet} onChange={v => update({ wet: v })} />
+        <Val v={c.wet} unit="" />
       </Row>
     </div>
   )

@@ -9,7 +9,9 @@ import { useAudioEngine } from '../store/useAudioEngine'
  * Space          — Play / Pause
  * Shift+Space    — Stop
  * L              — Toggle loop
- * S              — Toggle snap
+ * S              — Toggle snap (G also works as an alias)
+ * M              — Mute the selected track
+ * B              — Solo the selected track
  * Delete/Back    — Remove selected clip(s)
  * Ctrl+A         — Select all clips on selected track
  * Ctrl+C         — Copy selected clip(s)
@@ -74,6 +76,28 @@ export function useDAWKeyboard() {
         case 'S':
           if (!ctrl) { e.preventDefault(); store.getState().toggleSnap() }
           break
+        case 'g':
+        case 'G':
+          if (!ctrl) { e.preventDefault(); store.getState().toggleSnap() }
+          break
+
+        // ── Mute / Solo selected track ─────────────────────────────────
+        case 'm':
+        case 'M': {
+          if (ctrl) break
+          const { selectedTrackId, tracks } = store.getState()
+          const t = tracks.find(t => t.id === selectedTrackId)
+          if (t) { e.preventDefault(); store.getState().updateTrack(t.id, { muted: !t.muted }) }
+          break
+        }
+        case 'b':
+        case 'B': {
+          if (ctrl) break
+          const { selectedTrackId, tracks } = store.getState()
+          const t = tracks.find(t => t.id === selectedTrackId)
+          if (t) { e.preventDefault(); store.getState().updateTrack(t.id, { soloed: !t.soloed }) }
+          break
+        }
 
         // ── Select all clips on selected track ────────────────────────────
         case 'a':

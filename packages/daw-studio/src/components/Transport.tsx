@@ -66,8 +66,8 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         ? { startSec: transport.loopStart, endSec: transport.loopEnd }
         : undefined
       const blob = type === 'wav'
-        ? await exportMix(tracks as any, 44100, loopPoints, transport.bpm)
-        : await exportMixMp3(tracks as any, 44100, 192, transport.bpm)
+        ? await exportMix(tracks, 44100, loopPoints, transport.bpm)
+        : await exportMixMp3(tracks, 44100, 192, transport.bpm)
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url
@@ -170,41 +170,16 @@ export function Transport({ activeTab, onTabChange }: TransportProps) {
         height:      32,
         flexShrink:  0,
       }}>
-        {/* BPM — editable. key: dışarıdan (proje yükleme) gelen BPM değişiminde
-            input'u yeniden başlatır; defaultValue tek başına güncellenmezdi. */}
-        <input
-          key={transport.bpm}
-          ref={bpmInputRef}
-          type="number" min={40} max={300}
-          defaultValue={transport.bpm}
-          title="BPM — Beats Per Minute. Sets the tempo of the project (40–300). Press Enter or click away to apply."
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              const v = Math.max(40, Math.min(300, Number((e.target as HTMLInputElement).value)))
-              setBPM(v);
-              (e.target as HTMLInputElement).value = v.toFixed(2)
-            }
-          }}
-          onBlur={e => {
-            const v = Math.max(40, Math.min(300, Number(e.target.value)))
-            setBPM(v)
-            e.target.value = v.toFixed(2)
-          }}
-          style={{
-            width:       72,
-            background:  'none',
-            border:      'none',
-            outline:     'none',
-            fontFamily:  "'Inter', monospace",
-            fontSize:    24,
-            fontWeight:  700,
-            letterSpacing: '-0.04em',
-            color:       C.accent,
-            textShadow:  `0 0 20px ${alpha(C.accent, 38)}`,
-            cursor:      'text',
-            padding:     0,
-            textAlign:   'right',
-          }}
+        {/* BPM — editable controlled input. The previous version used
+            `key={transport.bpm}` to force remounts on external changes which
+            was jarring (loses focus, janks selection).  Using a controlled
+            `value` with a dedicated editing-state hook keeps focus and avoids
+            the remount cycle: the local `editingBpm` is non-null while the user
+            types and snaps back to the store value on blur/enter. */}
+        <BpmInput
+          value={transport.bpm}
+          onChange={setBPM}
+          inputRef={bpmInputRef}
         />
         {/* Time sig — dropdown */}
         <select
@@ -556,3 +531,59 @@ function KeyboardIcon() {
   )
 }
 
+
+// ── BPM input (controlled, focus-aware) ───────────────────────────────────────
+//
+// Replaces the previous `key={transport.bpm}` defaultValue hack. The local
+// `edit` state holds the in-flight string while the user types; we sync the
+// displayed value from the store only when editing is NOT active, so external
+// updates (e.g. project load) refresh the field without stealing focus.
+function BpmInput({ value, onChange, inputRef }: {
+  value: number
+  onChange: (v: number) => void
+  inputRef: React.RefObject<HTMLInputElement>
+}) {
+  const [edit, setEdit] = useState<string | null>(null)
+
+  const shown = edit === null ? value.toFixed(2) : edit
+
+  function commit(raw: string) {
+    const v = Math.max(40, Math.min(300, Number(raw)))
+    const safe = Number.isFinite(v) ? v : value
+    onChange(safe)
+    setEdit(null)
+    if (inputRef.current) inputRef.current.value = safe.toFixed(2)
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="number" min={40} max={300}
+      value={shown}
+      title="BPM — Beats Per Minute. Sets the tempo of the project (40–300). Press Enter or click away to apply."
+      onChange={e => setEdit(e.target.value)}
+      onFocus={e => { setEdit(String(value)); e.target.select() }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { commit((e.target as HTMLInputElement).value); e.currentTarget.blur() }
+        if (e.key === 'Escape') { setEdit(null); e.currentTarget.blur() }
+      }}
+      onBlur={e => commit(e.target.value)}
+      style={{
+        width:         72,
+        background:    'none',
+        border:        'none',
+        outline:       'none',
+        fontFamily:    "'Inter', monospace",
+        fontSize:      24,
+        fontWeight:    700,
+        letterSpacing: '-0.04em',
+        color:         C.accent,
+        textShadow:    `0 0 20px ${alpha(C.accent, 38)}`,
+        cursor:        'text',
+        padding:       0,
+        textAlign:     'left',
+        MozAppearance:  'textfield',
+      }}
+    />
+  )
+}
