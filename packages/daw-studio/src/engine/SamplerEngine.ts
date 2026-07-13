@@ -166,6 +166,13 @@ export class SamplerEngine {
     voice.gain.gain.setValueAtTime(voice.gain.gain.value, t)
     voice.gain.gain.linearRampToValueAtTime(0, t + 0.3)
     try { voice.source.stop(t + 0.32) } catch { /* already ended */ }
+
+    // Disconnect nodes after the release finishes so GC can reclaim them.
+    setTimeout(() => {
+      try { voice.source.disconnect() } catch { /* already */ }
+      try { voice.gain.disconnect() }   catch { /* already */ }
+    }, 350)
+
     this._voices.delete(noteId)
   }
 
@@ -175,6 +182,8 @@ export class SamplerEngine {
         voice.gain.gain.setValueAtTime(0, ctx.currentTime)
         voice.source.stop(ctx.currentTime + 0.01)
       } catch { /* ignore */ }
+      try { voice.source.disconnect() } catch { /* already */ }
+      try { voice.gain.disconnect() }   catch { /* already */ }
     }
     this._voices.clear()
   }

@@ -103,28 +103,14 @@ export async function decodeAudioUrl(url: string, ctx: AudioContext): Promise<Au
 /**
  * Encode an AudioBuffer as a base64 WAV data URL so it can be stored in project JSON.
  * Only use for short synthesized clips (< ~5s). Returns null if the result exceeds maxBytes.
+ *
+ * Synchronous on purpose: the previous implementation attempted to read a Blob
+ * synchronously (impossible in most environments) and always returned null.
+ * It now delegates to {@link audioBufferToDataUrlSync}, which encodes the WAV
+ * bytes directly via DataView without round-tripping through a Blob.
  */
 export function audioBufferToDataUrl(buf: AudioBuffer, maxBytes = 3_000_000): string | null {
-  const blob = audioBufferToWav(buf)
-  // Check size before base64 encoding (blob.size is in bytes)
-  if (blob.size > maxBytes) return null
-  // Synchronous conversion via FileReader is not available in all contexts,
-  // so we use a DataView + btoa approach directly on the WAV ArrayBuffer.
-  const ab = _blobToArrayBufferSync(blob)
-  if (!ab) return null
-  let binary = ''
-  const bytes = new Uint8Array(ab)
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
-  return 'data:audio/wav;base64,' + btoa(binary)
-}
-
-function _blobToArrayBufferSync(blob: Blob): ArrayBuffer | null {
-  // Blobs from audioBufferToWav are created from an ArrayBuffer; reconstruct it.
-  // We can't read a Blob synchronously in all environments, so we read the
-  // underlying ArrayBuffer via the WAV blob's text representation — not possible.
-  // Instead we rebuild the WAV bytes synchronously (same logic as audioBufferToWav).
-  // This is a deliberate trade-off: we re-encode rather than store a Blob reference.
-  return null  // Trigger fallback path below
+  return audioBufferToDataUrlSync(buf, maxBytes)
 }
 
 /**

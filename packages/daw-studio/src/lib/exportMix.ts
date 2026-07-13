@@ -23,17 +23,22 @@ function serializeTracks(
           const buf = c.buffer!
           const channels: Float32Array[] = []
           for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-            const data = new Float32Array(buf.getChannelData(ch))
+            // Copy the underlying PCM so transferring it to the worker
+            // does NOT detach the source AudioBuffer's channels. After
+            // export the project's clips must still be audible.
+            const data = buf.getChannelData(ch).slice()
             channels.push(data)
             transferables.push(data.buffer as ArrayBuffer)
           }
           return {
-            startTime: c.startTime,
-            trimStart: c.trimStart,
-            trimEnd:   c.trimEnd,
-            duration:  c.duration,
-            sampleRate: buf.sampleRate,
+            startTime:   c.startTime,
+            trimStart:   c.trimStart,
+            trimEnd:     c.trimEnd,
+            duration:    c.duration,
+            sampleRate:  buf.sampleRate,
             channels,
+            fadeIn:      c.fadeIn ?? 0,
+            fadeOut:     c.fadeOut ?? 0,
           }
         })
       return {

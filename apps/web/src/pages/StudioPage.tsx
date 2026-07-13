@@ -9,7 +9,7 @@ import { ProjectPanel }  from '../components/studio/ProjectPanel'
 import { SamplesPanel }  from '../components/studio/SamplesPanel'
 import { PluginsPanel }  from '../components/studio/PluginsPanel'
 import { C } from '../theme'
-import { audioBufferToDataUrlSync, dataUrlToAudioBuffer } from '@sonaralabs/daw-studio'
+import { audioBufferToDataUrlSync, dataUrlToAudioBuffer, getAudioContext, decodeWithContext } from '@sonaralabs/daw-studio'
 
 export interface SavedProjectMeta {
   _id:        string
@@ -126,7 +126,11 @@ export default function StudioPage() {
           })
           if (p.tracks?.length) loadTracks(p.tracks)
           setProjectName(p.name)
-        }).catch(() => {})
+        }).catch((err) => {
+          toast('Could not load shared project', 'error')
+          // eslint-disable-next-line no-console
+          console.error('[StudioPage] share load failed:', err)
+        })
       return
     }
 
@@ -145,7 +149,11 @@ export default function StudioPage() {
           if (p.tracks?.length) loadTracks(p.tracks)
           setProjectName(p.name)
           setProjectId(p._id ?? p.id)
-        }).catch(() => {})
+        }).catch((err) => {
+          toast('Could not load project', 'error')
+          // eslint-disable-next-line no-console
+          console.error('[StudioPage] query project load failed:', err)
+        })
     }
 
     // Önceki sayfadan preload (Library / Generate → Studio)
@@ -163,10 +171,10 @@ export default function StudioPage() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   async function addFromUrl({ name, audioUrl }: { name: string; audioUrl: string }) {
     try {
-      const ctx  = new AudioContext()
       const resp = await fetch(audioUrl, { credentials: 'include' })
-      const ab   = await resp.arrayBuffer()
-      const buf  = await ctx.decodeAudioData(ab)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const ab  = await resp.arrayBuffer()
+      const buf = await decodeWithContext(ab)
       addAudioTrack()
       const allTracks = useDAWStore.getState().tracks
       const trackId   = allTracks[allTracks.length - 1]?.id
@@ -175,11 +183,13 @@ export default function StudioPage() {
         addClip(trackId, {
           name, startTime: 0, duration: buf.duration,
           trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0,
-          buffer: buf, url: audioUrl,
+          buffer: buf, url: audioUrl, loadError: false,
         })
       }
-    } catch {
+    } catch (err) {
       toast(`Could not load audio: ${name}`, 'error')
+      // eslint-disable-next-line no-console
+      console.error('[StudioPage.addFromUrl]', err)
     }
   }
 
@@ -233,8 +243,11 @@ export default function StudioPage() {
         setSaveLabel('Saved ✓')
         setTimeout(() => setSaveLabel(null), 2000)
       }
-    } catch {
+    } catch (err) {
       setSaveLabel('Failed ✗')
+      toast('Could not save project', 'error')
+      // eslint-disable-next-line no-console
+      console.error('[StudioPage.handleSave]', err)
       setTimeout(() => setSaveLabel(null), 3000)
     } finally { setSaving(false) }
   }
@@ -262,19 +275,27 @@ export default function StudioPage() {
       setIsDirty(false)
       // Decode synthesized clips stored as data URLs back to AudioBuffers
       if (p.tracks?.length) {
-        const ctx = new AudioContext()
+        const ctx = getAudioContext()
         for (const track of p.tracks) {
           if (track.type !== 'audio') continue
           for (const clip of track.clips ?? []) {
             if (clip.url?.startsWith('data:audio/')) {
               dataUrlToAudioBuffer(clip.url, ctx).then((buf: AudioBuffer) => {
-                useDAWStore.getState().updateClip(track.id, clip.id, { buffer: buf })
-              }).catch(() => {})
+                useDAWStore.getState().updateClip(track.id, clip.id, { buffer: buf, loadError: false })
+              }).catch((err) => {
+                useDAWStore.getState().updateClip(track.id, clip.id, { loadError: true })
+                // eslint-disable-next-line no-console
+                console.error('[StudioPage.handleLoadProject] decode failed:', err)
+              })
             }
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      toast('Could not load project', 'error')
+      // eslint-disable-next-line no-console
+      console.error('[StudioPage.handleLoadProject]', err)
+    }
   }
 
   // ── Yeni proje ──────────────────────────────────────────────────────────
@@ -293,8 +314,14 @@ export default function StudioPage() {
 
   // ── Proje sil ───────────────────────────────────────────────────────────
   async function handleDeleteProject(id: string) {
-    await api.delete(`/api/projects/${id}`)
-    if (id === projectId) handleNewProject(true)
+    try {
+      await api.delete(`/api/projects/${id}`)
+      if (id === projectId) handleNewProject(true)
+    } catch (err) {
+      toast('Could not delete project', 'error')
+      // eslint-disable-next-line no-console
+      console.error('[StudioPage.handleDeleteProject]', err)
+    }
   }
 
   // ── Paylaş ───────────────────────────────────────────────────────────────
@@ -309,7 +336,11 @@ export default function StudioPage() {
         await navigator.clipboard.writeText(`${location.origin}/studio/share/${tok}`)
         setCopied(true); setTimeout(() => setCopied(false), 2500)
       }
-    } catch {}
+    } catch (err) {
+      toast('Could not share project', 'error')
+      // eslint-disable-next-line no-console
+      console.error('[StudioPage.handleShare]', err)
+    }
     finally { setSharing(false) }
   }
 

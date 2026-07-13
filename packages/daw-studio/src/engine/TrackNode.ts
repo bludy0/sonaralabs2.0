@@ -3,6 +3,7 @@ import { ReverbEffect }     from './effects/ReverbEffect'
 import { DelayEffect }      from './effects/DelayEffect'
 import { CompressorEffect } from './effects/CompressorEffect'
 import { LimiterEffect }    from './effects/LimiterEffect'
+import { ChorusEffect }     from './effects/ChorusEffect'
 import type { AudioTrack, MidiTrack, EffectChain, AutomationParam } from '../types'
 
 export class TrackNode {
@@ -16,6 +17,7 @@ export class TrackNode {
   private delay:    DelayEffect
   private comp:     CompressorEffect
   private limiter:  LimiterEffect
+  private chorus:   ChorusEffect
 
   private activeSources = new Map<string, AudioBufferSourceNode>()
 
@@ -34,22 +36,25 @@ export class TrackNode {
     this.eq      = new EQEffect(ctx)
     this.reverb  = new ReverbEffect(ctx)
     this.delay   = new DelayEffect(ctx)
+    this.chorus  = new ChorusEffect(ctx)
     this.comp    = new CompressorEffect(ctx)
     this.limiter = new LimiterEffect(ctx)
 
-    // gain → panner → EQ → reverb → delay → comp → limiter → analyser → dest
+    // gain → panner → EQ → reverb → delay → chorus → comp → limiter → analyser → dest
     this.gain.connect(this.panner)
     this.panner.connect(this.eq.input)
     this.eq.connect(this.reverb.input)
     this.reverb.connect(this.delay.input)
-    this.delay.connect(this.comp.input)
+    this.delay.connect(this.chorus.input)
+    this.chorus.connect(this.comp.input)
     this.comp.connect(this.limiter.input)
     this.limiter.connect(this.analyser)
     this.analyser.connect(destination)
   }
 
-  sync(track: AudioTrack | MidiTrack) {
-    this.gain.gain.value  = track.muted ? 0 : track.volume
+  sync(track: AudioTrack | MidiTrack, hasSolo = false) {
+    const shouldMute = track.muted || (hasSolo && !track.soloed)
+    this.gain.gain.value  = shouldMute ? 0 : track.volume
     this.panner.pan.value = track.pan
     this.applyEffects(track.effects)
   }
@@ -58,6 +63,7 @@ export class TrackNode {
     this.eq.apply(e.eq)
     this.reverb.apply(e.reverb)
     this.delay.apply(e.delay)
+    this.chorus.apply(e.chorus)
     this.comp.apply(e.compressor)
     this.limiter.apply(e.limiter)
   }
@@ -111,6 +117,26 @@ export class TrackNode {
     for (const [id] of this.activeSources) this.stopClip(id)
   }
 
+  /** Tear down the entire per-track audio graph and disconnect all nodes.
+   *  Call this when a track is removed from the project to prevent leaks. */
+  dispose() {
+    this.stopAll()
+    try { this.eq.disconnect() }      catch { /* already disconnected */ }
+    try { this.reverb.disconnect() }  catch { /* already disconnected */ }
+    try { this.delay.disconnect() }   catch { /* already disconnected */ }
+    try { this.chorus.disconnect() }  catch { /* already disconnected */ }
+    try { this.comp.disconnect() }    catch { /* already disconnected */ }
+    try { this.limiter.disconnect() } catch { /* already disconnected */ }
+    try { this.analyser.disconnect() }  catch { /* already disconnected */ }
+    try { this.gain.disconnect() }      catch { /* already disconnected */ }
+    try { this.panner.disconnect() }   catch { /* already disconnected */ }
+  }
+
+  /** Access the analyser for real meter/visualisation reading. */
+  getAnalyser(): AnalyserNode {
+    return this.analyser
+  }
+
   /** Public input for MIDI synth voices — connects before effects chain. */
   get input(): GainNode { return this.gain }
 
@@ -122,36 +148,42 @@ export class TrackNode {
     return max / 255
   }
 
-  /** Apply a single automation param directly to the audio graph (called from RAF loop). */
+  /** Apply a single automation param directly to the audio graph (called from RAF loop).
+   *  Uses setTargetAtTime for smoothing to avoid zipper noise on volume / pan
+   *  changes — previzyon dekanosu ile ".value = x" yerine gearinglenir. */
   setParam(param: AutomationParam, value: number) {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const t = this.ctx.currentTime
+    const tau = 0.01
     switch (param) {
       case 'volume':
-        this.gain.gain.value = Math.max(0, value)
+        this.gain.gain.setTargetAtTime(Math.max(0, value), t, tau)
         break
       case 'pan':
-        this.panner.pan.value = Math.max(-1, Math.min(1, value))
+        this.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, value)), t, tau)
         break
       case 'eq.lowGain':
-        ;(this.eq as any).low.gain.value = value
+        this.eq.setBandGain('low', value, t, tau)
         break
       case 'eq.loMidGain':
-        ;(this.eq as any).loMid.gain.value = value
+        this.eq.setBandGain('loMid', value, t, tau)
         break
       case 'eq.hiMidGain':
-        ;(this.eq as any).hiMid.gain.value = value
+        this.eq.setBandGain('hiMid', value, t, tau)
         break
       case 'eq.highGain':
-        ;(this.eq as any).high.gain.value = value
+        this.eq.setBandGain('high', value, t, tau)
         break
       case 'reverb.wet':
-        ;(this.reverb as any).wet.gain.value = Math.max(0, Math.min(1, value))
+        this.reverb.setWet(value, t, tau)
         break
       case 'delay.wet':
-        ;(this.delay as any).wet.gain.value = Math.max(0, Math.min(1, value))
+        this.delay.setWet(value, t, tau)
+        break
+      case 'chorus.wet':
+        this.chorus.setWet(value, t, tau)
         break
       case 'compressor.threshold':
-        ;(this.comp as any).comp.threshold.value = value
+        this.comp.setThreshold(value, t, tau)
         break
     }
   }

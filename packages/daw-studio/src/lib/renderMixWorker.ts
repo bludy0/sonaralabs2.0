@@ -1,6 +1,9 @@
-import { EQEffect }     from '../engine/effects/EQEffect'
-import { ReverbEffect } from '../engine/effects/ReverbEffect'
-import { DelayEffect }  from '../engine/effects/DelayEffect'
+import { EQEffect }         from '../engine/effects/EQEffect'
+import { ReverbEffect }     from '../engine/effects/ReverbEffect'
+import { DelayEffect }      from '../engine/effects/DelayEffect'
+import { ChorusEffect }     from '../engine/effects/ChorusEffect'
+import { CompressorEffect } from '../engine/effects/CompressorEffect'
+import { LimiterEffect }    from '../engine/effects/LimiterEffect'
 import type { EffectChain, SynthPreset } from '../types'
 
 // ── Audio clip (PCM already extracted on main thread) ────────────────────────
@@ -11,6 +14,8 @@ export interface WorkerClip {
   duration:   number
   sampleRate: number
   channels:   Float32Array[]
+  fadeIn:     number    // seconds of linear fade-in at clip start
+  fadeOut:    number    // seconds of linear fade-out at clip end
 }
 
 // ── MIDI note (serialisable) ──────────────────────────────────────────────────
@@ -157,19 +162,28 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
       const panner = offCtx.createStereoPanner()
       panner.pan.value = track.pan
 
-      const eq     = new EQEffect(offCtx)
-      const reverb = new ReverbEffect(offCtx)
-      const delay  = new DelayEffect(offCtx)
+      const eq       = new EQEffect(offCtx)
+      const reverb   = new ReverbEffect(offCtx)
+      const delay    = new DelayEffect(offCtx)
+      const chorus   = new ChorusEffect(offCtx)
+      const comp     = new CompressorEffect(offCtx)
+      const limiter  = new LimiterEffect(offCtx)
 
       eq.apply(track.effects.eq)
       reverb.apply(track.effects.reverb)
       delay.apply(track.effects.delay)
+      chorus.apply(track.effects.chorus)
+      comp.apply(track.effects.compressor)
+      limiter.apply(track.effects.limiter)
 
       trackGain.connect(panner)
       panner.connect(eq.input)
       eq.connect(reverb.input)
       reverb.connect(delay.input)
-      delay.connect(masterGain)
+      delay.connect(chorus.input)
+      chorus.connect(comp.input)
+      comp.connect(limiter.input)
+      limiter.connect(masterGain)
 
       // ── Audio clips ──────────────────────────────────────────────────────
       for (const clip of track.clips) {
@@ -178,10 +192,32 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
         for (let ch = 0; ch < clip.channels.length; ch++) {
           buf.copyToChannel(new Float32Array(clip.channels[ch]), ch)
         }
-        const src = offCtx.createBufferSource()
-        src.buffer = buf
-        src.connect(trackGain)
-        src.start(clip.startTime, clip.trimStart, (clip.trimEnd || clip.duration) - clip.trimStart)
+        const src      = offCtx.createBufferSource()
+        src.buffer     = buf
+        const playDur  = (clip.trimEnd || clip.duration) - clip.trimStart
+
+        // Per-clip gain for fade in/out (must mirror TrackNode.playClip behaviour)
+        const hasFade  = clip.fadeIn > 0 || clip.fadeOut > 0
+        let destNode:  AudioNode = trackGain
+        if (hasFade) {
+          const clipGain = offCtx.createGain()
+          clipGain.connect(trackGain)
+          destNode = clipGain
+          if (clip.fadeIn > 0) {
+            clipGain.gain.setValueAtTime(0, clip.startTime)
+            clipGain.gain.linearRampToValueAtTime(
+              1, clip.startTime + Math.min(clip.fadeIn, playDur * 0.5),
+            )
+          }
+          if (clip.fadeOut > 0) {
+            const fadeStart = clip.startTime + playDur - Math.min(clip.fadeOut, playDur * 0.5)
+            clipGain.gain.setValueAtTime(1, fadeStart)
+            clipGain.gain.linearRampToValueAtTime(0, clip.startTime + playDur)
+          }
+        }
+
+        src.connect(destNode)
+        src.start(clip.startTime, clip.trimStart, playDur)
       }
 
       // ── MIDI clips ───────────────────────────────────────────────────────
