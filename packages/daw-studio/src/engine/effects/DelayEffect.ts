@@ -38,6 +38,13 @@ export class DelayEffect {
     this.dry.gain.value            = 1 - w * 0.5
   }
 
+  /** Smoothly automate the wet/dry mix. */
+  setWet(value: number, t: number, tau = 0.01) {
+    const w = Math.max(0, Math.min(1, value))
+    this.wet.gain.setTargetAtTime(w, t, tau)
+    this.dry.gain.setTargetAtTime(1 - w * 0.5, t, tau)
+  }
+
   connect(dest: AudioNode) { this.output.connect(dest) }
   disconnect() { this.output.disconnect() }
 }

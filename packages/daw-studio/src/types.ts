@@ -1,9 +1,18 @@
 // ─── Automation ─────────────────────────────────────────────────────────────
 
+/**
+ * Interpolation mode applied to the segment *leaving* a point (i.e. from this
+ * point to the next one).  `linear` (default) matches the previous behaviour;
+ * `step` and `hold` keep the value constant across the segment (useful for
+ * discrete parameter switches); `exp` produces an exponential ease-out curve
+ * (helpful for filter sweeps / volume ramps).
+ */
+export type AutomationCurveMode = 'linear' | 'step' | 'hold' | 'exp'
+
 export type AutomationParam =
   | 'volume' | 'pan'
   | 'eq.lowGain' | 'eq.loMidGain' | 'eq.hiMidGain' | 'eq.highGain'
-  | 'reverb.wet' | 'delay.wet' | 'compressor.threshold'
+  | 'reverb.wet' | 'delay.wet' | 'chorus.wet' | 'compressor.threshold'
 
 export const AUTOMATION_PARAM_RANGES: Record<AutomationParam, [number, number]> = {
   'volume':               [0,   1],
@@ -14,6 +23,7 @@ export const AUTOMATION_PARAM_RANGES: Record<AutomationParam, [number, number]> 
   'eq.highGain':          [-12, 12],
   'reverb.wet':           [0,   1],
   'delay.wet':            [0,   1],
+  'chorus.wet':           [0,   1],
   'compressor.threshold': [-60, 0],
 }
 
@@ -26,6 +36,7 @@ export const AUTOMATION_PARAM_LABELS: Record<AutomationParam, string> = {
   'eq.highGain':          'EQ High',
   'reverb.wet':           'Reverb Wet',
   'delay.wet':            'Delay Wet',
+  'chorus.wet':           'Chorus Wet',
   'compressor.threshold': 'Comp Threshold',
 }
 
@@ -33,6 +44,9 @@ export interface AutomationPoint {
   id:    string
   time:  number   // seconds on timeline
   value: number   // actual value in param range
+  /** Per-point curve mode for the segment from this point to the next.
+   *  Defaults to `linear` when omitted (preserves pre-existing behaviour). */
+  curve?: AutomationCurveMode
 }
 
 export interface AutomationLane {
@@ -81,12 +95,21 @@ export interface LimiterSettings {
   release:   number  // seconds
 }
 
+/** Chorus: short modulated delay for width / motion. */
+export interface ChorusSettings {
+  enabled: boolean
+  rate:    number   // Hz, LFO frequency, 0.1–8
+  depth:   number   // 0–0.02 (delay modulation depth in seconds)
+  wet:     number   // 0–1
+}
+
 export interface EffectChain {
   eq:         EQSettings
   reverb:     ReverbSettings
-  delay:      DelaySettings
+  delay:     DelaySettings
   compressor: CompressorSettings
   limiter:    LimiterSettings
+  chorus:     ChorusSettings
 }
 
 // ─── MIDI ────────────────────────────────────────────────────────────────────
@@ -122,6 +145,8 @@ export interface AudioClip {
   fadeOut:   number        // seconds of fade-out (0 = none)
   buffer:    AudioBuffer | null
   url:       string
+  /** True when the clip's audio could not be fetched/decoded. */
+  loadError?: boolean
 }
 
 export interface MidiClip {
@@ -195,6 +220,7 @@ export function defaultEffectChain(): EffectChain {
     delay:      { enabled: false, time: 0.3, feedback: 0.3, wet: 0.3 },
     compressor: { enabled: false, threshold: -18, ratio: 4, attack: 0.003, release: 0.25, knee: 6 },
     limiter:    { enabled: false, threshold: -1, release: 0.05 },
+    chorus:     { enabled: false, rate: 1.5, depth: 0.005, wet: 0.3 },
   }
 }
 

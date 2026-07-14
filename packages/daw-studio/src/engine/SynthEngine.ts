@@ -61,16 +61,30 @@ export class SynthEngine {
     v.gain.gain.setValueAtTime(v.gain.gain.value, t)
     v.gain.gain.linearRampToValueAtTime(0, t + preset.release)
     v.osc.stop(t + preset.release + 0.01)
+
+    // Disconnect the voice's nodes once the oscillator has definitely stopped,
+    // so AudioNodes are released for GC instead of leaking across the session.
+    const releaseEnd = t + preset.release + 0.05
+    setTimeout(() => {
+      try { v.osc.disconnect() }    catch { /* already */ }
+      try { v.filter.disconnect() } catch { /* already */ }
+      try { v.gain.disconnect() }   catch { /* already */ }
+    }, Math.max(0, (releaseEnd - ctx.currentTime) * 1000))
+
     this.voices.delete(noteId)
   }
 
   stopAll(ctx: AudioContext) {
-    for (const [id, v] of this.voices) {
+    for (const [, v] of this.voices) {
       try {
         v.gain.gain.cancelScheduledValues(ctx.currentTime)
         v.gain.gain.setValueAtTime(0, ctx.currentTime)
         v.osc.stop(ctx.currentTime + 0.01)
       } catch { /* ignore */ }
+      // Immediately release the voice's graph nodes
+      try { v.osc.disconnect() }    catch { /* already */ }
+      try { v.filter.disconnect() } catch { /* already */ }
+      try { v.gain.disconnect() }   catch { /* already */ }
     }
     this.voices.clear()
   }

@@ -15,9 +15,9 @@ const PITCHES   = MAX_PITCH - MIN_PITCH + 1
 
 const KEY_W     = 40
 const ROW_H     = 16
-const BEAT_W    = 60
-const BEATS     = 16
 const VEL_H     = 72    // velocity editor height
+const FALLBACK_BEAT_W = 60
+const FALLBACK_BEATS  = 16
 
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 const isBlack    = (p: number) => [1,3,6,8,10].includes(p % 12)
@@ -36,8 +36,11 @@ export function PianoRoll() {
   const removeMidiNote  = useDAWStore(s => s.removeMidiNote)
   const setInstrument   = useDAWStore(s => s.setInstrument)
   const replaceMidiNotes= useDAWStore(s => s.replaceMidiNotes)
+  const zoom            = useDAWStore(s => s.zoom)
+  const transport       = useDAWStore(s => s.transport)
 
   const dt = useDAWT()
+
   const [snap, setSnap] = useState(0.25)   // beats
   const [showInstPicker, setShowInstPicker] = useState(false)
   const [aiModal, setAiModal]   = useState(false)
@@ -56,6 +59,15 @@ export function PianoRoll() {
     const c = t.clips.find(c => c.id === selectedClipId)
     if (c) { selectedTrack = t as MidiTrack; selectedClip = c; break }
   }
+
+  // Derive pixels-per-beat and the number of beat columns from the selected
+  // clip's own duration (and the visible loop length when present) and the
+  // global zoom. Previously these were hardcoded to 16 beats × 60px, which
+  // broke for any pattern longer than 16 beats and ignored zoom entirely.
+  const clipBeats   = selectedClip ? (selectedClip.loopBeats ?? selectedClip.durationBeats) : FALLBACK_BEATS
+  const secPerBeat  = 60 / transport.bpm
+  const BEAT_W      = selectedClip ? Math.max(20, zoom * secPerBeat) : FALLBACK_BEAT_W
+  const BEATS       = clipBeats
 
   // Preview note: use sampler if loaded, else synth
   const previewNote = useCallback((pitch: number) => {
@@ -252,6 +264,7 @@ export function PianoRoll() {
         color={color}
         gridW={gridW}
         keyW={KEY_W}
+        beatW={BEAT_W}
         updateMidiNote={updateMidiNote}
       />
 
@@ -521,7 +534,7 @@ export function PianoRoll() {
 // ── Velocity Editor ───────────────────────────────────────────────────────────
 
 function VelocityEditor({
-  notes, trackId, clipId, color, gridW, keyW, updateMidiNote,
+  notes, trackId, clipId, color, gridW, keyW, beatW, updateMidiNote,
 }: {
   notes:          MidiNote[]
   trackId:        string
@@ -529,6 +542,7 @@ function VelocityEditor({
   color:          string
   gridW:          number
   keyW:           number
+  beatW:          number
   updateMidiNote: (trackId: string, clipId: string, noteId: string, patch: Partial<Omit<MidiNote,'id'>>) => void
 }) {
   const draggingId = useRef<string | null>(null)
@@ -595,7 +609,7 @@ function VelocityEditor({
           {/* Note velocity bars */}
           {notes.map(n => {
             const barH = Math.max(3, (n.velocity / 127) * VEL_H)
-            const barX = n.startBeat * BEAT_W
+            const barX = n.startBeat * beatW
             return (
               <div
                 key={n.id}

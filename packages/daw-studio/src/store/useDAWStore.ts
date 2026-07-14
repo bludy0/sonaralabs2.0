@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { v4 as uuid } from 'uuid'
+import { subscribeWithSelector } from 'zustand/middleware'
 import {
   DAWTrack, AudioTrack, MidiTrack,
   AudioClip, MidiClip, MidiNote,
@@ -8,6 +8,11 @@ import {
   defaultEffectChain, DEFAULT_SYNTH,
 } from '../types'
 import { TRACK_COLORS, DEFAULTS } from '../constants'
+
+// Use the built-in crypto.randomUUID() instead of the `uuid` package — drops a
+// dependency and matches its behaviour (RFC 4122 v4 UUIDs).  Available in all
+// evergreen browsers and Node ≥ 19.
+const uuid = () => crypto.randomUUID()
 
 // ── Undo / Redo history (outside Zustand — no re-renders) ────────────────────
 
@@ -45,7 +50,10 @@ export function undo() {
   if (!prev) return
   const current = snapshot(useDAWStore.getState())
   _future.push(current)
-  useDAWStore.setState({ tracks: prev.tracks, automationLanes: prev.automationLanes, transport: prev.transport })
+  useDAWStore.setState({
+    tracks: prev.tracks, automationLanes: prev.automationLanes, transport: prev.transport,
+    dirty: true,
+  })
 }
 
 export function redo() {
@@ -53,7 +61,10 @@ export function redo() {
   if (!next) return
   const current = snapshot(useDAWStore.getState())
   _past.push(current)
-  useDAWStore.setState({ tracks: next.tracks, automationLanes: next.automationLanes, transport: next.transport })
+  useDAWStore.setState({
+    tracks: next.tracks, automationLanes: next.automationLanes, transport: next.transport,
+    dirty: true,
+  })
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -145,6 +156,12 @@ interface DAWState {
   loadTracks:    (tracks: DAWTrack[]) => void
   loadTransport: (patch: Partial<TransportState>) => void
   getSaveable:   () => DAWTrack[]
+
+  /** True if the project has unsaved mutations. Drives the beforeunload
+   *  "you have unsaved changes" prompt in the host. */
+  dirty:         boolean
+  /** Mark the project as clean (host calls this immediately after persisting). */
+  markSaved:     () => void
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -198,11 +215,14 @@ const initialTransport: TransportState = {
 
 // ── Zustand store ─────────────────────────────────────────────────────────────
 
-export const useDAWStore = create<DAWState>((set, get) => {
-  /** Wrap set: push history before applying undoable changes. */
+export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) => {
+  /** Wrap set: push history before applying undoable changes.
+   *  Also marks the project as dirty so the host can prompt for unsaved
+   *  changes on close/navigation. */
   function record(fn: (s: DAWState) => Partial<DAWState>) {
     pushHistory(snapshot(get()))
-    set(fn as Parameters<typeof set>[0])
+    const patch = fn(get()) as Partial<DAWState>
+    set({ ...patch, dirty: true })
   }
 
   return {
@@ -215,6 +235,7 @@ export const useDAWStore = create<DAWState>((set, get) => {
     clipboard:       null,
     zoom:            DEFAULTS.PIXELS_PER_SECOND,
     trackHeight:     DEFAULTS.TRACK_HEIGHT,
+    dirty:           false,
 
     // ── Tracks ────────────────────────────────────────────────────────────────
 
@@ -588,11 +609,19 @@ export const useDAWStore = create<DAWState>((set, get) => {
           if (t.id !== trackId || t.type !== 'midi') return t
           return {
             ...t,
-            clips: t.clips.map(c =>
-              c.id === clipId
-                ? { ...c, notes: notes.map(n => ({ ...n, id: uuid() })) }
-                : c
-            ),
+            clips: t.clips.map(c => {
+              if (c.id !== clipId) return c
+              // Preserve stable note IDs across refactor calls where possible:
+              // reuse the clip's existing ID per index so React keys/virtual-
+              // isation that relies on note ids stay alive. New indices get a
+              // fresh uuid; extras beyond the previous count also get a fresh id.
+              const prevIds = c.notes.map(n => n.id)
+              const nextNotes = notes.map((n, i) => ({
+                ...n,
+                id: prevIds[i] ?? uuid(),
+              }))
+              return { ...c, notes: nextNotes }
+            }),
           }
         }),
       })),
@@ -674,14 +703,16 @@ export const useDAWStore = create<DAWState>((set, get) => {
     reset: () => {
       _past.length = 0
       _future.length = 0
-      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null, selectedClipIds: [], clipboard: null })
+      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null, selectedClipIds: [], clipboard: null, dirty: false })
     },
 
-    loadTracks: (tracks) => set({ tracks }),
+    loadTracks: (tracks) => set({ tracks, dirty: false }),
 
     loadTransport: (patch) =>
       set(s => ({ transport: { ...s.transport, ...patch } })),
 
     getSaveable: () => get().tracks,
+
+    markSaved: () => set({ dirty: false }),
   }
-})
+}))

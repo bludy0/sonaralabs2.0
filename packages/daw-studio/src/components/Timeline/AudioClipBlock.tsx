@@ -4,7 +4,7 @@ import { C, alpha }    from '../../constants'
 import type { AudioClip as TAudioClip } from '../../types'
 
 const PAD      = 3
-const HANDLE_W = 6
+const HANDLE_W = 10
 
 // ── Magnetic snap helper ──────────────────────────────────────────────────────
 const SNAP_GRID          = 0.25
@@ -124,7 +124,7 @@ export function AudioClipBlock({
       } else if (type === 'trimL') {
         // Crop from the left: move trimStart and startTime together so the
         // remaining audio stays put on the timeline (right edge anchored).
-        const minTrim = Math.max(0, clip.trimStart - clip.startTime) // startTime can't go < 0
+        const minTrim = 0
         const maxTrim = (clip.trimEnd || clip.duration) - 0.05
         const newTrim = Math.max(minTrim, Math.min(raw, maxTrim))
         const delta   = newTrim - clip.trimStart
@@ -226,15 +226,15 @@ export function AudioClipBlock({
             border: `1.5px solid ${C.bgDeep}`, cursor: 'ew-resize', zIndex: 3 }} />
       )}
       <div onMouseDown={e => startDrag('trimL', e)}
-        style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W,
-          cursor: 'ew-resize', background: selected ? color + '60' : 'transparent',
-          borderRight: selected ? `1px solid ${color}` : 'none', transition: 'background 0.1s' }} />
+        style={{ position: 'absolute', left: 0, top: 14, bottom: 0, width: HANDLE_W,
+          cursor: 'ew-resize', background: selected ? color + '80' : 'transparent',
+          borderRight: selected ? `1px solid ${color}` : 'none', transition: 'background 0.1s', zIndex: 2 }} />
       <div onMouseDown={e => startDrag('move', e)}
         style={{ position: 'absolute', left: HANDLE_W, right: HANDLE_W, top: 0, bottom: 0, cursor: 'grab' }} />
       <div onMouseDown={e => startDrag('trimR', e)}
-        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W,
-          cursor: 'ew-resize', background: selected ? color + '60' : 'transparent',
-          borderLeft: selected ? `1px solid ${color}` : 'none', transition: 'background 0.1s' }} />
+        style={{ position: 'absolute', right: 0, top: 14, bottom: 0, width: HANDLE_W,
+          cursor: 'ew-resize', background: selected ? color + '80' : 'transparent',
+          borderLeft: selected ? `1px solid ${color}` : 'none', transition: 'background 0.1s', zIndex: 2 }} />
       {w > 60 && (
         <div style={{ position: 'absolute', bottom: 3, right: HANDLE_W + 3,
           fontSize: 9, color: color + 'aa', pointerEvents: 'none',

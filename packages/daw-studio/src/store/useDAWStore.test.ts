@@ -162,3 +162,144 @@ describe('undo / redo', () => {
     expect(tracks[1].type).toBe('midi')
   })
 })
+
+// ── Faz 1.5: replaceMidiNotes must preserve note IDs across replacing the
+// note list. Previously every call regenerated a new uuid per note which broke
+// React key stability across refactors (e.g. AI-generated patterns), causing
+// full remounts and lost virtualisation state.
+describe('replaceMidiNotes — ID stability', () => {
+  it(`yeni notes listesinde aynı index'teki not ID'si korunur`, () => {
+    useDAWStore.getState().addMidiTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    useDAWStore.getState().addMidiClip(trackId, {
+      name: 'loop', startTime: 0, durationBeats: 4, loopBeats: undefined, notes: [],
+    }); tick()
+    const clipId = (useDAWStore.getState().tracks[0] as any).clips[0].id
+
+    useDAWStore.getState().addMidiNote(trackId, clipId, { pitch: 60, velocity: 100, startBeat: 0,    durationBeats: 1 }); tick()
+    useDAWStore.getState().addMidiNote(trackId, clipId, { pitch: 62, velocity: 80,  startBeat: 1,    durationBeats: 1 }); tick()
+
+    const clip0 = (useDAWStore.getState().tracks[0] as any).clips[0]
+    const ids0  = clip0.notes.map((n: any) => n.id)
+
+    // Refactor — new array but same index/order
+    useDAWStore.getState().replaceMidiNotes(trackId, clipId, [
+      { pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 },
+      { pitch: 62, velocity: 80,  startBeat: 1, durationBeats: 1 },
+    ]); tick()
+
+    const clip1 = (useDAWStore.getState().tracks[0] as any).clips[0]
+    const ids1  = clip1.notes.map((n: any) => n.id)
+
+    expect(ids0).toEqual(ids1)
+  })
+
+  it(`öncekinden daha uzun notes listesi fazlası için yeni ID üretir`, () => {
+    useDAWStore.getState().addMidiTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    useDAWStore.getState().addMidiClip(trackId, {
+      name: 'loop', startTime: 0, durationBeats: 4, loopBeats: undefined, notes: [],
+    }); tick()
+    const clipId = (useDAWStore.getState().tracks[0] as any).clips[0].id
+
+    useDAWStore.getState().addMidiNote(trackId, clipId, { pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }); tick()
+    const id0 = (useDAWStore.getState().tracks[0] as any).clips[0].notes[0].id
+
+    useDAWStore.getState().replaceMidiNotes(trackId, clipId, [
+      { pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 },
+      { pitch: 64, velocity: 90,  startBeat: 2, durationBeats: 1 },
+    ]); tick()
+
+    const clip = (useDAWStore.getState().tracks[0] as any).clips[0]
+    expect(clip.notes[0].id).toBe(id0)
+    expect(clip.notes[1].id).toBeTruthy()
+    expect(clip.notes[1].id).not.toBe(id0)
+  })
+})
+
+// ── Faz 3.10: project dirty flag drives the unsaved-changes prompt.
+describe('dirty flag', () => {
+  it(`record() eden mutationlar dirty=true yapar`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    expect(useDAWStore.getState().dirty).toBe(true)
+  })
+
+  it(`markSaved() dirty=false yapar, sonraki undo/redo tekrar dirty=true`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    useDAWStore.getState().markSaved()
+    expect(useDAWStore.getState().dirty).toBe(false)
+    // undo yine dirty'yi işaretler
+    undo()
+    expect(useDAWStore.getState().dirty).toBe(true)
+  })
+
+  it(`loadTracks + reset dirty=false bırakır`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    expect(useDAWStore.getState().dirty).toBe(true)
+    useDAWStore.getState().reset()
+    expect(useDAWStore.getState().dirty).toBe(false)
+  })
+})
+
+// ── Faz 5.5: pasteClips köşe durumları
+describe('pasteClips — corner cases', () => {
+  it(`seçim yoksa clipboard boşsa hiçbir şey yapmaz`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    const before = useDAWStore.getState().tracks.length
+    useDAWStore.getState().pasteClips()
+    expect(useDAWStore.getState().tracks.length).toBe(before)
+  })
+
+  it(`clipboard dolu ama seçim boşsa en sona yapışır (fallback anchor)`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    const id = useDAWStore.getState().addClip(trackId, { ...sampleClip, startTime: 0, duration: 2 }); tick()
+    useDAWStore.getState().selectClip(id)
+    useDAWStore.getState().copySelectedClips()
+    useDAWStore.getState().selectClip(null)   // seçimi bırak
+    useDAWStore.getState().pasteClips(); tick()
+    const track = useDAWStore.getState().tracks[0] as AudioTrack
+    expect(track.clips).toHaveLength(2)
+    expect(track.clips[1].startTime).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// ── Faz 5.5: moveSelectedClips commit & selection
+describe('moveSelectedClips + commitSelectedClipsMove', () => {
+  it(`seçili klipleri anchor delta ile taşır ve commit undo'ya girer`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    const idA = useDAWStore.getState().addClip(trackId, { ...sampleClip, startTime: 0, duration: 2 }); tick()
+    const idB = useDAWStore.getState().addClip(trackId, { ...sampleClip, startTime: 4, duration: 2 }); tick()
+    useDAWStore.getState().selectClipsInRect([idA, idB])
+    // Anchor = A → yeni anchor start 2 → delta = 2
+    useDAWStore.getState().moveSelectedClips(idA, 2)
+    let track = useDAWStore.getState().tracks[0] as AudioTrack
+    expect(track.clips[0].startTime).toBe(2)
+    expect(track.clips[1].startTime).toBe(6)
+    useDAWStore.getState().commitSelectedClipsMove(); tick()
+    // commitSelectedClipsMove pushes the moved-state as the undo baseline so the
+    // *drag-then-release* can be undone as one step (matching the live usage in
+    // TrackRow.tsx where mousemove calls moveSelectedClips and mouseup calls
+    // commit). Undo here restores the pre-commit positions (2/6) — they're
+    // unchanged by undo because commit *is* the baseline; we need to undo the
+    // previous clip-add step too to go back to 0/4 (two undos total).
+    undo()                  // undoes commit (no visible change — baseline == state)
+    track = useDAWStore.getState().tracks[0] as AudioTrack
+    expect(track.clips[0].startTime).toBe(2)   // commit baseline restored (== 2/6)
+    undo()                  // undo second clip add
+    track = useDAWStore.getState().tracks[0] as AudioTrack
+    expect(track.clips).toHaveLength(1)
+    expect(track.clips[0].startTime).toBe(0)
+  })
+
+  it(`seçili klipleri eksi delta t=0 sonrasına itemez (clamp)`, () => {
+    useDAWStore.getState().addAudioTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    const id = useDAWStore.getState().addClip(trackId, { ...sampleClip, startTime: 1, duration: 2 }); tick()
+    useDAWStore.getState().selectClipsInRect([id])
+    useDAWStore.getState().moveSelectedClips(id, -10)   // delta = -10 ama min=1 → d=-1
+    const track = useDAWStore.getState().tracks[0] as AudioTrack
+    expect(track.clips[0].startTime).toBe(0)
+  })
+})
