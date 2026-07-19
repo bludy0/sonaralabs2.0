@@ -122,6 +122,16 @@ const generationQueue = new Queue("generation", {
   defaultJobOptions: { attempts: 1, removeOnComplete: 100, removeOnFail: 200 },
 });
 
+const GENERATION_SSE_CHANNEL = "sonaralabs:generation:sse";
+const ssePublisher = createClient({
+  url: REDIS_URL,
+  socket: { reconnectStrategy: (retries) => Math.min(retries * 200, 3_000) },
+});
+const sseSubscriber = ssePublisher.duplicate();
+let generationSseBusReady = false;
+ssePublisher.on("error", (err) => logger.warn("[generation/sse] Redis publisher error", { message: err.message }));
+sseSubscriber.on("error", (err) => logger.warn("[generation/sse] Redis subscriber error", { message: err.message }));
+
 function makeInternalToken(): string {
   return jwt.sign({ sub: "generation-service", role: "user", _internal: true }, INTERNAL_JWT_SECRET!, { expiresIn: "5m" });
 }
@@ -140,7 +150,7 @@ function removeSseConn(userId: string, res: express.Response) {
   if (sseConnections.get(userId)?.size === 0) sseConnections.delete(userId);
 }
 
-function notifyUser(payload: NotifyJobPayload) {
+function broadcastLocal(payload: NotifyJobPayload) {
   const { userId, ...event } = payload;
   const data = `data: ${JSON.stringify({ type: "status", ...event })}\n\n`;
   const conns = sseConnections.get(userId);
@@ -149,6 +159,31 @@ function notifyUser(payload: NotifyJobPayload) {
     try { res.write(data); }
     catch { removeSseConn(userId, res); }
   }
+}
+
+async function notifyUser(payload: NotifyJobPayload) {
+  if (generationSseBusReady && ssePublisher.isReady) {
+    try {
+      await ssePublisher.publish(GENERATION_SSE_CHANNEL, JSON.stringify(payload));
+      return;
+    } catch (err) {
+      logger.warn("[generation/sse] Publish failed; using local fallback", { message: String(err) });
+    }
+  }
+  broadcastLocal(payload);
+}
+
+async function connectGenerationSseBus() {
+  await Promise.all([ssePublisher.connect(), sseSubscriber.connect()]);
+  await sseSubscriber.subscribe(GENERATION_SSE_CHANNEL, (raw) => {
+    try {
+      broadcastLocal(JSON.parse(raw) as NotifyJobPayload);
+    } catch (err) {
+      logger.warn("[generation/sse] Invalid pub/sub payload", { message: String(err) });
+    }
+  });
+  generationSseBusReady = true;
+  logger.info("[generation/sse] Redis pub/sub connected");
 }
 
 // Kredi servisi (auth) çağrıları istek yolundadır; timeout'suz kalırsa auth
@@ -1076,5 +1111,9 @@ mongoose.connect(MONGO_URI!).then(async () => {
   // Audio bucket'ı garantiye al (host dev'de docker init container çalışmaz)
   await ensureAudioBucket().catch(e =>
     logger.warn("[generation] MinIO bucket warning", { message: String(e) }));
+  await connectGenerationSseBus().catch((err) => {
+    generationSseBusReady = false;
+    logger.warn("[generation/sse] Redis pub/sub unavailable; using local SSE only", { message: String(err) });
+  });
   app.listen(PORT, () => logger.info(`[generation] Listening on :${PORT}`));
 }).catch(err => { logger.error("[generation] MongoDB failed", err); process.exit(1); });

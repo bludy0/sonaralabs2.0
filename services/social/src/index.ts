@@ -101,6 +101,14 @@ const feedEventSchema = new mongoose.Schema({
 feedEventSchema.index({ recipientId: 1, createdAt: -1 });
 const FeedEventModel = mongoose.model("FeedEvent", feedEventSchema);
 
+export const socialModels = {
+  Profile,
+  PublicTrackModel,
+  Follow,
+  TrackLike,
+  FeedEventModel,
+};
+
 // ── MINIO ─────────────────────────────────────────────────────────────────────
 const minio = new Minio.Client({
   endPoint:  MINIO_ENDPOINT,
@@ -131,7 +139,11 @@ const redis = createClient({
   url: REDIS_URL,
   socket: { reconnectStrategy: (r) => Math.min(r * 200, 3000) },
 });
+const socialSseSubscriber = redis.duplicate();
+const SOCIAL_SSE_CHANNEL = "sonaralabs:social:sse";
+let socialSseBusReady = false;
 redis.on("error", (err) => logger.warn("[social] Redis error:", { message: String(err) }));
+socialSseSubscriber.on("error", (err) => logger.warn("[social/sse] Redis subscriber error:", { message: String(err) }));
 
 // ── AUTH HELPER ───────────────────────────────────────────────────────────────
 function getPayload(req: Request): InternalJwtPayload {
@@ -196,6 +208,33 @@ function broadcast(userId: string, data: object) {
   }
 }
 
+async function publishSocialEvent(userId: string, data: object) {
+  if (socialSseBusReady && redis.isReady) {
+    try {
+      await redis.publish(SOCIAL_SSE_CHANNEL, JSON.stringify({ userId, data }));
+      return;
+    } catch (err) {
+      logger.warn("[social/sse] Publish failed; using local fallback", { message: String(err) });
+    }
+  }
+  broadcast(userId, data);
+}
+
+async function connectSocialSseBus() {
+  await socialSseSubscriber.connect();
+  await socialSseSubscriber.subscribe(SOCIAL_SSE_CHANNEL, (raw) => {
+    try {
+      const message = JSON.parse(raw) as { userId: string; data: object };
+      if (!message.userId || typeof message.data !== "object") throw new Error("Invalid social SSE event");
+      broadcast(message.userId, message.data);
+    } catch (err) {
+      logger.warn("[social/sse] Invalid pub/sub payload", { message: String(err) });
+    }
+  });
+  socialSseBusReady = true;
+  logger.info("[social/sse] Redis pub/sub connected");
+}
+
 // ── FAN-OUT ───────────────────────────────────────────────────────────────────
 async function fanOutFeedEvent(
   actorId: string, actorUsername: string,
@@ -210,14 +249,15 @@ async function fanOutFeedEvent(
   );
 
   const event = { type: verb, actorId, actorUsername, objectId, objectTitle, createdAt: new Date().toISOString() };
-  for (const id of recipientIds) {
-    broadcast(id, event);
-    redis.del(`feed:${id}`).catch(() => {});
-  }
+  await Promise.all(recipientIds.map(async (id) => {
+    await publishSocialEvent(id, event);
+    await redis.del(`feed:${id}`).catch(() => {});
+  }));
 }
 
 // ── APP ───────────────────────────────────────────────────────────────────────
 const app = new Hono();
+export { app };
 
 app.get("/health", (c) => c.json({
   status: "ok", service: "social",
@@ -677,10 +717,16 @@ async function start() {
   logger.info("[social] MongoDB connected");
   await redis.connect();
   logger.info("[social] Redis connected");
+  await connectSocialSseBus().catch((err) => {
+    socialSseBusReady = false;
+    logger.warn("[social/sse] Redis pub/sub unavailable; using local SSE only", { message: String(err) });
+  });
   await ensureBucket().catch(e => logger.warn("[social] MinIO bucket warning:", { message: String(e) }));
   serve({ fetch: app.fetch, port: parseInt(PORT) }, () =>
     logger.info(`[social] Listening on :${PORT}`)
   );
 }
 
-start().catch(err => { logger.error("[social] Startup failed:", { message: String(err) }); process.exit(1); });
+if (require.main === module) {
+  start().catch(err => { logger.error("[social] Startup failed:", { message: String(err) }); process.exit(1); });
+}
