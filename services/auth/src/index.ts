@@ -46,6 +46,11 @@ if (!MONGO_URI || !ACCESS_JWT_SECRET || !REFRESH_JWT_SECRET || !INTERNAL_JWT_SEC
   logger.error("Missing required env vars");
   process.exit(1);
 }
+const jwtSecrets = [ACCESS_JWT_SECRET, REFRESH_JWT_SECRET, INTERNAL_JWT_SECRET];
+if (new Set(jwtSecrets).size !== jwtSecrets.length || jwtSecrets.some((secret) => secret.length < 32)) {
+  logger.error("JWT secrets must be distinct and at least 32 characters long");
+  process.exit(1);
+}
 
 const REFRESH_TTL_MS        = parseInt(REFRESH_TOKEN_TTL_DAYS) * 24 * 60 * 60 * 1000;
 const VERIFY_TOKEN_TTL_MS   = 24 * 60 * 60 * 1000; // 24 saat
@@ -234,6 +239,10 @@ const userSchema = new mongoose.Schema({
   // ── Brute-force koruması ─────────────────────────────────────────────────
   failedLoginAttempts: { type: Number, default: 0 },
   lockoutUntil:        { type: Date,   select: false },
+  // Stripe checkout session'ları aynı webhook birden fazla teslim edilse bile
+  // kredinin yalnızca bir kez verilmesi için kullanıcı dokümanında atomik olarak
+  // işaretlenir. select:false normal kullanıcı sorgularında bu alanı gizler.
+  creditedStripeSessions: { type: [String], default: [], select: false },
 }, { timestamps: true });
 
 const User = mongoose.model("User", userSchema);
@@ -258,6 +267,10 @@ const creditLogSchema = new mongoose.Schema({
   relatedModel: String,
   balanceAfter: Number,
 }, { timestamps: true });
+creditLogSchema.index(
+  { relatedModel: 1, relatedId: 1 },
+  { unique: true, partialFilterExpression: { relatedModel: "stripe_session" } },
+);
 const CreditLog = mongoose.model("CreditLog", creditLogSchema);
 
 // ── STRIPE ────────────────────────────────────────────────────────────────────
@@ -682,9 +695,7 @@ app.post("/logout", async (req, res) => {
 // POST /logout-all
 app.post("/logout-all", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    const payload = getPayload(req);
     await RefreshToken.deleteMany({ userId: payload.sub });
     res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
     res.clearCookie("refresh_token", { path: "/api/auth", sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
@@ -697,9 +708,7 @@ app.post("/logout-all", async (req, res) => {
 // GET /me
 app.get("/me", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    const payload = getPayload(req);
     const user = await User.findById(payload.sub);
     if (!user) return res.status(404).json({ success: false, error: "User not found" });
     res.json({ success: true, data: {
@@ -715,9 +724,7 @@ app.get("/me", async (req, res) => {
 // PATCH /me/preferences
 app.patch("/me/preferences", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    const payload = getPayload(req);
     const { accentColor } = req.body;
     if (!/^#[0-9a-fA-F]{6}$/.test(accentColor ?? "")) {
       return res.status(400).json({ success: false, error: "accentColor must be a valid hex color" });
@@ -735,9 +742,7 @@ app.patch("/me/preferences", async (req, res) => {
 // PATCH /me/password
 app.patch("/me/password", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    const payload = getPayload(req);
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword)
       return res.status(400).json({ success: false, error: "oldPassword and newPassword required" });
@@ -766,9 +771,7 @@ app.patch("/me/password", async (req, res) => {
 // DELETE /me
 app.delete("/me", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    const payload = jwt.verify(internalToken, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    const payload = getPayload(req);
     await RefreshToken.deleteMany({ userId: payload.sub });
     await User.findByIdAndDelete(payload.sub);
     res.clearCookie("access_token", { sameSite: IS_PROD ? "none" : "strict", secure: IS_PROD });
@@ -782,9 +785,7 @@ app.delete("/me", async (req, res) => {
 // GET /internal/users/:id
 app.get("/internal/users/:id", async (req, res) => {
   try {
-    const internalToken = req.headers["x-internal-token"] as string;
-    if (!internalToken) return res.status(401).json({ success: false, error: "Unauthorized" });
-    jwt.verify(internalToken, INTERNAL_JWT_SECRET!);
+    getPayload(req);
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, data: {
@@ -824,19 +825,41 @@ app.post("/credits/webhook", express.raw({ type: "application/json" }), async (r
       return res.status(400).json({ error: "Invalid session metadata" });
     }
     try {
-      const user = await User.findByIdAndUpdate(
-        userId, { $inc: { creditBalance: credits } }, { new: true, select: "creditBalance" }
+      // Tek doküman üzerindeki koşullu update, transaction/replica-set gerektirmeden
+      // concurrent ve tekrarlı webhook teslimlerinde exactly-once kredi sağlar.
+      const creditedUser = await User.findOneAndUpdate(
+        { _id: userId, creditedStripeSessions: { $ne: session.id } },
+        {
+          $inc: { creditBalance: credits },
+          $addToSet: { creditedStripeSessions: session.id },
+        },
+        { new: true, select: "creditBalance" },
       );
-      if (user) {
-        await CreditLog.create({
+
+      const user = creditedUser ?? await User.findById(userId).select("creditBalance");
+      if (!user) {
+        logger.error("[webhook] User not found", { userId });
+        return res.status(400).json({ error: "Invalid session user" });
+      }
+
+      // Upsert + unique partial index sayesinde audit log da retry-safe'dir.
+      // İlk kredi update'inden sonra process çökerse Stripe retry'si eksik logu
+      // tamamlar fakat bakiyeyi ikinci kez artırmaz.
+      await CreditLog.updateOne(
+        { relatedId: session.id, relatedModel: "stripe_session" },
+        { $setOnInsert: {
           userId, amount: credits, type: "earn",
           reason: `stripe_purchase:${session.metadata?.packageId}`,
           relatedId: session.id, relatedModel: "stripe_session",
           balanceAfter: user.creditBalance,
-        });
+        } },
+        { upsert: true },
+      );
+
+      if (creditedUser) {
         logger.info(`[webhook] Added ${credits} credits to ${userId}`);
       } else {
-        logger.error("[webhook] User not found", { userId });
+        logger.info(`[webhook] Duplicate Stripe session ignored: ${session.id}`);
       }
     } catch (err) {
       logger.error("[webhook] Failed to add credits", { message: String(err) });
@@ -854,7 +877,9 @@ app.get("/credits/packages", (_req, res) => {
 function getPayload(req: express.Request): InternalJwtPayload {
   const token = req.headers["x-internal-token"] as string;
   if (!token) throw new Error("No internal token");
-  return jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+  if (payload._internal !== true) throw new Error("Not an internal token");
+  return payload;
 }
 
 app.get("/credits/balance", async (req, res) => {

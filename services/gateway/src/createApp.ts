@@ -19,6 +19,8 @@ export interface AppDeps {
   accessJwtSecret:   string;
   internalJwtSecret: string;
   clientUrl:         string;
+  /** Number of trusted reverse proxies that append to X-Forwarded-For. */
+  trustedProxyHops:  number;
   incrementRateKey:  (key: string, windowMs: number) => Promise<number>;
   serviceUrls: {
     auth:       string;
@@ -38,9 +40,27 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): Hono {
   const {
-    accessJwtSecret, internalJwtSecret, clientUrl,
+    accessJwtSecret, internalJwtSecret, clientUrl, trustedProxyHops,
     incrementRateKey, serviceUrls, rateLimits,
   } = deps;
+
+  // TRUST_PROXY_HOPS=0 iken yalnızca gerçek socket adresi kullanılır. Proxy
+  // arkasında N trusted hop varsa X-Forwarded-For zinciri sağdan N'inci öğeden
+  // okunur; böylece client'ın zincirin soluna eklediği sahte değerler seçilmez.
+  const getClientIp = (c: Context): string => {
+    if (trustedProxyHops > 0) {
+      const chain = (c.req.header("x-forwarded-for") ?? "")
+        .split(",").map((ip) => ip.trim()).filter(Boolean);
+      const trustedIndex = chain.length - trustedProxyHops;
+      if (trustedIndex >= 0 && chain[trustedIndex]) return chain[trustedIndex];
+    }
+    try {
+      const info = getConnInfo(c);
+      return info.remote.address ?? "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
 
   // ── Rate limiter ──────────────────────────────────────────────────────────
   function rateLimiter(
@@ -48,7 +68,7 @@ export function createApp(deps: AppDeps): Hono {
     keyFn?: (c: Context) => string,
   ): MiddlewareHandler {
     return async (c, next) => {
-      const key   = `${prefix}:${keyFn ? keyFn(c) : (c.req.header("x-forwarded-for") ?? "unknown")}`;
+      const key   = `${prefix}:${keyFn ? keyFn(c) : getClientIp(c)}`;
       const count = await incrementRateKey(key, windowMs);
       if (count > max) {
         c.header("Retry-After", String(Math.ceil(windowMs / 1000)));
@@ -58,16 +78,6 @@ export function createApp(deps: AppDeps): Hono {
     };
   }
 
-  // Gerçek bağlantı IP'sini kullan — X-Forwarded-For header'ı client tarafından
-  // sahte olarak set edilebileceğinden rate-limit key olarak güvenilmez.
-  const getClientIp = (c: Context): string => {
-    try {
-      const info = getConnInfo(c);
-      return info.remote.address ?? "unknown";
-    } catch {
-      return "unknown";
-    }
-  };
   const userKey = (c: Context) => c.get("userId") ?? getClientIp(c);
 
   const generalLimiter    = rateLimiter(rateLimits.general,    60_000,  "rl:general:",    userKey);
@@ -112,9 +122,12 @@ export function createApp(deps: AppDeps): Hono {
     const forward = `${target.origin}${path}${reqUrl.search}`;
 
     const headers = new Headers();
-    for (const h of ["content-type", "accept", "cookie", "x-forwarded-for", "user-agent"]) {
+    for (const h of ["content-type", "accept", "cookie", "user-agent"]) {
       const v = c.req.header(h); if (v) headers.set(h, v);
     }
+    // Downstream servisler client'ın ham header'ını değil gateway'in çözdüğü
+    // normalize edilmiş adresi görür.
+    headers.set("x-forwarded-for", getClientIp(c));
     const internalToken: string | undefined = c.get("internalToken");
     if (internalToken) headers.set(INTERNAL_TOKEN_HEADER, internalToken);
 

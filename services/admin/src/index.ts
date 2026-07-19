@@ -38,6 +38,9 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
     const token = req.headers["x-internal-token"] as string;
     if (!token) return res.status(401).json({ success: false, error: "Unauthorized" });
     const payload = jwt.verify(token, INTERNAL_JWT_SECRET!) as InternalJwtPayload;
+    if (payload._internal !== true) {
+      return res.status(401).json({ success: false, error: "Invalid internal token" });
+    }
     if (payload.role !== "admin") {
       return res.status(403).json({ success: false, error: "Admin access required" });
     }

@@ -1,192 +1,118 @@
-// services/gateway/src/__tests__/rateLimit.test.ts
-//
-// This test requires a running gateway instance.
-// Set GATEWAY_URL to point at it, or start the stack with docker compose first:
-//
-//   docker compose up -d gateway
-//   GATEWAY_URL=http://localhost:3000 npx jest rateLimit
-//
-// Without a running gateway the tests are skipped automatically (see beforeAll).
+// Gateway rate-limit davranışı tamamen process içinde test edilir. Çalışan bir
+// gateway/Redis instance'ına veya paylaşılan sayaç state'ine bağlı değildir.
 
-import request from "supertest";
+import { AppDeps, createApp } from "../createApp";
 
-const GATEWAY_URL = process.env.GATEWAY_URL || "http://localhost:3000";
+const ACCESS_SECRET = "test-access-secret-64chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+const INTERNAL_SECRET = "test-internal-secret-64chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+function makeRateLimitedApp(options: { authLimit?: number; trustedProxyHops?: number } = {}) {
+  const counts = new Map<string, number>();
+  const incrementRateKey = jest.fn(async (key: string) => {
+    const count = (counts.get(key) ?? 0) + 1;
+    counts.set(key, count);
+    return count;
+  });
 
-/** Check that the gateway is reachable before running tests. */
-async function isGatewayUp(): Promise<boolean> {
-  try {
-    const res = await request(GATEWAY_URL).get("/health").timeout(3_000);
-    return res.status === 200;
-  } catch {
-    return false;
-  }
+  const deps: AppDeps = {
+    accessJwtSecret: ACCESS_SECRET,
+    internalJwtSecret: INTERNAL_SECRET,
+    clientUrl: "http://localhost:5173",
+    trustedProxyHops: options.trustedProxyHops ?? 0,
+    incrementRateKey,
+    serviceUrls: {
+      auth: "http://auth:3001",
+      generation: "http://generation:3002",
+      upload: "http://upload:3003",
+      library: "http://library:3004",
+      admin: "http://admin:3006",
+      social: "http://social:3009",
+    },
+    rateLimits: {
+      general: 30,
+      generation: 3,
+      upload: 10,
+      auth: options.authLimit ?? 3,
+    },
+  };
+
+  return { app: createApp(deps), incrementRateKey };
 }
 
-/**
- * Fire `count` POST requests to `path` in series and return the array of
- * HTTP status codes received.
- */
-async function fireRequests(path: string, count: number): Promise<number[]> {
-  const statuses: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const res = await request(GATEWAY_URL)
-      .post(path)
-      .set("Content-Type", "application/json")
-      .send({});
-    statuses.push(res.status);
-  }
-  return statuses;
-}
+describe("Rate limiting — deterministic", () => {
+  beforeEach(() => {
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: false, error: "Bad request" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
 
-// ── suite ─────────────────────────────────────────────────────────────────────
+  afterEach(() => jest.restoreAllMocks());
 
-describe("Rate limiting — integration", () => {
-  let gatewayUp = false;
+  it("auth limitinden sonraki isteği 429 ile reddeder", async () => {
+    const { app } = makeRateLimitedApp({ authLimit: 3 });
 
-  beforeAll(async () => {
-    gatewayUp = await isGatewayUp();
-    if (!gatewayUp) {
-      console.warn(
-        `[rateLimit.test] Gateway not reachable at ${GATEWAY_URL}. ` +
-          "All tests in this suite will be skipped."
-      );
-    }
-  }, 10_000);
-
-  // ── /api/generate — 3 req/min limit ─────────────────────────────────────────
-
-  it("POST /api/generate — first 3 requests are NOT 429", async () => {
-    if (!gatewayUp) return;
-
-    // Without a valid JWT the requests will be 401 (auth check fires before
-    // the per-route limiter). However, the general limiter (30 req/min) fires
-    // AFTER requireAuth, while the generation-specific limiter fires AFTER
-    // requireAuth too.  Requests 1-3 must therefore receive anything but 429.
-    const statuses = await fireRequests("/api/generate", 3);
-    statuses.forEach((status, idx) => {
-      expect(status).not.toBe(429);
-      // Without a token we expect 401 from requireAuth.
-      expect(status).toBe(401);
-      // Confirm index for clarity in failure messages.
-      expect(idx).toBeLessThan(3);
-    });
-  }, 15_000);
-
-  it("POST /api/generate — 4th request returns 429 (limit: 3/min)", async () => {
-    if (!gatewayUp) return;
-
-    // NOTE: This test relies on no other test having consumed the same IP/key
-    // budget within the current rate-limit window. Run in isolation or ensure
-    // the Redis key has been flushed between test runs.
-    //
-    // The first 3 calls may be 401 (auth failure). The 4th must be 429 because
-    // the rate-limit middleware runs before the proxy but after requireAuth.
-    // In the current gateway setup requireAuth is applied globally BEFORE the
-    // generation limiter, so unauthenticated requests hit 401 first and the
-    // limiter only counts authenticated ones.
-    //
-    // If you need to test the raw limiter without auth, use a valid test token:
-    //   const token = process.env.E2E_TEST_TOKEN || "";
-    //   request(GATEWAY_URL).post(path).set("Cookie", `access_token=${token}`)
-    //
-    // Without a token we can still confirm the 429 behaviour by checking that
-    // the 4th response is EITHER 401 or 429 — if 429 the limiter is working.
-    // When a valid token is supplied we assert strictly 429.
-    const statuses = await fireRequests("/api/generate", 4);
-    const lastStatus = statuses[3];
-
-    if (process.env.E2E_TEST_TOKEN) {
-      // Authenticated path — strict assertion.
-      expect(lastStatus).toBe(429);
-    } else {
-      // Unauthenticated path — either 401 or 429 is acceptable; 429 confirms
-      // the limiter fired for the IP-level fallback key.
-      expect([401, 429]).toContain(lastStatus);
-    }
-  }, 15_000);
-
-  it("POST /api/generate — rate-limited response includes Retry-After header", async () => {
-    if (!gatewayUp) return;
-
-    // Keep firing until we receive a 429 or exhaust 10 attempts.
-    let rateLimitedRes: Awaited<ReturnType<typeof request.prototype.post>> | null = null;
-    for (let i = 0; i < 10; i++) {
-      const res = await request(GATEWAY_URL)
-        .post("/api/generate")
-        .set("Content-Type", "application/json")
-        .send({});
-      if (res.status === 429) {
-        rateLimitedRes = res;
-        break;
-      }
+    for (let i = 0; i < 3; i++) {
+      const response = await app.request("/api/auth/login", { method: "POST" });
+      expect(response.status).toBe(400);
     }
 
-    if (!rateLimitedRes) {
-      // Could not trigger rate limit in this window (e.g. previous test already
-      // consumed the budget and the window just reset). Skip gracefully.
-      console.warn("[rateLimit.test] Could not trigger 429 in 10 attempts — skipping header check.");
-      return;
-    }
-
-    // express-rate-limit with `standardHeaders: true` sets RateLimit-Reset
-    // and optionally Retry-After.  Check at least one of them is present.
-    const hasRetryAfter   = "retry-after"    in rateLimitedRes.headers;
-    const hasRateLimitReset = "ratelimit-reset" in rateLimitedRes.headers;
-
-    expect(hasRetryAfter || hasRateLimitReset).toBe(true);
-  }, 20_000);
-
-  // ── /api/auth — 10 req/15 min, IP-based ─────────────────────────────────────
-
-  it("POST /api/auth/login — first 10 requests are NOT 429", async () => {
-    if (!gatewayUp) return;
-
-    const statuses = await fireRequests("/api/auth/login", 10);
-    statuses.forEach((status) => {
-      // Auth routes are unprotected (no requireAuth), but a missing body means
-      // the auth service returns 400 or 422. 429 must NOT appear.
-      expect(status).not.toBe(429);
-    });
-  }, 30_000);
-
-  it("POST /api/auth/login — 11th request returns 429 (limit: 10/15min)", async () => {
-    if (!gatewayUp) return;
-
-    const statuses = await fireRequests("/api/auth/login", 11);
-    const lastStatus = statuses[10];
-    expect(lastStatus).toBe(429);
-  }, 30_000);
-
-  // ── response shape ───────────────────────────────────────────────────────────
-
-  it("429 response body matches expected shape", async () => {
-    if (!gatewayUp) return;
-
-    let rateLimitedRes: Awaited<ReturnType<typeof request.prototype.post>> | null = null;
-
-    // Auth endpoint has no requireAuth guard — easiest to trigger 429 there.
-    for (let i = 0; i < 12; i++) {
-      const res = await request(GATEWAY_URL)
-        .post("/api/auth/login")
-        .set("Content-Type", "application/json")
-        .send({});
-      if (res.status === 429) {
-        rateLimitedRes = res;
-        break;
-      }
-    }
-
-    if (!rateLimitedRes) {
-      console.warn("[rateLimit.test] Could not reach 429 for shape test — skipping.");
-      return;
-    }
-
-    expect(rateLimitedRes.body).toMatchObject({
+    const limited = await app.request("/api/auth/login", { method: "POST" });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("900");
+    await expect(limited.json()).resolves.toMatchObject({
       success: false,
       error: "Too Many Requests",
     });
-    expect(typeof rateLimitedRes.body.message).toBe("string");
-  }, 30_000);
+  });
+
+  it("güvenilmeyen X-Forwarded-For değişiklikleri limiti bypass edemez", async () => {
+    const { app } = makeRateLimitedApp({ authLimit: 2, trustedProxyHops: 0 });
+
+    for (const spoofedIp of ["198.51.100.1", "198.51.100.2"]) {
+      const response = await app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "x-forwarded-for": spoofedIp },
+      });
+      expect(response.status).toBe(400);
+    }
+
+    const limited = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.3" },
+    });
+    expect(limited.status).toBe(429);
+  });
+
+  it("trusted proxy zincirinin soluna sahte IP eklemek limiti bypass edemez", async () => {
+    const { app, incrementRateKey } = makeRateLimitedApp({ authLimit: 2, trustedProxyHops: 1 });
+
+    for (const spoofedIp of ["198.51.100.1", "198.51.100.2", "198.51.100.3"]) {
+      await app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "x-forwarded-for": `${spoofedIp}, 203.0.113.10` },
+      });
+    }
+
+    const keys = incrementRateKey.mock.calls.map(([key]) => key as string);
+    expect(new Set(keys)).toEqual(new Set(["rl:auth::203.0.113.10"]));
+  });
+
+  it("farklı doğrulanmış istemci IP'leri ayrı bütçe kullanır", async () => {
+    const { app } = makeRateLimitedApp({ authLimit: 1, trustedProxyHops: 1 });
+
+    const first = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.10" },
+    });
+    const second = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.11" },
+    });
+
+    expect(first.status).toBe(400);
+    expect(second.status).toBe(400);
+  });
 });

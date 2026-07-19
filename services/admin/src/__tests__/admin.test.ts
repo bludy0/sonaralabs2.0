@@ -42,7 +42,7 @@ describe("Admin role guard", () => {
   function requireAdmin(token: string): boolean {
     try {
       const payload = jwt.verify(token, secret) as any;
-      return payload.role === "admin";
+      return payload._internal === true && payload.role === "admin";
     } catch {
       return false;
     }
@@ -55,6 +55,11 @@ describe("Admin role guard", () => {
 
   it("role:user token reddedilir (403)", () => {
     const token = jwt.sign({ sub: "u1", role: "user", _internal: true }, secret, { expiresIn: "5m" });
+    expect(requireAdmin(token)).toBe(false);
+  });
+
+  it("_internal flag olmayan admin token reddedilir", () => {
+    const token = jwt.sign({ sub: "a1", role: "admin" }, secret, { expiresIn: "5m" });
     expect(requireAdmin(token)).toBe(false);
   });
 

@@ -30,6 +30,7 @@ const userSchema = new mongoose.Schema({
   role:         { type: String, default: "user" },
   creditBalance:{ type: Number, default: 100 },
   storageUsed:  { type: Number, default: 0 },
+  creditedStripeSessions: { type: [String], default: [], select: false },
 }, { timestamps: true });
 
 const refreshSchema = new mongoose.Schema({
@@ -40,14 +41,30 @@ const refreshSchema = new mongoose.Schema({
 
 refreshSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
+const creditLogSchema = new mongoose.Schema({
+  userId:       { type: mongoose.Schema.Types.ObjectId, required: true },
+  amount:       { type: Number, required: true },
+  type:         { type: String, required: true },
+  reason:       String,
+  relatedId:    String,
+  relatedModel: String,
+  balanceAfter: Number,
+}, { timestamps: true });
+creditLogSchema.index(
+  { relatedModel: 1, relatedId: 1 },
+  { unique: true, partialFilterExpression: { relatedModel: "stripe_session" } },
+);
+
 let User: mongoose.Model<any>;
 let RefreshToken: mongoose.Model<any>;
+let CreditLog: mongoose.Model<any>;
 
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   User         = mongoose.model("User",         userSchema);
   RefreshToken = mongoose.model("RefreshToken", refreshSchema);
+  CreditLog    = mongoose.model("CreditLog",    creditLogSchema);
 });
 
 afterAll(async () => {
@@ -58,16 +75,46 @@ afterAll(async () => {
 afterEach(async () => {
   await User.deleteMany({});
   await RefreshToken.deleteMany({});
+  await CreditLog.deleteMany({});
 });
+
+async function grantStripeCredits(userId: mongoose.Types.ObjectId, sessionId: string, credits: number) {
+  const creditedUser = await User.findOneAndUpdate(
+    { _id: userId, creditedStripeSessions: { $ne: sessionId } },
+    {
+      $inc: { creditBalance: credits },
+      $addToSet: { creditedStripeSessions: sessionId },
+    },
+    { new: true, select: "creditBalance" },
+  );
+  const user = creditedUser ?? await User.findById(userId).select("creditBalance");
+  if (!user) throw new Error("User not found");
+
+  await CreditLog.updateOne(
+    { relatedId: sessionId, relatedModel: "stripe_session" },
+    { $setOnInsert: {
+      userId, amount: credits, type: "earn", reason: "stripe_purchase:pack_100",
+      relatedId: sessionId, relatedModel: "stripe_session", balanceAfter: user.creditBalance,
+    } },
+    { upsert: true },
+  );
+  return creditedUser !== null;
+}
 
 // ─── UNIT TESTS ───────────────────────────────────────────────────────────────
 
 describe("JWT middleware — internal token", () => {
   const secret = process.env.INTERNAL_JWT_SECRET!;
 
+  function verifyInternal(token: string) {
+    const payload = jwt.verify(token, secret) as any;
+    if (payload._internal !== true) throw new Error("Not an internal token");
+    return payload;
+  }
+
   it("valid internal token doğrulanır", () => {
     const token = jwt.sign({ sub: "uid123", role: "user", _internal: true }, secret, { expiresIn: "5m" });
-    const payload = jwt.verify(token, secret) as any;
+    const payload = verifyInternal(token);
     expect(payload.sub).toBe("uid123");
     expect(payload._internal).toBe(true);
   });
@@ -75,17 +122,22 @@ describe("JWT middleware — internal token", () => {
   it("süresi dolmuş token hata fırlatır", async () => {
     const token = jwt.sign({ sub: "uid123", _internal: true }, secret, { expiresIn: "1ms" });
     await new Promise(r => setTimeout(r, 5));
-    expect(() => jwt.verify(token, secret)).toThrow(/expired/i);
+    expect(() => verifyInternal(token)).toThrow(/expired/i);
   });
 
   it("yanlış secret hata fırlatır", () => {
     const token = jwt.sign({ sub: "uid123", _internal: true }, "wrong-secret");
-    expect(() => jwt.verify(token, secret)).toThrow(/invalid/i);
+    expect(() => verifyInternal(token)).toThrow(/invalid/i);
   });
 
   it("user JWT ile internal endpoint 401 döner (secret farklı)", () => {
     const userToken = jwt.sign({ sub: "uid123", role: "user" }, process.env.ACCESS_JWT_SECRET!, { expiresIn: "15m" });
     expect(() => jwt.verify(userToken, secret)).toThrow();
+  });
+
+  it("internal secret ile imzalı olsa da _internal flag olmayan token reddedilir", () => {
+    const token = jwt.sign({ sub: "uid123", role: "user" }, secret, { expiresIn: "5m" });
+    expect(() => verifyInternal(token)).toThrow(/internal token/i);
   });
 });
 
@@ -183,6 +235,33 @@ describe("Kredi atomicity", () => {
 
     const final = await User.findById(user._id);
     expect(final!.creditBalance).toBe(0); // en az sıfır — negatife gitme
+  });
+});
+
+describe("Stripe webhook idempotency", () => {
+  it("aynı checkout session tekrar geldiğinde krediyi yalnızca bir kez verir", async () => {
+    const user = await User.create({ email: "stripe@test.com", passwordHash: "x", creditBalance: 10 });
+
+    expect(await grantStripeCredits(user._id, "cs_same", 100)).toBe(true);
+    expect(await grantStripeCredits(user._id, "cs_same", 100)).toBe(false);
+
+    const final = await User.findById(user._id).select("+creditedStripeSessions");
+    expect(final!.creditBalance).toBe(110);
+    expect(final!.creditedStripeSessions).toEqual(["cs_same"]);
+    expect(await CreditLog.countDocuments({ relatedId: "cs_same" })).toBe(1);
+  });
+
+  it("eşzamanlı duplicate teslimlerde yalnızca bir update başarılı olur", async () => {
+    const user = await User.create({ email: "stripe-race@test.com", passwordHash: "x", creditBalance: 0 });
+
+    const results = await Promise.all([
+      grantStripeCredits(user._id, "cs_race", 100),
+      grantStripeCredits(user._id, "cs_race", 100),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect((await User.findById(user._id))!.creditBalance).toBe(100);
+    expect(await CreditLog.countDocuments({ relatedId: "cs_race" })).toBe(1);
   });
 });
 

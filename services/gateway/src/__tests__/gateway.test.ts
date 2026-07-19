@@ -36,6 +36,7 @@ function makeTestApp(overrides: Partial<AppDeps> = {}) {
     accessJwtSecret:   ACCESS_JWT_SECRET,
     internalJwtSecret: INTERNAL_JWT_SECRET,
     clientUrl:         "http://localhost:5173",
+    trustedProxyHops:  0,
     incrementRateKey:  jest.fn().mockResolvedValue(1), // always count=1, never rate-limited
     serviceUrls: {
       auth:         "http://auth:3001",
@@ -325,6 +326,33 @@ describe("HTTP — rate limit (429)", () => {
     });
     const res = await app.request("/api/auth/login", { method: "POST" });
     expect(res.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("proxy güvenilmiyorsa client X-Forwarded-For değeri rate-limit key'ine girmez", async () => {
+    const incrementRateKey = jest.fn().mockResolvedValue(1);
+    const app = makeTestApp({ incrementRateKey, trustedProxyHops: 0 });
+
+    await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.77" },
+    });
+
+    const key = incrementRateKey.mock.calls[0][0] as string;
+    expect(key).not.toContain("198.51.100.77");
+  });
+
+  it("trusted proxy zincirinde sağdan yapılandırılmış hop'u seçer", async () => {
+    const incrementRateKey = jest.fn().mockResolvedValue(1);
+    const app = makeTestApp({ incrementRateKey, trustedProxyHops: 1 });
+
+    await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.250, 203.0.113.9" },
+    });
+
+    const key = incrementRateKey.mock.calls[0][0] as string;
+    expect(key).toContain("203.0.113.9");
+    expect(key).not.toContain("198.51.100.250");
   });
 });
 
