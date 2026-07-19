@@ -50,14 +50,14 @@ Tailwind + Zustand · MongoDB (Mongoose) · Redis + BullMQ · Stripe · Playwrig
 
 ```
 sonaralabs2.0/
-├── apps/web/             # React + Vite frontend (Vercel'e deploy)
+├── apps/web/             # React + Vite frontend (Railway web servisi)
 ├── packages/
 │   ├── types/            # @sonaralabs/types — paylaşılan tipler
 │   └── daw-studio/       # @sonaralabs/daw-studio — tarayıcı içi DAW
 ├── services/
 │   ├── gateway/          # :3000 — tüm /api/* tek giriş (Hono)
 │   ├── auth/             # :3001 — auth + kredi + Stripe + email
-│   ├── generation/       # :3002 — AI üretim + BullMQ + SSE
+│   ├── generation/       # :3002 — AI üretim + BullMQ + Redis Pub/Sub SSE
 │   ├── upload/           # :3003 — ses yükleme + MinIO + kota
 │   ├── library/          # :3004 — kütüphane + koleksiyon + DAW projeleri
 │   ├── admin/            # :3006 — salt-okuma istatistik paneli
@@ -122,14 +122,13 @@ ayağa kaldırır, bağımlılıkları kurar (`pnpm install`), tüm servisleri +
 2. **`/internal/*` dışarıya kapalı:** Gateway, path'in herhangi bir segmentinde `internal` geçen isteği 403'ler.
 3. **Collection sahipliği:** Her servis yalnızca kendi MongoDB collection'larına yazar (admin istisna — salt-okuma).
 4. **Atomik işlemler:** Kredi harcama ve storage kotası tek `findOneAndUpdate` ile.
-5. **Stripe webhook ham body ister** (`express.raw()`).
+5. **Stripe webhook ham body ister** (`express.raw()`); checkout session atomik/idempotent işlenir.
 
 ---
 
 ## Deploy
 
-- **Frontend** → Vercel (dashboard'dan manuel ayar)
-- **Backend** → Render (her servis dashboard'dan manuel kurulur)
+- **Frontend + backend** → Railway (CI, `main` push sonrası otomatik)
 - **Veritabanı** → MongoDB Atlas · **Depolama** → Backblaze B2
 
 Ayrıntılar için → [`DEPLOY.md`](DEPLOY.md)

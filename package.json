@@ -11,7 +11,7 @@
     "stop": "bash scripts/stop.sh",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
-    "lint": "turbo lint",
+    "lint": "eslint .",
     "clean": "turbo clean",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -19,13 +19,18 @@
     "demo:clean": "bash scripts/clean-demo.sh"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.49.1",
     "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^2.4.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "mongoose": "^8.23.0",
     "serve": "^14.2.4",
     "tsx": "^4.21.0",
     "turbo": "^2.3.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.64.0"
   }
 }

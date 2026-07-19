@@ -15,7 +15,29 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  # ── 1. Typecheck (tüm servisler + frontend + packages) ─────────────────────
+  # ── 1. Lint ────────────────────────────────────────────────────────────────
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+  # ── 2. Typecheck (tüm servisler + frontend + packages) ─────────────────────
   typecheck:
     name: TypeScript
     runs-on: ubuntu-latest
@@ -34,24 +56,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck — packages/types
-        run: pnpm --filter "@sonaralabs/types" exec tsc --noEmit
+      - name: Typecheck all workspaces
+        run: pnpm typecheck
 
-      - name: Typecheck — all services
-        run: |
-          for svc in services/*/; do
-            echo "=== $svc ==="
-            pnpm --filter "sonaralabs-$(basename $svc)" exec tsc --noEmit
-          done
-
-      - name: Typecheck — frontend
-        run: pnpm --filter "sonaralabs-frontend" exec tsc --noEmit
-
-  # ── 2. Unit tests (her servis kendi testini çalıştırır) ────────────────────
+  # ── 3. Unit tests (her servis kendi testini çalıştırır) ────────────────────
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: typecheck
+    needs: [lint, typecheck]
     steps:
       - uses: actions/checkout@v4
 
@@ -72,11 +84,11 @@ jobs:
         env:
           NODE_ENV: test
 
-  # ── 3. Build (Docker images) ───────────────────────────────────────────────
+  # ── 4. Build (Docker images) ───────────────────────────────────────────────
   build:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: typecheck
+    needs: [lint, typecheck]
     strategy:
       fail-fast: false
       matrix:
@@ -104,11 +116,11 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           tags: sonaralabs/${{ matrix.service }}:ci
 
-  # ── 4. E2E smoke tests ─────────────────────────────────────────────────────
+  # ── 5. E2E smoke tests ─────────────────────────────────────────────────────
   e2e:
     name: E2E Smoke Tests
     runs-on: ubuntu-latest
-    needs: [typecheck]
+    needs: [lint, typecheck]
     timeout-minutes: 15
 
     env:
@@ -185,7 +197,7 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  # ── 5. Deploy to Railway (push to main only, all checks must pass) ───────────
+  # ── 6. Deploy to Railway (push to main only, all checks must pass) ───────────
   deploy:
     name: Deploy → Railway
     runs-on: ubuntu-latest
@@ -202,26 +214,28 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
+          set -euo pipefail
           for svc in gateway auth generation upload library admin social; do
             echo "=== Deploying $svc ==="
-            railway redeploy --service "$svc" --yes || echo "WARN: $svc redeploy failed (check Railway dashboard)"
+            railway redeploy --service "$svc" --yes
           done
 
       - name: Deploy frontend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway redeploy --service "web" --yes || echo "WARN: web redeploy failed"
+        run: railway redeploy --service "web" --yes
 
-  # ── 6. Notify (push to main only) ─────────────────────────────────────────
+  # ── 7. Notify (push to main only) ─────────────────────────────────────────
   notify:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [typecheck, unit-tests, e2e, deploy]
+    needs: [lint, typecheck, unit-tests, e2e, deploy]
     if: always() && github.ref == 'refs/heads/main'
     steps:
       - name: Print result
         run: |
           echo "TypeScript : ${{ needs.typecheck.result }}"
+          echo "ESLint     : ${{ needs.lint.result }}"
           echo "Unit tests : ${{ needs.unit-tests.result }}"
           echo "E2E        : ${{ needs.e2e.result }}"
           echo "Deploy     : ${{ needs.deploy.result }}"

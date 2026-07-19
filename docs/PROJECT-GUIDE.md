@@ -44,11 +44,11 @@ sonaralabs2.0/
 │   ├── types/                # @sonaralabs/types — tüm servislerin paylaştığı tipler
 │   └── daw-studio/           # @sonaralabs/daw-studio — tarayıcı içi DAW (React paketi)
 ├── apps/
-│   └── web/                  # React 18 + Vite frontend (Vercel'e deploy edilir)
+│   └── web/                  # React 18 + Vite frontend (Railway web servisi)
 ├── services/
 │   ├── gateway/              # :3000 — Hono, tüm /api/* tek giriş
 │   ├── auth/                 # :3001 — auth + KREDİ + Stripe + email (Express)
-│   ├── generation/           # :3002 — AI üretim + BullMQ + SSE + DAW yardımcıları (Express)
+│   ├── generation/           # :3002 — AI üretim + BullMQ + Redis Pub/Sub SSE + DAW yardımcıları (Express)
 │   ├── upload/               # :3003 — ses yükleme + MinIO + kota (Express)
 │   ├── library/              # :3004 — kütüphane + koleksiyon + DAW projeleri (Express)
 │   ├── admin/                # :3006 — salt-okuma istatistik paneli (Express)
@@ -116,7 +116,7 @@ engeller — **IDOR koruması** (en son commit'te eklendi).
 
 ### 4.3 Cookie'ler
 - `access_token` (15dk) ve `refresh_token` (7gün) — ikisi de `httpOnly`
-- Prod'da `secure: true` + `sameSite: "none"` (Vercel↔Render cross-domain için)
+- Prod'da `secure: true` + `sameSite: "none"` (web↔gateway farklı domain ise)
 - Dev'de `secure: false` + `sameSite: "strict"`
 - `refresh_token` cookie `path: /api/auth` ile sınırlı
 
@@ -129,8 +129,10 @@ engeller — **IDOR koruması** (en son commit'te eklendi).
 | /api/auth/* (public) | 10 | 15 dk | gerçek bağlantı IP'si |
 | POST /api/generate/export(/file) | 3 | 1 dk | userId |
 
-IP, `getConnInfo` ile gerçek soket adresinden alınır — `X-Forwarded-For`
-client tarafından sahte set edilebilir, rate-limit key olarak kullanılmaz (VULN-06).
+IP, local/doğrudan bağlantıda `getConnInfo` ile gerçek soketten alınır. Production'da
+`TRUST_PROXY_HOPS` kadar trusted proxy varsa `X-Forwarded-For` zinciri sağdan okunur;
+client'ın zincirin soluna eklediği sahte değer rate-limit key olamaz. Redis kesilirse
+gateway tamamen limitsiz kalmak yerine instance-içi fallback sayaç kullanır.
 
 ### 4.5 Diğer önemli korumalar
 - **Brute-force:** 5 başarısız login → 15 dk hesap kilidi (`lockoutUntil`)
@@ -174,7 +176,7 @@ Kredi (eski credit servisi):
 - `GET /credits/balance`, `GET /credits/history` (sayfalı)
 - `POST /credits/spend` (atomik `findOneAndUpdate` + `$gte` — race-condition'sız), `POST /credits/earn`
 - `POST /credits/purchase` → Stripe Checkout session
-- `POST /credits/webhook` → Stripe imza doğrulama (**raw body** gerekir — global JSON parser bu path'i atlar)
+- `POST /credits/webhook` → Stripe imza doğrulama (**raw body**); checkout session ID atomik/idempotent işlenir
 - `GET /credits/packages`, `GET /internal/credit-logs`
 
 Kredi paketleri: `pack_100` ($4.99), `pack_500` ($19.99), `pack_1200` ($39.99).
@@ -198,7 +200,7 @@ email onayı login için **zorunlu** olur (`EMAIL_ENABLED`).
 - `POST /:id/retry` → başarısız üretimi yarı kredi ile tekrar (atomik status geçişi)
 - `PATCH /:id/analysis` → frontend'in hesapladığı `bpm`, `waveformData` (max 2000 eleman) ve isteğe bağlı `key`/`scale` güncellemesi
 - `DELETE /:id` → kendi üretimini sil (aktif job silinemez)
-- `GET /stream` → **SSE** (gateway `/api/notify/stream` → buraya proxy)
+- `GET /stream` → **SSE** (gateway `/api/notify/stream` → buraya proxy). Instance'lar Redis Pub/Sub üzerinden olay paylaşır; Redis bus hazır değilse local fallback kullanılır.
 - internal: `GET/DELETE /internal/generations`, `PATCH /internal/generations/:id/favorite`
 
 **Provider Pattern** (`providers/`): `IMusicProvider` arayüzü, `Map`'te kayıt.
@@ -252,7 +254,7 @@ Tüm collection'ları `strict:false` salt-okuma model ile okur.
 - Track: `POST /tracks` (yayınla — username **profilden** alınır, client'a güvenilmez, VULN-11), `GET /tracks` (explore, filtre), `GET/DELETE /tracks/:id`, `POST /tracks/:id/like` (toggle, E11000 ile)
 - Takip: `POST /follow/:userId` (toggle), `GET /followers`, `/following`, `GET /follow/:userId/status`
 - Feed: `GET /feed` (Redis 15dk cache), `GET /my-tracks`
-- `GET /sse` → sosyal olaylar SSE (follow/like/publish fan-out)
+- `GET /sse` → sosyal olaylar SSE (follow/like/publish fan-out); yatay ölçeklemede Redis Pub/Sub tüm instance'lara dağıtır
 
 ---
 
@@ -324,7 +326,6 @@ Tarayıcıda çalışan tam bir **çok kanallı DAW**, React paketi olarak `apps
 | mongo | 27017 | dev only — prod'da kapalı |
 | redis | 6379 | dev only — prod'da kapalı, `--requirepass` |
 | minio | 9000 (S3), 9001 (konsol) | prod'da B2'ye geçilir |
-| postgres | 5432 | **kullanılmıyor** — compose'da kalmış ölü servis |
 
 auth/generation/upload/library/admin/social portları host'a bağlanmaz (Docker network içi).
 
@@ -340,6 +341,7 @@ STABLE_AUDIO_SPACE_URL (opsiyonel override, varsayılan stabilityai/stable-audio
 STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
 SMTP_HOST/_PORT/_SECURE/_USER/_PASS  EMAIL_FROM  APP_URL
 CLIENT_URL / FRONTEND_URL            # CORS + redirect güvenliği
+TRUST_PROXY_HOPS=1                    # Railway gateway reverse proxy hop sayısı
 INITIAL_CREDIT_BALANCE=100  JOB_TIMEOUT_MS=300000
 RATE_LIMIT_GENERAL/_GENERATION/_UPLOAD/_AUTH
 VITE_API_BASE_URL (frontend)  VITE_SENTRY_DSN
@@ -380,8 +382,8 @@ Gateway'in ayrıca `rateLimit.test.ts`'i var.
 
 ## 11. Deploy
 
-- **Frontend → Vercel:** dashboard'dan manuel ayar (blueprint dosyası yok); build `apps/web/dist`, `/api/*` → Render gateway'e proxy, `/*` → SPA. Env: `VITE_API_BASE_URL`.
-- **Backend → Render:** her servis dashboard'dan manuel kurulur (blueprint dosyası yok), 7 web servis (gateway, auth, generation, upload, library, admin, social). Her serviste env vars dashboard'dan girilir.
+- **Frontend + backend → Railway:** `.github/workflows/ci.yml`, `main` push sonrasında lint/typecheck/test/build/E2E kapılarından geçerek `web`, gateway ve 6 downstream servisi deploy eder.
+- Yalnızca `web` ve `gateway` public olmalı; downstream servisler Railway private network'te kalır.
 - **DB:** MongoDB Atlas. **Cache/Queue:** Redis. **Storage:** Backblaze B2 (MinIO SDK uyumlu).
 - **Email:** Resend (SMTP). Ayrıntı: `DEPLOY.md`.
 
