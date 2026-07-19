@@ -147,6 +147,11 @@ interface DAWState {
   setZoom: (z: number) => void
   setTrackHeight: (h: number) => void
 
+  // Timeline length — manuel uzatma (saniye). Kullanıcı sağ kenardan
+  // sürükleyerek timeline'ı uzatır. 0 = otomatik (clip'lerden hesapla).
+  timelineLength: number
+  setTimelineLength: (s: number) => void
+
   // UI (kalıcı değil, undo'ya girmez)
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
@@ -235,6 +240,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
     clipboard:       null,
     zoom:            DEFAULTS.PIXELS_PER_SECOND,
     trackHeight:     DEFAULTS.TRACK_HEIGHT,
+    timelineLength:  0,    // 0 = otomatik (clip'lerden hesapla)
     dirty:           false,
 
     // ── Tracks ────────────────────────────────────────────────────────────────
@@ -692,6 +698,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
 
     setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
     setTrackHeight: (h) => set({ trackHeight: Math.max(DEFAULTS.MIN_TRACK_HEIGHT, Math.min(DEFAULTS.MAX_TRACK_HEIGHT, Math.round(h))) }),
+    setTimelineLength: (s) => set({ timelineLength: Math.max(0, s) }),
 
     // ── UI ────────────────────────────────────────────────────────────────────
 
@@ -703,7 +710,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
     reset: () => {
       _past.length = 0
       _future.length = 0
-      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null, selectedClipIds: [], clipboard: null, dirty: false })
+      set({ tracks: [], automationLanes: [], transport: initialTransport, selectedTrackId: null, selectedClipId: null, selectedClipIds: [], clipboard: null, timelineLength: 0, dirty: false })
     },
 
     loadTracks: (tracks) => set({ tracks, dirty: false }),

@@ -129,15 +129,9 @@ export function TrackRow({ track, zoom }: Props) {
           onMove={(s)      => useDAWStore.getState().updateMidiClip(track.id, clip.id, { startTime: Math.max(0, s) })}
           onExtend={(b)    => {
             const nextDur = Math.max(0.5, b)
-            const ratio   = nextDur / clip.durationBeats
             useDAWStore.getState().updateMidiClip(track.id, clip.id, {
               durationBeats: nextDur,
               loopBeats: clip.loopBeats !== undefined ? Math.max(nextDur, clip.loopBeats) : undefined,
-              notes: clip.notes.map(n => ({
-                ...n,
-                startBeat: n.startBeat * ratio,
-                durationBeats: Math.max(0.125, n.durationBeats * ratio),
-              })),
             })
           }}
           onLoop={(lb)     => useDAWStore.getState().updateMidiClip(track.id, clip.id, {
