@@ -39,6 +39,66 @@ export function Mixer() {
   )
 }
 
+export function VerticalFaderInput({ value, label, onChange }: {
+  value: number
+  label: string
+  onChange: (value: number) => void
+}) {
+  function updateFromClientY(input: HTMLInputElement, clientY: number) {
+    const rect = input.getBoundingClientRect()
+    if (rect.height <= 0) return
+    const raw = 1 - (clientY - rect.top) / rect.height
+    const clamped = Math.max(0, Math.min(1, raw))
+    onChange(Math.round(clamped * 100) / 100)
+  }
+
+  return (
+    <input
+      type="range"
+      min={0}
+      max={1}
+      step={0.01}
+      value={value}
+      aria-label={label}
+      aria-orientation="vertical"
+      onClick={e => e.stopPropagation()}
+      onChange={e => onChange(parseFloat(e.target.value))}
+      onMouseDown={e => {
+        e.preventDefault()
+        e.stopPropagation()
+        const input = e.currentTarget
+        input.focus({ preventScroll: true })
+        updateFromClientY(input, e.clientY)
+
+        const handleMove = (event: MouseEvent) => {
+          event.preventDefault()
+          updateFromClientY(input, event.clientY)
+        }
+        const handleUp = (event: MouseEvent) => {
+          updateFromClientY(input, event.clientY)
+          window.removeEventListener('mousemove', handleMove)
+          window.removeEventListener('mouseup', handleUp)
+        }
+
+        window.addEventListener('mousemove', handleMove)
+        window.addEventListener('mouseup', handleUp)
+      }}
+      style={{
+        position:   'absolute',
+        inset:      '0 auto 0 50%',
+        transform:  'translateX(-50%)',
+        width:      40,
+        height:     '100%',
+        writingMode: 'vertical-lr',
+        direction:  'rtl',
+        opacity:    0,
+        cursor:     'pointer',
+        zIndex:     3,
+      }}
+    />
+  )
+}
+
 // ── Channel strip ──────────────────────────────────────────────────────────────
 
 function ChannelStrip({ trackId, onOpenFX, fxOpen }: {
@@ -212,20 +272,10 @@ function ChannelStrip({ trackId, onOpenFX, fxOpen }: {
             </div>
           </div>
           {/* Hidden range input over fader */}
-          <input
-            type="range" min={0} max={1} step={0.01}
+          <VerticalFaderInput
             value={track.volume}
-            onClick={e => e.stopPropagation()}
-            onChange={e => updateTrack(trackId, { volume: parseFloat(e.target.value) })}
-            style={{
-              position:   'absolute',
-              top: 0, bottom: 0, left: '50%',
-              transform:  'translateX(-50%) rotate(-90deg)',
-              width:      '100%',
-              height:     40,
-              opacity:    0,
-              cursor:     'pointer',
-            }}
+            label={`${track.name} volume`}
+            onChange={volume => updateTrack(trackId, { volume })}
           />
         </div>
 
@@ -359,12 +409,6 @@ function MasterStrip() {
         MASTER
       </div>
 
-      {/* Pan knob placeholder */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 6, gap: 2 }}>
-        <PanKnob value={0} color={C.accent} onChange={() => {}} />
-        <div style={{ fontSize: 7, color: C.text3, letterSpacing: '0.06em', textTransform: 'uppercase' }}>PAN</div>
-      </div>
-
       {/* Fader + meter */}
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 4, padding: '8px 4px 2px', minHeight: 0 }}>
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
@@ -389,16 +433,10 @@ function MasterStrip() {
               <div style={{ width: '70%', height: 1, background: alpha(C.accent, 38) }}/>
             </div>
           </div>
-          <input
-            type="range" min={0} max={1} step={0.01}
+          <VerticalFaderInput
             value={masterVolume}
-            onChange={e => setMasterVol(parseFloat(e.target.value))}
-            style={{
-              position: 'absolute', top: 0, bottom: 0, left: '50%',
-              transform: 'translateX(-50%) rotate(-90deg)',
-              width: '100%', height: 40,
-              opacity: 0, cursor: 'pointer',
-            }}
+            label="Master volume"
+            onChange={setMasterVol}
           />
         </div>
         <div style={{ width: 6, flex: '0 0 6px', background: C.bgDeep, borderRadius: 2, overflow: 'hidden', position: 'relative', boxShadow: `inset 0 1px 3px ${C.shadowSm}` }}>
@@ -494,4 +532,3 @@ function StripBtn({ children, active, color, onClick }: {
     </button>
   )
 }
-

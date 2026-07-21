@@ -3,10 +3,26 @@
 
 import type {
   DAWTrack, AudioTrack, MidiTrack, SavedProject, SerializedTrack,
-  TransportState,
+  TransportState, AutomationLane,
 } from '../types'
 
-const PROJECT_VERSION = 1
+const PROJECT_VERSION = 2
+
+const DEFAULT_TRANSPORT: TransportState = {
+  bpm: 120,
+  loopEnabled: false,
+  loopStart: 0,
+  loopEnd: 8,
+  timeSignature: [4, 4],
+  snapEnabled: true,
+  snapBeats: 0.5,
+}
+
+export interface ProjectRuntimeState {
+  automationLanes?: AutomationLane[]
+  timelineLength?: number
+  masterVolume?: number
+}
 
 /**
  * Serialise the current DAW project into a JSON-safe structure.
@@ -22,6 +38,7 @@ export function serializeProject(
   tracks:         DAWTrack[],
   transport:      TransportState,
   name = 'Untitled',
+  runtime: ProjectRuntimeState = {},
 ): SavedProject {
   const serializedTracks: SerializedTrack[] = tracks.map(t => {
     if (t.type === 'audio') {
@@ -41,11 +58,14 @@ export function serializeProject(
   })
 
   return {
-    version:   PROJECT_VERSION,
+    version: PROJECT_VERSION,
     name,
     transport,
-    tracks:    serializedTracks,
-    savedAt:    new Date().toISOString(),
+    tracks: serializedTracks,
+    automationLanes: runtime.automationLanes ?? [],
+    timelineLength: Math.max(0, runtime.timelineLength ?? 0),
+    masterVolume: Math.max(0, Math.min(1, runtime.masterVolume ?? 0.85)),
+    savedAt: new Date().toISOString(),
   }
 }
 
@@ -60,12 +80,15 @@ export function serializeProject(
  * callers can preview, migrate old versions, or apply migrations before commit.
  */
 export function deserializeProject(project: SavedProject): {
-  tracks:    DAWTrack[]
-  transport: TransportState
+  tracks:          DAWTrack[]
+  transport:       TransportState
+  automationLanes: AutomationLane[]
+  timelineLength:  number
+  masterVolume:    number
 } {
-  // For now v1 is the only schema — explicit version guard keeps migrations
-  // surface small when later versions ship.
-  if (project.version !== PROJECT_VERSION) {
+  // Version 1 projects did not persist automation, timeline length or master
+  // volume. Keep them loadable and fill those fields with safe defaults.
+  if (project.version < 1 || project.version > PROJECT_VERSION) {
     throw new Error(
       `Unsupported project version: ${project.version}. This build of @sonaralabs/daw-studio understands version ${PROJECT_VERSION}.`,
     )
@@ -84,7 +107,13 @@ export function deserializeProject(project: SavedProject): {
     } as AudioTrack
   })
 
-  return { tracks, transport: project.transport }
+  return {
+    tracks,
+    transport: { ...DEFAULT_TRANSPORT, ...project.transport },
+    automationLanes: Array.isArray(project.automationLanes) ? project.automationLanes : [],
+    timelineLength: Math.max(0, project.timelineLength ?? 0),
+    masterVolume: Math.max(0, Math.min(1, project.masterVolume ?? 0.85)),
+  }
 }
 
 /** Convenience: stringify a SavedProject for download/persistence. */

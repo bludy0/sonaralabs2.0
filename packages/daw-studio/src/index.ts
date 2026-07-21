@@ -21,11 +21,12 @@ export { exportMix, exportMixMp3, exportMixOgg, renderMix } from './lib/exportMi
 export {
   serializeProject, deserializeProject, encodeProject, decodeProject,
 } from './lib/projectIO'
+export type { ProjectRuntimeState } from './lib/projectIO'
 export { registerBuffer, lookupBuffer, unregisterBuffer } from './lib/sampleRegistry'
 export type {
   DAWTrack, AudioTrack, MidiTrack,
   AudioClip, MidiClip, MidiNote,
   TransportState, EffectChain,
   EQSettings, ReverbSettings, DelaySettings, CompressorSettings, LimiterSettings, ChorusSettings,
-  SynthPreset, SavedProject, SerializedTrack,
+  SynthPreset, SavedProject, SerializedTrack, AutomationLane, AutomationPoint, AutomationParam,
 } from './types'

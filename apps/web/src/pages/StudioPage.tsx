@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { toast } from '../lib/toast'
-import { DAWLayout, useDAWStore } from '@sonaralabs/daw-studio'
+import {
+  DAWLayout, useDAWStore, useAudioEngine,
+  type DAWTrack, type AutomationLane,
+} from '@sonaralabs/daw-studio'
 import '@sonaralabs/daw-studio/src/index.css'
 import { BrowserPanel }  from '../components/studio/BrowserPanel'
 import { ProjectPanel }  from '../components/studio/ProjectPanel'
@@ -21,6 +24,24 @@ export interface SavedProjectMeta {
   bpm:        number
 }
 
+interface PersistedDAWProject {
+  _id?: string
+  id?: string
+  name: string
+  tracks?: DAWTrack[]
+  automationLanes?: AutomationLane[]
+  bpm?: number
+  masterVolume?: number
+  loopStart?: number
+  loopEnd?: number
+  loopEnabled?: boolean
+  timeSignature?: number[]
+  snapEnabled?: boolean
+  snapBeats?: number
+  timelineLength?: number
+  shareToken?: string
+}
+
 export default function StudioPage() {
   const navigate                        = useNavigate()
   const { token: shareToken_ }          = useParams<{ token?: string }>()
@@ -31,12 +52,19 @@ export default function StudioPage() {
   // ── Store subscriptions ───────────────────────────────────────────────────
   const tracks        = useDAWStore(s => s.tracks)
   const transport     = useDAWStore(s => s.transport)
+  const automationLanes = useDAWStore(s => s.automationLanes)
+  const timelineLength = useDAWStore(s => s.timelineLength)
   const getSaveable   = useDAWStore(s => s.getSaveable)
   const loadTracks    = useDAWStore(s => s.loadTracks)
   const loadTransport = useDAWStore(s => s.loadTransport)
+  const loadAutomationLanes = useDAWStore(s => s.loadAutomationLanes)
+  const loadTimelineLength = useDAWStore(s => s.loadTimelineLength)
   const addAudioTrack = useDAWStore(s => s.addAudioTrack)
   const addClip       = useDAWStore(s => s.addClip)
+  const markSaved     = useDAWStore(s => s.markSaved)
   const reset         = useDAWStore(s => s.reset)
+  const masterVolume  = useAudioEngine(s => s.masterVolume)
+  const setMasterVol  = useAudioEngine(s => s.setMasterVol)
 
   // ── Project state ────────────────────────────────────────────────────────
   const [projectName,  setProjectName]  = useState('Untitled Project')
@@ -62,7 +90,28 @@ export default function StudioPage() {
     if (firstRenderRef.current) { firstRenderRef.current = false; return }
     if (Date.now() < suppressUntilRef.current) return
     setIsDirty(true)
-  }, [tracks, transport])
+  }, [tracks, transport, automationLanes, timelineLength, masterVolume, projectName])
+
+  function applyPersistedProject(p: PersistedDAWProject) {
+    const timeSignature: [number, number] =
+      Array.isArray(p.timeSignature) && p.timeSignature.length === 2
+        ? [p.timeSignature[0], p.timeSignature[1]]
+        : [4, 4]
+
+    loadTransport({
+      bpm: p.bpm ?? 120,
+      loopStart: p.loopStart ?? 0,
+      loopEnd: p.loopEnd ?? 8,
+      loopEnabled: p.loopEnabled ?? false,
+      timeSignature,
+      snapEnabled: p.snapEnabled ?? true,
+      snapBeats: p.snapBeats ?? 0.5,
+    })
+    loadTracks(p.tracks ?? [])
+    loadAutomationLanes(p.automationLanes ?? [])
+    loadTimelineLength(p.timelineLength ?? 0)
+    setMasterVol(p.masterVolume ?? 0.85)
+  }
 
   // ── Tab title ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -116,15 +165,9 @@ export default function StudioPage() {
     if (shareToken_) {
       api.get(`/api/projects/share/${shareToken_}`)
         .then(({ data }) => {
-          const p = data.data
+          const p = data.data as PersistedDAWProject
           if (!p) return
-          loadTransport({
-            bpm:         p.bpm        ?? 120,
-            loopStart:   p.loopStart  ?? 0,
-            loopEnd:     p.loopEnd    ?? 8,
-            loopEnabled: p.loopEnabled ?? false,
-          })
-          if (p.tracks?.length) loadTracks(p.tracks)
+          applyPersistedProject(p)
           setProjectName(p.name)
         }).catch((err) => {
           toast('Could not load shared project', 'error')
@@ -138,17 +181,11 @@ export default function StudioPage() {
     if (queryProjectId) {
       api.get(`/api/library/projects/${queryProjectId}`)
         .then(({ data }) => {
-          const p = data.data
+          const p = data.data as PersistedDAWProject
           if (!p) return
-          loadTransport({
-            bpm:         p.bpm        ?? 120,
-            loopStart:   p.loopStart  ?? 0,
-            loopEnd:     p.loopEnd    ?? 8,
-            loopEnabled: p.loopEnabled ?? false,
-          })
-          if (p.tracks?.length) loadTracks(p.tracks)
+          applyPersistedProject(p)
           setProjectName(p.name)
-          setProjectId(p._id ?? p.id)
+          setProjectId(p._id ?? p.id ?? queryProjectId)
         }).catch((err) => {
           toast('Could not load project', 'error')
           // eslint-disable-next-line no-console
@@ -203,7 +240,7 @@ export default function StudioPage() {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => handleSaveRef.current(true), 4000)
     return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current) }
-  }, [tracks, transport, isDirty, projectId, isReadOnly])
+  }, [tracks, transport, automationLanes, timelineLength, masterVolume, projectName, isDirty, projectId, isReadOnly])
 
   // ── Kaydet ───────────────────────────────────────────────────────────────
   async function handleSave(auto = false) {
@@ -218,16 +255,39 @@ export default function StudioPage() {
         return {
           ...t,
           clips: t.clips.map(c => {
-            const hasRemoteUrl = c.url && (c.url.startsWith('http') || c.url.startsWith('blob'))
-            const dataUrl = (!hasRemoteUrl && c.buffer)
+            // blob: URLs only live for the current browser session and must
+            // never be persisted as though they were durable audio sources.
+            const hasPersistentUrl = Boolean(c.url && !c.url.startsWith('blob:'))
+            const dataUrl = (!hasPersistentUrl && c.buffer)
               ? audioBufferToDataUrlSync(c.buffer, 3_000_000)
               : null
-            return { ...c, buffer: null, url: dataUrl ?? c.url ?? '' }
+            const savedUrl = dataUrl ?? (hasPersistentUrl ? c.url : '')
+            if (!savedUrl) {
+              throw new Error(`Cannot save “${c.name}”: local audio is too large to embed.`)
+            }
+            return { ...c, buffer: null, url: savedUrl }
           }),
         }
       })
-      const { bpm, loopStart, loopEnd, loopEnabled } = transport
-      const payload = { name: projectName, tracks: saveTracks, bpm, loopStart, loopEnd, loopEnabled }
+      const {
+        bpm, loopStart, loopEnd, loopEnabled,
+        timeSignature, snapEnabled, snapBeats,
+      } = transport
+      const payload = {
+        projectVersion: 2,
+        name: projectName,
+        tracks: saveTracks,
+        automationLanes,
+        bpm,
+        masterVolume,
+        loopStart,
+        loopEnd,
+        loopEnabled,
+        timeSignature,
+        snapEnabled,
+        snapBeats,
+        timelineLength,
+      }
       let res
       if (projectId) {
         res = await api.put(`/api/projects/${projectId}`, payload)
@@ -238,6 +298,7 @@ export default function StudioPage() {
       }
       suppressDirty()
       setIsDirty(false)
+      markSaved()
       setLastSavedAt(new Date())
       if (!auto) {
         setSaveLabel('Saved ✓')
@@ -245,7 +306,9 @@ export default function StudioPage() {
       }
     } catch (err) {
       setSaveLabel('Failed ✗')
-      toast('Could not save project', 'error')
+      toast(err instanceof Error && err.message.startsWith('Cannot save')
+        ? err.message
+        : 'Could not save project', 'error')
       // eslint-disable-next-line no-console
       console.error('[StudioPage.handleSave]', err)
       setTimeout(() => setSaveLabel(null), 3000)
@@ -259,18 +322,12 @@ export default function StudioPage() {
   async function handleLoadProject(meta: SavedProjectMeta) {
     try {
       const { data } = await api.get(`/api/projects/${meta._id}`)
-      const p = data.data
+      const p = data.data as PersistedDAWProject
       suppressDirty()
       reset()
-      loadTransport({
-        bpm:         p.bpm         ?? 120,
-        loopStart:   p.loopStart   ?? 0,
-        loopEnd:     p.loopEnd     ?? 8,
-        loopEnabled: p.loopEnabled ?? false,
-      })
-      if (p.tracks?.length) loadTracks(p.tracks)
+      applyPersistedProject(p)
       setProjectName(p.name)
-      setProjectId(p._id)
+      setProjectId(p._id ?? meta._id)
       setShareToken(p.shareToken ?? null)
       setIsDirty(false)
       // Decode synthesized clips stored as data URLs back to AudioBuffers
@@ -305,6 +362,7 @@ export default function StudioPage() {
     }
     suppressDirty()
     reset()
+    setMasterVol(0.85)
     setProjectName('Untitled Project')
     setProjectId(null)
     setShareToken(null)

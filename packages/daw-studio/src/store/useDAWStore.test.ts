@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { useDAWStore, snapTime, undo, redo } from './useDAWStore'
-import type { AudioTrack } from '../types'
+import type { AudioTrack, MidiTrack } from '../types'
 
 // pushHistory 200ms debounce kullanır — ayrı undo adımları için sahte saatle ilerletiyoruz
 beforeEach(() => {
@@ -261,6 +261,21 @@ describe('pasteClips — corner cases', () => {
     const track = useDAWStore.getState().tracks[0] as AudioTrack
     expect(track.clips).toHaveLength(2)
     expect(track.clips[1].startTime).toBeGreaterThanOrEqual(2)
+  })
+
+  it(`MIDI beat süresini BPM'e göre saniyeye çevirerek yapıştırır`, () => {
+    useDAWStore.getState().addMidiTrack(); tick()
+    const trackId = useDAWStore.getState().tracks[0].id
+    const id = useDAWStore.getState().addMidiClip(trackId, {
+      name: 'Loop', startTime: 1, durationBeats: 4, loopBeats: 8, notes: [],
+    }); tick()
+    useDAWStore.getState().selectClip(id)
+    useDAWStore.getState().copySelectedClips()
+    useDAWStore.getState().pasteClips(); tick()
+
+    const track = useDAWStore.getState().tracks[0] as MidiTrack
+    // 120 BPM'de 8 beat = 4 saniye; klip 1. saniyede başlayıp 5'te biter.
+    expect(track.clips[1].startTime).toBe(5)
   })
 })
 

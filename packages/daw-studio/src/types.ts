@@ -204,11 +204,14 @@ export type SerializedTrack =
   | MidiTrack
 
 export interface SavedProject {
-  version:   number
-  name:      string
-  transport: TransportState
-  tracks:    SerializedTrack[]
-  savedAt:   string
+  version:         number
+  name:            string
+  transport:       TransportState
+  tracks:          SerializedTrack[]
+  automationLanes: AutomationLane[]
+  timelineLength:  number
+  masterVolume:    number
+  savedAt:         string
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────

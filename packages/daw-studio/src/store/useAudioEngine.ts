@@ -298,7 +298,8 @@ export const useAudioEngine = create<EngineState>((set, get) => ({
   },
 
   setMasterVol: (v) => {
-    getMasterGain().gain.value = v
-    set({ masterVolume: v })
+    const next = Math.max(0, Math.min(1, v))
+    getMasterGain().gain.value = next
+    set({ masterVolume: next })
   },
 }))

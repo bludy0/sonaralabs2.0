@@ -26,8 +26,17 @@ const dawProjectSchema = new mongoose.Schema({
   userId:       { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   name:         { type: String, required: true, maxlength: 120, default: "Untitled Project" },
   tracks:       { type: mongoose.Schema.Types.Mixed, default: [] },
+  automationLanes: { type: mongoose.Schema.Types.Mixed, default: [] },
+  projectVersion:  { type: Number, default: 2 },
   bpm:          { type: Number, default: 120 },
-  masterVolume: { type: Number, default: 0.8 },
+  masterVolume: { type: Number, default: 0.85 },
+  loopStart:    { type: Number, default: 0 },
+  loopEnd:      { type: Number, default: 8 },
+  loopEnabled:  { type: Boolean, default: false },
+  timeSignature:{ type: [Number], default: [4, 4] },
+  snapEnabled:  { type: Boolean, default: true },
+  snapBeats:    { type: Number, default: 0.5 },
+  timelineLength: { type: Number, default: 0 },
   isPublic:     { type: Boolean, default: false },
   shareToken:   { type: String, sparse: true },
 }, { timestamps: true });
@@ -148,7 +157,9 @@ describe("DAW Projects CRUD", () => {
   it("proje oluşturulur (defaults)", async () => {
     const proj = await DawProject.create({ userId, name: "My First Project" });
     expect(proj.bpm).toBe(120);
-    expect(proj.masterVolume).toBe(0.8);
+    expect(proj.masterVolume).toBe(0.85);
+    expect(proj.timeSignature).toEqual([4, 4]);
+    expect(proj.timelineLength).toBe(0);
     expect(proj.isPublic).toBe(false);
     expect(proj.tracks).toHaveLength(0);
   });
@@ -163,6 +174,24 @@ describe("DAW Projects CRUD", () => {
     expect(updated!.bpm).toBe(140);
     expect(updated!.name).toBe("Battle Theme v2");
     expect(updated!.tracks).toHaveLength(1);
+  });
+
+  it("kritik DAW durumu kaydedilir", async () => {
+    const automationLanes = [{ id: "lane-1", trackId: "t1", param: "volume", enabled: true, points: [] }];
+    const proj = await DawProject.create({
+      userId, name: "Full State", automationLanes, masterVolume: 0.67,
+      timeSignature: [3, 4], snapEnabled: false, snapBeats: 0.25,
+      timelineLength: 96, projectVersion: 2,
+    });
+
+    const saved = await DawProject.findById(proj._id);
+    expect(saved!.automationLanes).toEqual(automationLanes);
+    expect(saved!.masterVolume).toBe(0.67);
+    expect(saved!.timeSignature).toEqual([3, 4]);
+    expect(saved!.snapEnabled).toBe(false);
+    expect(saved!.snapBeats).toBe(0.25);
+    expect(saved!.timelineLength).toBe(96);
+    expect(saved!.projectVersion).toBe(2);
   });
 
   it("share link aktif edilir (shareToken + isPublic)", async () => {

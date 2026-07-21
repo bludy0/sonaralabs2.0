@@ -157,10 +157,12 @@ interface DAWState {
   setShortcutsOpen: (open: boolean) => void
 
   // Project
-  reset:         () => void
-  loadTracks:    (tracks: DAWTrack[]) => void
-  loadTransport: (patch: Partial<TransportState>) => void
-  getSaveable:   () => DAWTrack[]
+  reset:               () => void
+  loadTracks:          (tracks: DAWTrack[]) => void
+  loadTransport:       (patch: Partial<TransportState>) => void
+  loadAutomationLanes: (lanes: AutomationLane[]) => void
+  loadTimelineLength:  (seconds: number) => void
+  getSaveable:         () => DAWTrack[]
 
   /** True if the project has unsaved mutations. Drives the beforeunload
    *  "you have unsaved changes" prompt in the host. */
@@ -206,6 +208,11 @@ export function snapTime(t: number, bpm: number, snapBeats: number): number {
   const secPerBeat = 60 / bpm
   const grid = snapBeats * secPerBeat
   return Math.round(t / grid) * grid
+}
+
+function clipDurationSeconds(clip: AudioClip | MidiClip, bpm: number): number {
+  if ('duration' in clip) return Math.max(0, (clip.trimEnd || clip.duration) - clip.trimStart)
+  return Math.max(0, (clip.loopBeats ?? clip.durationBeats) * 60 / bpm)
 }
 
 const initialTransport: TransportState = {
@@ -461,7 +468,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
 
     // Ctrl+V — paste clipboard clips right after the last selected clip
     pasteClips: () => {
-      const { tracks, selectedClipIds, clipboard } = get()
+      const { tracks, selectedClipIds, clipboard, transport } = get()
       if (!clipboard || clipboard.length === 0) return
 
       // Find the end of the current selection to use as paste anchor
@@ -473,11 +480,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
             ? track.clips.filter(c => selectedClipIds.includes(c.id))
             : []
         for (const clip of clips) {
-          const end = clip.startTime + (
-            (clip as AudioClip).trimEnd !== undefined
-              ? (clip as AudioClip).duration - (clip as AudioClip).trimStart - (clip as AudioClip).trimEnd
-              : (clip as MidiClip).durationBeats ?? clip.startTime
-          )
+          const end = clip.startTime + clipDurationSeconds(clip, transport.bpm)
           if (end > anchorEnd) anchorEnd = end
         }
       }
@@ -486,7 +489,7 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
         for (const track of tracks) {
           const clips = track.type === 'audio' ? track.clips : track.type === 'midi' ? track.clips : []
           for (const clip of clips) {
-            const end = clip.startTime + ((clip as AudioClip).duration ?? 0)
+            const end = clip.startTime + clipDurationSeconds(clip, transport.bpm)
             if (end > anchorEnd) anchorEnd = end
           }
         }
@@ -677,28 +680,28 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
     // ── Transport ─────────────────────────────────────────────────────────────
 
     setBPM: (bpm) =>
-      set(s => ({ transport: { ...s.transport, bpm: Math.max(40, Math.min(300, bpm)) } })),
+      set(s => ({ transport: { ...s.transport, bpm: Math.max(40, Math.min(300, bpm)) }, dirty: true })),
 
     setTimeSignature: (sig) =>
-      set(s => ({ transport: { ...s.transport, timeSignature: sig } })),
+      set(s => ({ transport: { ...s.transport, timeSignature: sig }, dirty: true })),
 
     setLoop: (start, end) =>
-      set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end } })),
+      set(s => ({ transport: { ...s.transport, loopStart: start, loopEnd: end }, dirty: true })),
 
     toggleLoop: () =>
-      set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled } })),
+      set(s => ({ transport: { ...s.transport, loopEnabled: !s.transport.loopEnabled }, dirty: true })),
 
     toggleSnap: () =>
-      set(s => ({ transport: { ...s.transport, snapEnabled: !s.transport.snapEnabled } })),
+      set(s => ({ transport: { ...s.transport, snapEnabled: !s.transport.snapEnabled }, dirty: true })),
 
     setSnapBeats: (beats) =>
-      set(s => ({ transport: { ...s.transport, snapBeats: beats } })),
+      set(s => ({ transport: { ...s.transport, snapBeats: beats }, dirty: true })),
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
 
     setZoom: (z) => set({ zoom: Math.max(DEFAULTS.MIN_ZOOM, Math.min(DEFAULTS.MAX_ZOOM, z)) }),
     setTrackHeight: (h) => set({ trackHeight: Math.max(DEFAULTS.MIN_TRACK_HEIGHT, Math.min(DEFAULTS.MAX_TRACK_HEIGHT, Math.round(h))) }),
-    setTimelineLength: (s) => set({ timelineLength: Math.max(0, s) }),
+    setTimelineLength: (s) => set({ timelineLength: Math.max(0, s), dirty: true }),
 
     // ── UI ────────────────────────────────────────────────────────────────────
 
@@ -717,6 +720,11 @@ export const useDAWStore = create<DAWState>()(subscribeWithSelector((set, get) =
 
     loadTransport: (patch) =>
       set(s => ({ transport: { ...s.transport, ...patch } })),
+
+    loadAutomationLanes: (automationLanes) => set({ automationLanes, dirty: false }),
+
+    loadTimelineLength: (timelineLength) =>
+      set({ timelineLength: Math.max(0, timelineLength), dirty: false }),
 
     getSaveable: () => get().tracks,
 

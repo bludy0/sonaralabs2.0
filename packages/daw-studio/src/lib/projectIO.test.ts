@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { serializeProject, deserializeProject, encodeProject, decodeProject } from './projectIO'
 import { useDAWStore } from '../store/useDAWStore'
-import type { AudioTrack, MidiTrack } from '../types'
+import type { AudioTrack, MidiTrack, SavedProject } from '../types'
 
 function mkAudio(id: string): AudioTrack {
   return {
@@ -73,6 +73,48 @@ describe('serializeProject', () => {
     expect(decoded.name).toBe('Round')
     expect(decoded.transport.bpm).toBe(100)
     expect(decoded.tracks).toHaveLength(1)
+  })
+
+  it(`automation, timeline ve master volume alanlarını korur`, () => {
+    const t = mkAudio('a1')
+    const automationLanes = [{
+      id: 'lane-1', trackId: 'a1', param: 'volume' as const, enabled: true,
+      points: [{ id: 'p1', time: 2, value: 0.4 }],
+    }]
+    const proj = serializeProject(
+      [t],
+      { bpm: 90, loopEnabled: true, loopStart: 1, loopEnd: 9, timeSignature: [3, 4], snapEnabled: false, snapBeats: 0.25 },
+      'Full State',
+      { automationLanes, timelineLength: 64, masterVolume: 0.62 },
+    )
+
+    const restored = deserializeProject(decodeProject(encodeProject(proj)))
+    expect(proj.version).toBe(2)
+    expect(restored.automationLanes).toEqual(automationLanes)
+    expect(restored.timelineLength).toBe(64)
+    expect(restored.masterVolume).toBe(0.62)
+    expect(restored.transport.timeSignature).toEqual([3, 4])
+    expect(restored.transport.snapEnabled).toBe(false)
+  })
+
+  it(`v1 projelerini yeni alanlar için güvenli varsayılanlarla açar`, () => {
+    const legacy = {
+      version: 1,
+      name: 'Legacy',
+      tracks: serializeProject([mkMidi('m1')], {
+        bpm: 110, loopEnabled: false, loopStart: 0, loopEnd: 8,
+        timeSignature: [4, 4], snapEnabled: true, snapBeats: 0.5,
+      }).tracks,
+      transport: { bpm: 110, loopEnabled: false, loopStart: 0, loopEnd: 8 },
+      savedAt: new Date().toISOString(),
+    } as unknown as SavedProject
+
+    const restored = deserializeProject(legacy)
+    expect(restored.transport.timeSignature).toEqual([4, 4])
+    expect(restored.transport.snapEnabled).toBe(true)
+    expect(restored.automationLanes).toEqual([])
+    expect(restored.timelineLength).toBe(0)
+    expect(restored.masterVolume).toBe(0.85)
   })
 
   it(`decodeProject hatalı yapıyı reddeder`, () => {

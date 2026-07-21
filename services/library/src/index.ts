@@ -44,11 +44,17 @@ const dawProjectSchema = new mongoose.Schema({
   userId:       { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   name:         { type: String, required: true, maxlength: 120, default: "Untitled Project" },
   tracks:       { type: mongoose.Schema.Types.Mixed, default: [] },   // serialized DAWTrack[]
+  automationLanes: { type: mongoose.Schema.Types.Mixed, default: [] },
+  projectVersion:  { type: Number, default: 2 },
   bpm:          { type: Number, default: 120 },
-  masterVolume: { type: Number, default: 0.8 },
+  masterVolume: { type: Number, default: 0.85 },
   loopStart:    { type: Number, default: 0 },
   loopEnd:      { type: Number, default: 8 },
   loopEnabled:  { type: Boolean, default: false },
+  timeSignature:{ type: [Number], default: [4, 4] },
+  snapEnabled:  { type: Boolean, default: true },
+  snapBeats:    { type: Number, default: 0.5 },
+  timelineLength: { type: Number, default: 0 },
   isPublic:     { type: Boolean, default: false },
   shareToken:   { type: String, sparse: true, index: true },
 }, { timestamps: true });
@@ -304,6 +310,11 @@ app.delete("/collections/:id/items/:refId", async (req, res) => {
 
 const MAX_PROJECT_BYTES = 2 * 1024 * 1024; // 2 MB serialized limit
 
+function projectDataTooLarge(tracks: unknown, automationLanes: unknown): boolean {
+  if (tracks === undefined && automationLanes === undefined) return false;
+  return Buffer.byteLength(JSON.stringify({ tracks, automationLanes }), "utf8") > MAX_PROJECT_BYTES;
+}
+
 // GET /projects/share/:token — public (no auth required)
 app.get("/projects/share/:token", async (req, res) => {
   try {
@@ -332,20 +343,30 @@ app.get("/projects", async (req, res) => {
 app.post("/projects", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const { name, tracks, bpm, masterVolume, loopStart, loopEnd, loopEnabled } = req.body;
+    const {
+      name, tracks, automationLanes, projectVersion, bpm, masterVolume,
+      loopStart, loopEnd, loopEnabled, timeSignature, snapEnabled, snapBeats,
+      timelineLength,
+    } = req.body;
     if (!name?.trim()) return res.status(400).json({ success: false, error: "name required" });
-    if (tracks !== undefined && JSON.stringify(tracks).length > MAX_PROJECT_BYTES)
+    if (projectDataTooLarge(tracks, automationLanes))
       return res.status(413).json({ success: false, error: "Project data too large (max 2 MB)" });
 
     const project = await DawProject.create({
       userId,
       name: name.trim(),
       tracks: tracks ?? [],
+      automationLanes: automationLanes ?? [],
+      projectVersion: projectVersion ?? 2,
       bpm: bpm ?? 120,
-      masterVolume: masterVolume ?? 0.8,
+      masterVolume: masterVolume ?? 0.85,
       loopStart: loopStart ?? 0,
       loopEnd: loopEnd ?? 8,
       loopEnabled: loopEnabled ?? false,
+      timeSignature: timeSignature ?? [4, 4],
+      snapEnabled: snapEnabled ?? true,
+      snapBeats: snapBeats ?? 0.5,
+      timelineLength: timelineLength ?? 0,
     });
     res.status(201).json({ success: true, data: project } as ApiResponse);
   } catch { res.status(500).json({ success: false, error: "Failed" }); }
@@ -374,8 +395,12 @@ app.get("/projects/:id", async (req, res) => {
 app.put("/projects/:id", async (req, res) => {
   try {
     const { sub: userId } = getPayload(req);
-    const { name, tracks, bpm, masterVolume, loopStart, loopEnd, loopEnabled } = req.body;
-    if (tracks !== undefined && JSON.stringify(tracks).length > MAX_PROJECT_BYTES)
+    const {
+      name, tracks, automationLanes, projectVersion, bpm, masterVolume,
+      loopStart, loopEnd, loopEnabled, timeSignature, snapEnabled, snapBeats,
+      timelineLength,
+    } = req.body;
+    if (projectDataTooLarge(tracks, automationLanes))
       return res.status(413).json({ success: false, error: "Project data too large (max 2 MB)" });
 
     const project = await DawProject.findOneAndUpdate(
@@ -383,11 +408,17 @@ app.put("/projects/:id", async (req, res) => {
       {
         ...(name && { name: name.trim() }),
         ...(tracks !== undefined && { tracks }),
+        ...(automationLanes !== undefined && { automationLanes }),
+        ...(projectVersion !== undefined && { projectVersion }),
         ...(bpm !== undefined && { bpm }),
         ...(masterVolume !== undefined && { masterVolume }),
         ...(loopStart !== undefined && { loopStart }),
         ...(loopEnd !== undefined && { loopEnd }),
         ...(loopEnabled !== undefined && { loopEnabled }),
+        ...(timeSignature !== undefined && { timeSignature }),
+        ...(snapEnabled !== undefined && { snapEnabled }),
+        ...(snapBeats !== undefined && { snapBeats }),
+        ...(timelineLength !== undefined && { timelineLength }),
       },
       { new: true }
     );
